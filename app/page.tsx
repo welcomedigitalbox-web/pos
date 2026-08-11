@@ -236,6 +236,26 @@ export default function POSPage() {
           .from("products")
           .update({ stock_qty: newStock, updated_at: new Date().toISOString() })
           .eq("id", c.product_id);
+
+        // FEFO: deduct from batches with the earliest expiry first (no-expiry batches last)
+        const { data: batches } = await supabase
+          .from("stock_purchases")
+          .select("id, remaining_qty, expiry_date, created_at")
+          .eq("product_id", c.product_id)
+          .gt("remaining_qty", 0)
+          .order("expiry_date", { ascending: true, nullsFirst: false })
+          .order("created_at", { ascending: true });
+
+        let remainingToDeduct = c.qty;
+        for (const batch of batches || []) {
+          if (remainingToDeduct <= 0) break;
+          const deductFromBatch = Math.min(batch.remaining_qty, remainingToDeduct);
+          await supabase
+            .from("stock_purchases")
+            .update({ remaining_qty: batch.remaining_qty - deductFromBatch })
+            .eq("id", batch.id);
+          remainingToDeduct -= deductFromBatch;
+        }
       }
 
       const paymentLabelMap: Record<PaymentMethod, string> = {
