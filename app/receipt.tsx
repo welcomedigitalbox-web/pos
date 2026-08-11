@@ -103,6 +103,12 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
             <span>Balance Due</span>
             <span>{fmt(data.balanceDue)}</span>
           </div>
+          {data.change > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Change</span>
+              <span>{fmt(data.change)}</span>
+            </div>
+          )}
         </>
       )}
       {data.note && (
