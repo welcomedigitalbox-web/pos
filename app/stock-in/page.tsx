@@ -97,8 +97,10 @@ export default function StockInPage() {
   const qtyNum = Number(qty) || 0;
   const unitCostNum = Number(unitCost) || 0;
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(productSearch.toLowerCase())
+  const filteredProducts = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      (p.sku || "").toLowerCase().includes(productSearch.toLowerCase())
   );
 
   let previewAvgCost: number | null = null;
@@ -387,9 +389,21 @@ export default function StockInPage() {
                 value={productSearch}
                 disabled={!!editId}
                 onChange={(e) => {
-                  setProductSearch(e.target.value);
+                  const value = e.target.value;
+                  setProductSearch(value);
                   setProductId("");
                   setShowDropdown(true);
+
+                  // Barcode scanner types the full code then usually adds nothing else —
+                  // auto-select as soon as it exactly matches a product's SKU.
+                  const exactSkuMatch = products.find(
+                    (p) => (p.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
+                  );
+                  if (exactSkuMatch) {
+                    setProductId(exactSkuMatch.id);
+                    setProductSearch(exactSkuMatch.name);
+                    setShowDropdown(false);
+                  }
                 }}
                 onFocus={() => setShowDropdown(true)}
                 onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
@@ -409,7 +423,7 @@ export default function StockInPage() {
                     >
                       {p.name}{" "}
                       <span className="text-slate-400">
-                        ({p.stock_qty} @ {p.avg_cost.toLocaleString()})
+                        [{p.sku}] ({p.stock_qty} @ {p.avg_cost.toLocaleString()})
                       </span>
                     </button>
                   ))}
