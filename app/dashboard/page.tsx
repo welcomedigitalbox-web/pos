@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [todayTotal, setTodayTotal] = useState(0);
   const [todayCount, setTodayCount] = useState(0);
   const [lowStock, setLowStock] = useState(0);
+  const [todayCogs, setTodayCogs] = useState(0);
 
   useEffect(() => {
     if (profile && profile.role === "cashier") {
@@ -38,12 +39,24 @@ export default function DashboardPage() {
 
     const { data: sales } = await supabase
       .from("sales")
-      .select("total")
+      .select("id, total")
       .eq("store_id", storeId)
       .gte("created_at", todayStart.toISOString());
 
-    setTodayTotal((sales || []).reduce((sum, s) => sum + Number(s.total), 0));
+    const total = (sales || []).reduce((sum, s) => sum + Number(s.total), 0);
+    setTodayTotal(total);
     setTodayCount((sales || []).length);
+
+    const saleIds = (sales || []).map((s) => s.id);
+    if (saleIds.length > 0) {
+      const { data: items } = await supabase
+        .from("sale_items")
+        .select("line_cogs")
+        .in("sale_id", saleIds);
+      setTodayCogs((items || []).reduce((sum, i) => sum + Number(i.line_cogs), 0));
+    } else {
+      setTodayCogs(0);
+    }
 
     const { data: low } = await supabase
       .from("products")
@@ -53,14 +66,20 @@ export default function DashboardPage() {
     setLowStock((low || []).length);
   }
 
+  const gp = todayTotal - todayCogs;
+  const gpMargin = todayTotal > 0 ? (gp / todayTotal) * 100 : 0;
+
   const cards = [
-    { label: "ယနေ့ Sale", value: fmt(todayTotal) },
+    { label: "ယနေ့ Sale (Revenue)", value: fmt(todayTotal) },
     { label: "ယနေ့ Order", value: String(todayCount) },
+    { label: "ယနေ့ COGS", value: fmt(todayCogs) },
+    { label: "Gross Profit", value: fmt(gp) },
+    { label: "GP Margin", value: gpMargin.toFixed(1) + "%" },
     { label: "Low Stock Items", value: String(lowStock) },
   ];
 
   return (
-    <div className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {cards.map((c) => (
         <div key={c.label} className="bg-white border border-slate-200 rounded-xl p-4">
           <div className="text-xs text-slate-500">{c.label}</div>
