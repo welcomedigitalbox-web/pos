@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product } from "@/lib/supabase";
+import { supabase, Product, Customer } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
+import { useAuth } from "./auth-context";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
@@ -18,6 +19,8 @@ type CartItem = {
 type PaymentMethod = "cash" | "card" | "bank_transfer" | "cod";
 type DiscountType = "percent" | "flat";
 
+const STANDARD_VAT_PERCENT = 5;
+
 function fmt(n: number) {
   return n.toLocaleString() + " MMK";
 }
@@ -25,6 +28,7 @@ function fmt(n: number) {
 export default function POSPage() {
   const { storeId } = useStore();
   const { t } = useLanguage();
+  const { profile } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -34,15 +38,22 @@ export default function POSPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [discountType, setDiscountType] = useState<DiscountType>("flat");
   const [discountValue, setDiscountValue] = useState("");
-  const [vatPercent, setVatPercent] = useState("");
+  const [vatEnabled, setVatEnabled] = useState(false);
   const [amountReceived, setAmountReceived] = useState("");
   const [advancePayment, setAdvancePayment] = useState("");
   const [note, setNote] = useState("");
+
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerPhone, setCustomerPhone] = useState("");
 
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
   useEffect(() => {
     loadProducts();
+    loadCustomers();
     resetOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
@@ -56,6 +67,15 @@ export default function POSPage() {
     if (!error) setProducts(data || []);
   }
 
+  async function loadCustomers() {
+    const { data } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("store_id", storeId)
+      .order("name");
+    setCustomers(data || []);
+  }
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 2500);
@@ -66,10 +86,13 @@ export default function POSPage() {
     setPaymentMethod("cash");
     setDiscountType("flat");
     setDiscountValue("");
-    setVatPercent("");
+    setVatEnabled(false);
     setAmountReceived("");
     setAdvancePayment("");
     setNote("");
+    setSelectedCustomer(null);
+    setCustomerSearch("");
+    setCustomerPhone("");
   }
 
   function addToCart(p: Product) {
@@ -112,13 +135,40 @@ export default function POSPage() {
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const filteredCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      (c.phone || "").includes(customerSearch)
+  );
+  const exactCustomerMatch = customers.some(
+    (c) => c.name.toLowerCase() === customerSearch.trim().toLowerCase()
+  );
+
+  async function quickAddCustomer() {
+    const name = customerSearch.trim();
+    if (!name) return;
+    const { data, error } = await supabase
+      .from("customers")
+      .insert({ name, phone: customerPhone.trim() || null, store_id: storeId })
+      .select()
+      .single();
+    if (error) {
+      showToast("❌ " + error.message);
+      return;
+    }
+    setCustomers((prev) => [...prev, data]);
+    setSelectedCustomer(data);
+    setCustomerSearch(data.name);
+    setShowCustomerDropdown(false);
+  }
+
   // ---- Calculations ----
   const subtotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
   const discountValueNum = Number(discountValue) || 0;
   const discountAmount =
     discountType === "percent" ? (subtotal * discountValueNum) / 100 : discountValueNum;
   const afterDiscount = Math.max(subtotal - discountAmount, 0);
-  const vatPercentNum = Number(vatPercent) || 0;
+  const vatPercentNum = vatEnabled ? STANDARD_VAT_PERCENT : 0;
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
   const grandTotal = afterDiscount + vatAmount;
 
@@ -159,6 +209,9 @@ export default function POSPage() {
           advance_payment: paymentMethod === "cod" ? advancePaymentNum : 0,
           balance_due: balanceDue,
           note: note.trim() || null,
+          customer_id: selectedCustomer?.id || null,
+          customer_name: selectedCustomer?.name || (customerSearch.trim() || null),
+          cashier_email: profile?.email || null,
         })
         .select()
         .single();
@@ -209,6 +262,8 @@ export default function POSPage() {
         advancePayment: advancePaymentNum,
         balanceDue,
         note: note.trim(),
+        customerName: selectedCustomer?.name || customerSearch.trim() || "",
+        cashierEmail: profile?.email || "",
       });
 
       showToast(`${t("pos_saleSuccess")} ${fmt(grandTotal)}`);
@@ -298,6 +353,74 @@ export default function POSPage() {
 
         {cart.length > 0 && (
           <>
+            {/* Customer */}
+            <div className="mb-2">
+              <label className="text-xs text-slate-500">{t("pos_customer")}</label>
+              <div className="relative mt-1">
+                <input
+                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  placeholder={t("pos_customerSearchPlaceholder")}
+                  value={customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value);
+                    setSelectedCustomer(null);
+                    setShowCustomerDropdown(true);
+                  }}
+                  onFocus={() => setShowCustomerDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                />
+                {showCustomerDropdown && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {customerSearch.trim() === "" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomer(null);
+                          setCustomerSearch("");
+                          setShowCustomerDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 text-slate-400"
+                      >
+                        {t("pos_customerWalkIn")}
+                      </button>
+                    )}
+                    {filteredCustomers.map((c) => (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedCustomer(c);
+                          setCustomerSearch(c.name);
+                          setShowCustomerDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                      >
+                        {c.name} {c.phone && <span className="text-slate-400">({c.phone})</span>}
+                      </button>
+                    ))}
+                    {customerSearch.trim() !== "" && !exactCustomerMatch && (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={quickAddCustomer}
+                        className="w-full text-left px-3 py-2 text-sm text-blue-600 font-medium hover:bg-blue-50"
+                      >
+                        {t("pos_customerAddNew").replace("{name}", customerSearch.trim())}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              {customerSearch.trim() !== "" && !exactCustomerMatch && !selectedCustomer && (
+                <input
+                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                  placeholder={t("pos_customerPhone")}
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                />
+              )}
+            </div>
+
             {/* Discount */}
             <div className="mb-2">
               <label className="text-xs text-slate-500">{t("pos_discount")}</label>
@@ -321,15 +444,23 @@ export default function POSPage() {
             </div>
 
             {/* VAT */}
-            <div className="mb-2">
-              <label className="text-xs text-slate-500">{t("pos_vat")}</label>
-              <input
-                type="number"
-                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
-                value={vatPercent}
-                onChange={(e) => setVatPercent(e.target.value)}
-                placeholder="0"
-              />
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-xs text-slate-500">
+                {t("pos_vatToggle")} ({STANDARD_VAT_PERCENT}%)
+              </label>
+              <button
+                type="button"
+                onClick={() => setVatEnabled((v) => !v)}
+                className={`w-10 h-5 rounded-full transition relative ${
+                  vatEnabled ? "bg-blue-600" : "bg-slate-200"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition ${
+                    vatEnabled ? "left-5" : "left-0.5"
+                  }`}
+                />
+              </button>
             </div>
 
             {/* Totals */}
