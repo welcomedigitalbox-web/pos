@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase, Product } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
+import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
   product_id: string;
@@ -13,6 +14,9 @@ type CartItem = {
   stock_qty: number;
   avg_cost: number;
 };
+
+type PaymentMethod = "cash" | "card" | "bank_transfer" | "cod";
+type DiscountType = "percent" | "flat";
 
 function fmt(n: number) {
   return n.toLocaleString() + " MMK";
@@ -27,9 +31,19 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
 
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [discountType, setDiscountType] = useState<DiscountType>("flat");
+  const [discountValue, setDiscountValue] = useState("");
+  const [vatPercent, setVatPercent] = useState("");
+  const [amountReceived, setAmountReceived] = useState("");
+  const [advancePayment, setAdvancePayment] = useState("");
+  const [note, setNote] = useState("");
+
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+
   useEffect(() => {
     loadProducts();
-    setCart([]);
+    resetOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
@@ -45,6 +59,17 @@ export default function POSPage() {
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 2500);
+  }
+
+  function resetOrder() {
+    setCart([]);
+    setPaymentMethod("cash");
+    setDiscountType("flat");
+    setDiscountValue("");
+    setVatPercent("");
+    setAmountReceived("");
+    setAdvancePayment("");
+    setNote("");
   }
 
   function addToCart(p: Product) {
@@ -83,18 +108,56 @@ export default function POSPage() {
     });
   }
 
-  const total = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  // ---- Calculations ----
+  const subtotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+  const discountValueNum = Number(discountValue) || 0;
+  const discountAmount =
+    discountType === "percent" ? (subtotal * discountValueNum) / 100 : discountValueNum;
+  const afterDiscount = Math.max(subtotal - discountAmount, 0);
+  const vatPercentNum = Number(vatPercent) || 0;
+  const vatAmount = (afterDiscount * vatPercentNum) / 100;
+  const grandTotal = afterDiscount + vatAmount;
+
+  const amountReceivedNum = Number(amountReceived) || 0;
+  const change = paymentMethod === "cash" ? Math.max(amountReceivedNum - grandTotal, 0) : 0;
+
+  const advancePaymentNum = Number(advancePayment) || 0;
+  const balanceDue = paymentMethod === "cod" ? Math.max(grandTotal - advancePaymentNum, 0) : 0;
+
+  const canCheckout =
+    cart.length > 0 &&
+    (paymentMethod !== "cash" || amountReceivedNum >= grandTotal);
+
   async function checkout() {
     if (cart.length === 0) return;
+    if (paymentMethod === "cash" && amountReceivedNum < grandTotal) {
+      return showToast(t("pos_amountInsufficient"));
+    }
     setLoading(true);
     try {
       const { data: sale, error: saleErr } = await supabase
         .from("sales")
-        .insert({ store_id: storeId, total, cashier: "POS" })
+        .insert({
+          store_id: storeId,
+          total: grandTotal,
+          cashier: "POS",
+          payment_method: paymentMethod,
+          subtotal,
+          discount_type: discountType,
+          discount_value: discountValueNum,
+          discount_amount: discountAmount,
+          vat_percent: vatPercentNum,
+          vat_amount: vatAmount,
+          amount_received: paymentMethod === "cash" ? amountReceivedNum : grandTotal,
+          change_amount: change,
+          advance_payment: paymentMethod === "cod" ? advancePaymentNum : 0,
+          balance_due: balanceDue,
+          note: note.trim() || null,
+        })
         .select()
         .single();
       if (saleErr) throw saleErr;
@@ -120,9 +183,37 @@ export default function POSPage() {
           .eq("id", c.product_id);
       }
 
-      showToast(`${t("pos_saleSuccess")} ${fmt(total)}`);
-      setCart([]);
+      const paymentLabelMap: Record<PaymentMethod, string> = {
+        cash: "Cash",
+        card: "Card",
+        bank_transfer: "Bank Transfer",
+        cod: "COD",
+      };
+
+      setReceiptData({
+        storeId,
+        saleRef: sale.id.slice(0, 8).toUpperCase(),
+        createdAt: sale.created_at,
+        items: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.price, lineTotal: c.price * c.qty })),
+        subtotal,
+        discountLabel: discountType === "percent" ? `${discountValueNum}%` : fmt(discountAmount),
+        discountAmount,
+        vatPercent: vatPercentNum,
+        vatAmount,
+        grandTotal,
+        paymentMethod: paymentLabelMap[paymentMethod],
+        amountReceived: amountReceivedNum,
+        change,
+        advancePayment: advancePaymentNum,
+        balanceDue,
+        note: note.trim(),
+      });
+
+      showToast(`${t("pos_saleSuccess")} ${fmt(grandTotal)}`);
+      resetOrder();
       await loadProducts();
+
+      setTimeout(() => window.print(), 300);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       showToast("❌ " + message);
@@ -132,7 +223,7 @@ export default function POSPage() {
   }
 
   return (
-    <div className="pt-4 grid grid-cols-1 md:grid-cols-[1fr_340px] gap-4">
+    <div className="pt-4 grid grid-cols-1 md:grid-cols-[1fr_360px] gap-4">
       <div>
         <input
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3"
@@ -173,7 +264,7 @@ export default function POSPage() {
         {cart.length === 0 ? (
           <div className="text-center text-slate-400 text-sm py-6">{t("pos_emptyCart")}</div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 mb-3">
             {cart.map((c) => (
               <div
                 key={c.product_id}
@@ -202,13 +293,136 @@ export default function POSPage() {
             ))}
           </div>
         )}
-        <div className="flex justify-between font-bold text-lg border-t-2 border-slate-900 mt-3 pt-3">
-          <span>{t("pos_total")}</span>
-          <span>{fmt(total)}</span>
-        </div>
+
+        {cart.length > 0 && (
+          <>
+            {/* Discount */}
+            <div className="mb-2">
+              <label className="text-xs text-slate-500">{t("pos_discount")}</label>
+              <div className="flex gap-1 mt-1">
+                <input
+                  type="number"
+                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                  placeholder="0"
+                />
+                <select
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  value={discountType}
+                  onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                >
+                  <option value="flat">{t("pos_discountFlat")}</option>
+                  <option value="percent">{t("pos_discountPercent")}</option>
+                </select>
+              </div>
+            </div>
+
+            {/* VAT */}
+            <div className="mb-2">
+              <label className="text-xs text-slate-500">{t("pos_vat")}</label>
+              <input
+                type="number"
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                value={vatPercent}
+                onChange={(e) => setVatPercent(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+
+            {/* Totals */}
+            <div className="text-xs space-y-1 border-t border-slate-100 pt-2 mt-2">
+              <div className="flex justify-between text-slate-500">
+                <span>{t("pos_subtotal")}</span>
+                <span>{fmt(subtotal)}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-slate-500">
+                  <span>{t("pos_discount")}</span>
+                  <span>-{fmt(discountAmount)}</span>
+                </div>
+              )}
+              {vatAmount > 0 && (
+                <div className="flex justify-between text-slate-500">
+                  <span>VAT</span>
+                  <span>{fmt(vatAmount)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between font-bold text-lg border-t-2 border-slate-900 mt-2 pt-2">
+              <span>{t("pos_grandTotal")}</span>
+              <span>{fmt(grandTotal)}</span>
+            </div>
+
+            {/* Payment method */}
+            <div className="mt-3">
+              <label className="text-xs text-slate-500">{t("pos_paymentMethod")}</label>
+              <select
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+              >
+                <option value="cash">{t("pos_cash")}</option>
+                <option value="card">{t("pos_card")}</option>
+                <option value="bank_transfer">{t("pos_bankTransfer")}</option>
+                <option value="cod">{t("pos_cod")}</option>
+              </select>
+            </div>
+
+            {paymentMethod === "cash" && (
+              <div className="mt-2">
+                <label className="text-xs text-slate-500">{t("pos_amountReceived")}</label>
+                <input
+                  type="number"
+                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                  value={amountReceived}
+                  onChange={(e) => setAmountReceived(e.target.value)}
+                  placeholder="0"
+                />
+                {amountReceivedNum > 0 && (
+                  <div className="flex justify-between text-xs mt-1 text-green-700 font-medium">
+                    <span>{t("pos_change")}</span>
+                    <span>{fmt(change)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {paymentMethod === "cod" && (
+              <div className="mt-2">
+                <label className="text-xs text-slate-500">{t("pos_advancePayment")}</label>
+                <input
+                  type="number"
+                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                  value={advancePayment}
+                  onChange={(e) => setAdvancePayment(e.target.value)}
+                  placeholder="0"
+                />
+                <div className="flex justify-between text-xs mt-1 text-orange-600 font-medium">
+                  <span>{t("pos_balanceDue")}</span>
+                  <span>{fmt(balanceDue)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Note */}
+            <div className="mt-2">
+              <label className="text-xs text-slate-500">{t("pos_note")}</label>
+              <textarea
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                rows={2}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={t("pos_notePlaceholder")}
+              />
+            </div>
+          </>
+        )}
+
         <button
           onClick={checkout}
-          disabled={cart.length === 0 || loading}
+          disabled={!canCheckout || loading}
           className="w-full mt-3 py-3 bg-green-600 disabled:bg-slate-300 text-white rounded-lg font-semibold"
         >
           {loading ? t("pos_processing") : t("pos_checkout")}
@@ -220,6 +434,8 @@ export default function POSPage() {
           {toast}
         </div>
       )}
+
+      <Receipt data={receiptData} />
     </div>
   );
 }
