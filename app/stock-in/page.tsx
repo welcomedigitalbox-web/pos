@@ -11,29 +11,25 @@ function fmt(n: number) {
   return n.toLocaleString() + " MMK";
 }
 
-type PurchaseHistoryRow = {
-  id: string;
-  created_at: string;
-  supplier: string | null;
-  qty: number;
-  unit_cost: number;
-  total_cost: number;
-  new_avg_cost: number;
-  products: { name: string } | null;
+type FormState = {
+  id: string | null;
+  name: string;
+  sku: string;
+  price: string;
+  stock_qty: string;
+  avg_cost: string;
 };
 
-export default function StockInPage() {
+const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "" };
+
+export default function ProductsPage() {
   const { storeId } = useStore();
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
-  const [history, setHistory] = useState<PurchaseHistoryRow[]>([]);
-
-  const [productId, setProductId] = useState("");
-  const [supplier, setSupplier] = useState("");
-  const [qty, setQty] = useState("");
-  const [unitCost, setUnitCost] = useState("");
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -45,90 +41,84 @@ export default function StockInPage() {
   }, [profile]);
 
   useEffect(() => {
-    loadProducts();
-    loadHistory();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
   if (!profile || profile.role === "cashier") return null;
 
-  async function loadProducts() {
-    const { data } = await supabase
+  async function load() {
+    const { data, error } = await supabase
       .from("products")
       .select("*")
       .eq("store_id", storeId)
       .order("name");
-    setProducts(data || []);
-  }
-
-  async function loadHistory() {
-    const { data } = await supabase
-      .from("stock_purchases")
-      .select("*, products(name)")
-      .eq("store_id", storeId)
-      .order("created_at", { ascending: false })
-      .limit(30);
-    setHistory((data as unknown as PurchaseHistoryRow[]) || []);
+    if (!error) setProducts(data || []);
   }
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3000);
+    setTimeout(() => setToast(""), 2500);
   }
 
-  const selectedProduct = products.find((p) => p.id === productId);
-  const qtyNum = Number(qty) || 0;
-  const unitCostNum = Number(unitCost) || 0;
-
-  let previewAvgCost: number | null = null;
-  if (selectedProduct && qtyNum > 0 && unitCostNum >= 0) {
-    const existingValue = selectedProduct.stock_qty * selectedProduct.avg_cost;
-    const newValue = qtyNum * unitCostNum;
-    previewAvgCost = (existingValue + newValue) / (selectedProduct.stock_qty + qtyNum);
+  function openNew() {
+    setForm(emptyForm);
+    setShowForm(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function openEdit(p: Product) {
+    setForm({
+      id: p.id,
+      name: p.name,
+      sku: p.sku || "",
+      price: String(p.price),
+      stock_qty: String(p.stock_qty),
+      avg_cost: String(p.avg_cost),
+    });
+    setShowForm(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedProduct) return showToast(t("stockIn_selectProduct"));
-    if (qtyNum <= 0) return showToast(t("stockIn_qtyInvalid"));
-    if (unitCostNum < 0) return showToast(t("stockIn_costInvalid"));
+    if (!form.name.trim()) return showToast(t("products_nameRequired"));
+    const price = Number(form.price);
+    const stock_qty = Number(form.stock_qty);
+    const avg_cost = form.avg_cost === "" ? 0 : Number(form.avg_cost);
+    if (isNaN(price) || price < 0) return showToast(t("products_priceInvalid"));
+    if (isNaN(stock_qty) || stock_qty < 0) return showToast(t("products_stockInvalid"));
+    if (isNaN(avg_cost) || avg_cost < 0) return showToast(t("products_avgCostInvalid"));
 
     setSaving(true);
     try {
-      const existingValue = selectedProduct.stock_qty * selectedProduct.avg_cost;
-      const newValue = qtyNum * unitCostNum;
-      const newQty = selectedProduct.stock_qty + qtyNum;
-      const newAvgCost = newQty > 0 ? (existingValue + newValue) / newQty : 0;
-
-      const { error: purchaseErr } = await supabase.from("stock_purchases").insert({
-        product_id: selectedProduct.id,
-        store_id: storeId,
-        supplier: supplier.trim() || null,
-        qty: qtyNum,
-        unit_cost: unitCostNum,
-        total_cost: qtyNum * unitCostNum,
-        new_avg_cost: newAvgCost,
-      });
-      if (purchaseErr) throw purchaseErr;
-
-      const { error: updateErr } = await supabase
-        .from("products")
-        .update({
-          stock_qty: newQty,
-          avg_cost: newAvgCost,
-          last_purchase_cost: unitCostNum,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selectedProduct.id);
-      if (updateErr) throw updateErr;
-
-      showToast(`${t("stockIn_success")} ${fmt(newAvgCost)}`);
-      setProductId("");
-      setSupplier("");
-      setQty("");
-      setUnitCost("");
-      await loadProducts();
-      await loadHistory();
+      if (form.id) {
+        const { error } = await supabase
+          .from("products")
+          .update({
+            name: form.name.trim(),
+            sku: form.sku.trim() || null,
+            price,
+            stock_qty,
+            avg_cost,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", form.id);
+        if (error) throw error;
+        showToast(t("products_updateSuccess"));
+      } else {
+        const { error } = await supabase.from("products").insert({
+          name: form.name.trim(),
+          sku: form.sku.trim() || null,
+          price,
+          stock_qty,
+          avg_cost,
+          store_id: storeId,
+        });
+        if (error) throw error;
+        showToast(t("products_createSuccess"));
+      }
+      setShowForm(false);
+      setForm(emptyForm);
+      await load();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       showToast("❌ " + message);
@@ -137,118 +127,160 @@ export default function StockInPage() {
     }
   }
 
+  async function handleDelete(id: string) {
+    if (!confirm(t("products_deleteConfirm"))) return;
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) {
+      showToast("❌ " + error.message);
+      return;
+    }
+    showToast(t("products_deleteSuccess"));
+    await load();
+  }
+
   return (
-    <div className="pt-4 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
-      <div className="bg-white border border-slate-200 rounded-xl p-4 h-fit">
-        <h2 className="font-semibold mb-3">{t("stockIn_title")}</h2>
-        <form onSubmit={handleSubmit}>
-          <label className="text-sm text-slate-600">{t("stockIn_product")}</label>
-          <select
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            required
-          >
-            <option value="">{t("stockIn_selectPlaceholder")}</option>
+    <div className="pt-4">
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="font-semibold text-lg">{t("products_title")} ({storeId})</h2>
+        <button
+          onClick={openNew}
+          className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium"
+        >
+          {t("products_addNew")}
+        </button>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="text-left px-4 py-2">{t("products_name")}</th>
+              <th className="text-left px-4 py-2">{t("products_sku")}</th>
+              <th className="text-left px-4 py-2">{t("products_price")}</th>
+              <th className="text-left px-4 py-2">{t("products_avgCost")}</th>
+              <th className="text-left px-4 py-2">{t("products_stock")}</th>
+              <th className="text-left px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
             {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.stock_qty} @ {p.avg_cost.toLocaleString()})
-              </option>
-            ))}
-          </select>
-
-          <label className="text-sm text-slate-600">{t("stockIn_supplier")}</label>
-          <input
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-            value={supplier}
-            onChange={(e) => setSupplier(e.target.value)}
-          />
-
-          <label className="text-sm text-slate-600">{t("stockIn_qty")}</label>
-          <input
-            type="number"
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            required
-          />
-
-          <label className="text-sm text-slate-600">{t("stockIn_unitCost")}</label>
-          <input
-            type="number"
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-            value={unitCost}
-            onChange={(e) => setUnitCost(e.target.value)}
-            required
-          />
-
-          {previewAvgCost !== null && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs mb-3">
-              <div className="flex justify-between">
-                <span>{t("stockIn_currentStock")}</span>
-                <span>
-                  {selectedProduct!.stock_qty} @ {fmt(selectedProduct!.avg_cost)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>{t("stockIn_newPurchase")}</span>
-                <span>
-                  {qtyNum} @ {fmt(unitCostNum)}
-                </span>
-              </div>
-              <div className="flex justify-between font-semibold text-blue-700 border-t border-blue-200 mt-1 pt-1">
-                <span>{t("stockIn_newAvgCost")}</span>
-                <span>{fmt(previewAvgCost)}</span>
-              </div>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg font-semibold text-sm"
-          >
-            {saving ? t("stockIn_processing") : t("stockIn_submit")}
-          </button>
-        </form>
-      </div>
-
-      <div>
-        <h2 className="font-semibold mb-3">{t("stockIn_historyTitle")}</h2>
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="text-left px-3 py-2">{t("history_time")}</th>
-                <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
-                <th className="text-left px-3 py-2">{t("stockIn_supplier")}</th>
-                <th className="text-left px-3 py-2">{t("products_stock")}</th>
-                <th className="text-left px-3 py-2">{t("stockIn_unitCost")}</th>
-                <th className="text-left px-3 py-2">{t("stockIn_newAvgCost")}</th>
+              <tr key={p.id} className="border-t border-slate-100">
+                <td className="px-4 py-2">{p.name}</td>
+                <td className="px-4 py-2 text-slate-400">{p.sku || "-"}</td>
+                <td className="px-4 py-2">{fmt(p.price)}</td>
+                <td className="px-4 py-2 text-slate-500">
+                  {p.previous_avg_cost > 0 && p.previous_avg_cost !== p.avg_cost ? (
+                    <span>
+                      <span className="line-through text-slate-300">{fmt(p.previous_avg_cost)}</span>
+                      {" → "}
+                      <span className="font-medium text-slate-700">{fmt(p.avg_cost)}</span>
+                    </span>
+                  ) : (
+                    fmt(p.avg_cost)
+                  )}
+                </td>
+                <td className={`px-4 py-2 ${p.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
+                  {p.stock_qty}
+                </td>
+                <td className="px-4 py-2 text-right space-x-2">
+                  <button
+                    onClick={() => openEdit(p)}
+                    className="text-blue-600 text-xs font-medium"
+                  >
+                    {t("products_edit")}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(p.id)}
+                    className="text-red-600 text-xs font-medium"
+                  >
+                    {t("products_delete")}
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {history.map((h) => (
-                <tr key={h.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2">{new Date(h.created_at).toLocaleString()}</td>
-                  <td className="px-3 py-2">{h.products?.name || "-"}</td>
-                  <td className="px-3 py-2 text-slate-400">{h.supplier || "-"}</td>
-                  <td className="px-3 py-2">{h.qty}</td>
-                  <td className="px-3 py-2">{fmt(h.unit_cost)}</td>
-                  <td className="px-3 py-2 font-medium">{fmt(h.new_avg_cost)}</td>
-                </tr>
-              ))}
-              {history.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-400 py-8">
-                    {t("stockIn_historyEmpty")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            ))}
+            {products.length === 0 && (
+              <tr>
+                <td colSpan={6} className="text-center text-slate-400 py-8">
+                  {t("products_empty")}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
+
+      {showForm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <form
+            onSubmit={handleSave}
+            className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg"
+          >
+            <h3 className="font-semibold text-lg mb-4">
+              {form.id ? t("products_modalEditTitle") : t("products_modalNewTitle")}
+            </h3>
+
+            <label className="text-sm text-slate-600">{t("products_productName")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+            />
+
+            <label className="text-sm text-slate-600">{t("products_skuOptional")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.sku}
+              onChange={(e) => setForm({ ...form, sku: e.target.value })}
+            />
+
+            <label className="text-sm text-slate-600">{t("products_priceMmk")}</label>
+            <input
+              type="number"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              required
+            />
+
+            <label className="text-sm text-slate-600">{t("products_stockQty")}</label>
+            <input
+              type="number"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.stock_qty}
+              onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
+              required
+            />
+
+            <label className="text-sm text-slate-600">{t("products_avgCostMmk")}</label>
+            <input
+              type="number"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={form.avg_cost}
+              onChange={(e) => setForm({ ...form, avg_cost: e.target.value })}
+              placeholder="0"
+            />
+            <p className="text-xs text-slate-400 -mt-3 mb-4">{t("products_avgCostWarning")}</p>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
+              >
+                {t("products_cancel")}
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
+              >
+                {saving ? t("products_saving") : t("products_save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
