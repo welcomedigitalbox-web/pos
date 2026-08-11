@@ -61,8 +61,15 @@ export default function ProductsPage() {
     setTimeout(() => setToast(""), 2500);
   }
 
+  function generateSku() {
+    const storePrefix = storeId.replace(/[^A-Z0-9]/gi, "").slice(0, 4).toUpperCase();
+    const timestampPart = Date.now().toString().slice(-6);
+    const randomPart = Math.floor(Math.random() * 90 + 10); // 2-digit
+    return `${storePrefix}-${timestampPart}${randomPart}`;
+  }
+
   function openNew() {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, sku: generateSku() });
     setShowForm(true);
   }
 
@@ -81,6 +88,7 @@ export default function ProductsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) return showToast(t("products_nameRequired"));
+    if (!form.sku.trim()) return showToast(t("products_skuRequired"));
     const price = Number(form.price);
     const stock_qty = Number(form.stock_qty);
     const avg_cost = form.avg_cost === "" ? 0 : Number(form.avg_cost);
@@ -228,11 +236,27 @@ export default function ProductsPage() {
             />
 
             <label className="text-sm text-slate-600">{t("products_skuOptional")}</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.sku}
-              onChange={(e) => setForm({ ...form, sku: e.target.value })}
-            />
+            <div className="flex gap-1 mt-1 mb-1">
+              <input
+                className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.sku}
+                onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                required
+              />
+              {!form.id && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, sku: generateSku() })}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500"
+                  title={t("products_skuRegenerate")}
+                >
+                  🔄
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              {!form.id ? t("products_skuAutoHint") : ""}
+            </p>
 
             <label className="text-sm text-slate-600">{t("products_priceMmk")}</label>
             <input
