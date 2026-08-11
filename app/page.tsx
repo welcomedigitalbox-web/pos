@@ -10,6 +10,7 @@ type CartItem = {
   price: number;
   qty: number;
   stock_qty: number;
+  avg_cost: number;
 };
 
 function fmt(n: number) {
@@ -59,7 +60,7 @@ export default function POSPage() {
       }
       return [
         ...prev,
-        { product_id: p.id, name: p.name, price: p.price, qty: 1, stock_qty: p.stock_qty },
+        { product_id: p.id, name: p.name, price: p.price, qty: 1, stock_qty: p.stock_qty, avg_cost: p.avg_cost },
       ];
     });
   }
@@ -103,6 +104,8 @@ export default function POSPage() {
         qty: c.qty,
         unit_price: c.price,
         line_total: c.price * c.qty,
+        unit_cost: c.avg_cost,
+        line_cogs: c.avg_cost * c.qty,
       }));
       const { error: itemsErr } = await supabase.from("sale_items").insert(items);
       if (itemsErr) throw itemsErr;
