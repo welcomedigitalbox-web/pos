@@ -13,6 +13,7 @@ export type Product = {
   stock_qty: number;
   store_id: string;
   avg_cost: number;
+  previous_avg_cost: number;
   last_purchase_cost: number;
   created_at: string;
   updated_at: string;
