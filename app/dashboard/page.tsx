@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useStore } from "../store-context";
+import { useAuth } from "../auth-context";
+import { useRouter } from "next/navigation";
 
 function fmt(n: number) {
   return n.toLocaleString() + " MMK";
@@ -10,14 +12,25 @@ function fmt(n: number) {
 
 export default function DashboardPage() {
   const { storeId } = useStore();
+  const { profile } = useAuth();
+  const router = useRouter();
   const [todayTotal, setTodayTotal] = useState(0);
   const [todayCount, setTodayCount] = useState(0);
   const [lowStock, setLowStock] = useState(0);
 
   useEffect(() => {
+    if (profile && profile.role === "cashier") {
+      router.replace("/");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
+  useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
+
+  if (!profile || profile.role === "cashier") return null;
 
   async function load() {
     const todayStart = new Date();
