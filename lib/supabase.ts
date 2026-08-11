@@ -60,3 +60,17 @@ export type SaleItem = {
   unit_price: number;
   line_total: number;
 };
+
+export type StockBatch = {
+  id: string;
+  product_id: string;
+  store_id: string;
+  supplier: string | null;
+  qty: number;
+  unit_cost: number;
+  total_cost: number;
+  new_avg_cost: number;
+  expiry_date: string | null;
+  remaining_qty: number;
+  created_at: string;
+};
