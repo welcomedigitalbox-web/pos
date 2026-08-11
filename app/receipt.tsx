@@ -21,6 +21,8 @@ export type ReceiptData = {
   advancePayment: number;
   balanceDue: number;
   note: string;
+  customerName: string;
+  cashierEmail: string;
 };
 
 export default function Receipt({ data }: { data: ReceiptData | null }) {
@@ -32,6 +34,8 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
         <div style={{ fontWeight: "bold", fontSize: 14 }}>{data.storeId}</div>
         <div>{new Date(data.createdAt).toLocaleString()}</div>
         <div>Receipt: {data.saleRef}</div>
+        {data.customerName && <div>Customer: {data.customerName}</div>}
+        {data.cashierEmail && <div>Cashier: {data.cashierEmail}</div>}
       </div>
       <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
       {data.items.map((item, i) => (
