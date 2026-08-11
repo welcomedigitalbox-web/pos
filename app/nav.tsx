@@ -22,6 +22,7 @@ export default function Nav() {
     ...(isManager
       ? [
           { href: "/products", label: "Products" },
+          { href: "/stock-in", label: "Stock-In" },
           { href: "/dashboard", label: "Dashboard" },
         ]
       : []),
