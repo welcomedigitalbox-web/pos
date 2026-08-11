@@ -20,6 +20,8 @@ type PurchaseRow = {
   unit_cost: number;
   total_cost: number;
   new_avg_cost: number;
+  expiry_date: string | null;
+  remaining_qty: number;
   products: { name: string } | null;
 };
 
@@ -41,6 +43,7 @@ export default function StockInPage() {
   const [supplier, setSupplier] = useState("");
   const [qty, setQty] = useState("");
   const [unitCost, setUnitCost] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [saving, setSaving] = useState(false);
 
   // password confirm state
@@ -115,6 +118,7 @@ export default function StockInPage() {
     setSupplier("");
     setQty("");
     setUnitCost("");
+    setExpiryDate("");
     setShowForm(true);
   }
 
@@ -126,6 +130,7 @@ export default function StockInPage() {
     setSupplier(row.supplier || "");
     setQty(String(row.qty));
     setUnitCost(String(row.unit_cost));
+    setExpiryDate(row.expiry_date || "");
     setShowForm(true);
   }
 
@@ -153,6 +158,8 @@ export default function StockInPage() {
             unit_cost: unitCostNum,
             total_cost: qtyNum * unitCostNum,
             new_avg_cost: newAvgCost,
+            expiry_date: expiryDate || null,
+            remaining_qty: qtyNum,
           })
           .eq("id", editId);
         if (purchaseErr) throw purchaseErr;
@@ -183,6 +190,8 @@ export default function StockInPage() {
           unit_cost: unitCostNum,
           total_cost: qtyNum * unitCostNum,
           new_avg_cost: newAvgCost,
+          expiry_date: expiryDate || null,
+          remaining_qty: qtyNum,
         });
         if (purchaseErr) throw purchaseErr;
 
@@ -299,12 +308,19 @@ export default function StockInPage() {
               <th className="text-left px-3 py-2">{t("stockIn_qtyColumn")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_unitCost")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_newAvgCost")}</th>
+              <th className="text-left px-3 py-2">{t("stockIn_expiryDate")}</th>
+              <th className="text-left px-3 py-2">{t("stockIn_remaining")}</th>
               <th className="text-right px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {history.map((h) => {
               const isLatest = latestByProduct.get(h.product_id) === h.id;
+              const isExpired = h.expiry_date && new Date(h.expiry_date) < new Date();
+              const isExpiringSoon =
+                h.expiry_date &&
+                !isExpired &&
+                new Date(h.expiry_date).getTime() - Date.now() < 30 * 24 * 60 * 60 * 1000;
               return (
                 <tr key={h.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{new Date(h.created_at).toLocaleString()}</td>
@@ -313,6 +329,15 @@ export default function StockInPage() {
                   <td className="px-3 py-2">{h.qty}</td>
                   <td className="px-3 py-2">{fmt(h.unit_cost)}</td>
                   <td className="px-3 py-2 font-medium">{fmt(h.new_avg_cost)}</td>
+                  <td
+                    className={`px-3 py-2 ${
+                      isExpired ? "text-red-600 font-semibold" : isExpiringSoon ? "text-orange-600 font-medium" : ""
+                    }`}
+                  >
+                    {h.expiry_date ? h.expiry_date : "-"}
+                    {isExpired && " ⚠️"}
+                  </td>
+                  <td className="px-3 py-2">{h.remaining_qty}</td>
                   <td className="px-3 py-2 text-right space-x-2">
                     {isLatest ? (
                       <>
@@ -334,7 +359,7 @@ export default function StockInPage() {
             })}
             {history.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-slate-400 py-8">
+                <td colSpan={9} className="text-center text-slate-400 py-8">
                   {t("stockIn_historyEmpty")}
                 </td>
               </tr>
@@ -415,6 +440,14 @@ export default function StockInPage() {
               value={unitCost}
               onChange={(e) => setUnitCost(e.target.value)}
               required
+            />
+
+            <label className="text-sm text-slate-600">{t("stockIn_expiryDate")}</label>
+            <input
+              type="date"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
             />
 
             {previewAvgCost !== null && (
