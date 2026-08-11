@@ -25,6 +25,18 @@ export type Sale = {
   store_id: string;
   cashier: string | null;
   total: number;
+  payment_method: "cash" | "card" | "bank_transfer" | "cod";
+  subtotal: number;
+  discount_type: "percent" | "flat";
+  discount_value: number;
+  discount_amount: number;
+  vat_percent: number;
+  vat_amount: number;
+  amount_received: number;
+  change_amount: number;
+  advance_payment: number;
+  balance_due: number;
+  note: string | null;
   created_at: string;
 };
 
