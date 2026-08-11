@@ -150,8 +150,8 @@ export default function ProductsPage() {
         </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-4 py-2">{t("products_name")}</th>
@@ -168,7 +168,17 @@ export default function ProductsPage() {
                 <td className="px-4 py-2">{p.name}</td>
                 <td className="px-4 py-2 text-slate-400">{p.sku || "-"}</td>
                 <td className="px-4 py-2">{fmt(p.price)}</td>
-                <td className="px-4 py-2 text-slate-500">{fmt(p.avg_cost)}</td>
+                <td className="px-4 py-2 text-slate-500">
+                  {p.previous_avg_cost > 0 && p.previous_avg_cost !== p.avg_cost ? (
+                    <span>
+                      <span className="line-through text-slate-300">{fmt(p.previous_avg_cost)}</span>
+                      {" → "}
+                      <span className="font-medium text-slate-700">{fmt(p.avg_cost)}</span>
+                    </span>
+                  ) : (
+                    fmt(p.avg_cost)
+                  )}
+                </td>
                 <td className={`px-4 py-2 ${p.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
                   {p.stock_qty}
                 </td>
