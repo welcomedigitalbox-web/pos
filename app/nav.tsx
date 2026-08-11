@@ -27,6 +27,7 @@ export default function Nav() {
           { href: "/stock-in", label: t("nav_stockIn") },
           { href: "/barcode", label: t("nav_barcode") },
           { href: "/ledger", label: t("nav_ledger") },
+          { href: "/warehouse", label: t("nav_warehouse") },
           { href: "/dashboard", label: t("nav_dashboard") },
         ]
       : []),
