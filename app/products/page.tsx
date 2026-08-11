@@ -85,6 +85,7 @@ export default function ProductsPage() {
     setSaving(true);
     try {
       if (form.id) {
+        // edit
         const { error } = await supabase
           .from("products")
           .update({
@@ -98,6 +99,7 @@ export default function ProductsPage() {
         if (error) throw error;
         showToast("✅ Product update ပြီးပါပြီ");
       } else {
+        // create
         const { error } = await supabase.from("products").insert({
           name: form.name.trim(),
           sku: form.sku.trim() || null,
@@ -149,6 +151,7 @@ export default function ProductsPage() {
               <th className="text-left px-4 py-2">Name</th>
               <th className="text-left px-4 py-2">SKU</th>
               <th className="text-left px-4 py-2">Price</th>
+              <th className="text-left px-4 py-2">Avg Cost</th>
               <th className="text-left px-4 py-2">Stock</th>
               <th className="text-left px-4 py-2"></th>
             </tr>
@@ -159,6 +162,7 @@ export default function ProductsPage() {
                 <td className="px-4 py-2">{p.name}</td>
                 <td className="px-4 py-2 text-slate-400">{p.sku || "-"}</td>
                 <td className="px-4 py-2">{fmt(p.price)}</td>
+                <td className="px-4 py-2 text-slate-500">{fmt(p.avg_cost)}</td>
                 <td className={`px-4 py-2 ${p.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
                   {p.stock_qty}
                 </td>
@@ -180,7 +184,7 @@ export default function ProductsPage() {
             ))}
             {products.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center text-slate-400 py-8">
+                <td colSpan={6} className="text-center text-slate-400 py-8">
                   Product မရှိသေးပါ
                 </td>
               </tr>
