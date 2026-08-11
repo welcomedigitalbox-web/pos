@@ -126,7 +126,9 @@ export default function POSPage() {
   const change = paymentMethod === "cash" ? Math.max(amountReceivedNum - grandTotal, 0) : 0;
 
   const advancePaymentNum = Number(advancePayment) || 0;
+  const codOverpaid = paymentMethod === "cod" && advancePaymentNum > grandTotal;
   const balanceDue = paymentMethod === "cod" ? Math.max(grandTotal - advancePaymentNum, 0) : 0;
+  const codChange = codOverpaid ? advancePaymentNum - grandTotal : 0;
 
   const canCheckout =
     cart.length > 0 &&
@@ -153,7 +155,7 @@ export default function POSPage() {
           vat_percent: vatPercentNum,
           vat_amount: vatAmount,
           amount_received: paymentMethod === "cash" ? amountReceivedNum : grandTotal,
-          change_amount: change,
+          change_amount: paymentMethod === "cod" ? codChange : change,
           advance_payment: paymentMethod === "cod" ? advancePaymentNum : 0,
           balance_due: balanceDue,
           note: note.trim() || null,
@@ -203,7 +205,7 @@ export default function POSPage() {
         grandTotal,
         paymentMethod: paymentLabelMap[paymentMethod],
         amountReceived: amountReceivedNum,
-        change,
+        change: paymentMethod === "cod" ? codChange : change,
         advancePayment: advancePaymentNum,
         balanceDue,
         note: note.trim(),
@@ -403,6 +405,12 @@ export default function POSPage() {
                   <span>{t("pos_balanceDue")}</span>
                   <span>{fmt(balanceDue)}</span>
                 </div>
+                {codOverpaid && (
+                  <div className="flex justify-between text-xs mt-1 text-green-700 font-medium">
+                    <span>{t("pos_change")}</span>
+                    <span>{fmt(codChange)}</span>
+                  </div>
+                )}
               </div>
             )}
 
