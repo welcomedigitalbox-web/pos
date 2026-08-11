@@ -131,8 +131,10 @@ export default function POSPage() {
     });
   }
 
-  const filtered = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+  const filtered = products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      (p.sku || "").toLowerCase().includes(search.toLowerCase())
   );
 
   const filteredCustomers = customers.filter(
@@ -306,7 +308,18 @@ export default function POSPage() {
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3"
           placeholder={t("pos_search")}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            setSearch(value);
+            // Barcode scanner support: exact SKU match -> add to cart immediately, clear search
+            const exactSkuMatch = products.find(
+              (p) => (p.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
+            );
+            if (exactSkuMatch) {
+              addToCart(exactSkuMatch);
+              setSearch("");
+            }
+          }}
         />
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {filtered.map((p) => (
