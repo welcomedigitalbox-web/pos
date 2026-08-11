@@ -19,7 +19,12 @@ export default function Nav() {
   const tabs = [
     { href: "/", label: "POS" },
     { href: "/history", label: "Sale History" },
-    ...(isManager ? [{ href: "/dashboard", label: "Dashboard" }] : []),
+    ...(isManager
+      ? [
+          { href: "/products", label: "Products" },
+          { href: "/dashboard", label: "Dashboard" },
+        ]
+      : []),
   ];
 
   return (
