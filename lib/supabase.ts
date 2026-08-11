@@ -12,10 +12,11 @@ export type Product = {
   price: number;
   stock_qty: number;
   store_id: string;
+  avg_cost: number;
+  last_purchase_cost: number;
   created_at: string;
   updated_at: string;
 };
-
 export type Sale = {
   id: string;
   sale_ref: string | null;
