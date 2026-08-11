@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Nav from "./nav";
 import { StoreProvider } from "./store-context";
+import { AuthProvider } from "./auth-context";
 
 export const metadata: Metadata = {
   title: "POS MVP",
@@ -16,10 +17,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-slate-50 text-slate-900">
-        <StoreProvider>
-          <Nav />
-          <main className="max-w-6xl mx-auto px-4 pb-16">{children}</main>
-        </StoreProvider>
+        <AuthProvider>
+          <StoreProvider>
+            <Nav />
+            <main className="max-w-6xl mx-auto px-4 pb-16">{children}</main>
+          </StoreProvider>
+        </AuthProvider>
       </body>
     </html>
   );
