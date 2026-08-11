@@ -252,7 +252,7 @@ export default function WarehousePage() {
 
       {/* Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[900px]">
+        <table className="w-full text-sm min-w-[1000px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-3 py-2">{t("warehouse_colStore")}</th>
@@ -260,6 +260,7 @@ export default function WarehousePage() {
               <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colSold")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_colAvgCost")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colTarget")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colStockPercent")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colStatus")}</th>
@@ -269,7 +270,7 @@ export default function WarehousePage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} className="text-center text-slate-400 py-8">
+                <td colSpan={10} className="text-center text-slate-400 py-8">
                   ...
                 </td>
               </tr>
@@ -284,6 +285,7 @@ export default function WarehousePage() {
                     <td className="px-3 py-2 text-slate-400">{r.product.sku || "-"}</td>
                     <td className="px-3 py-2">{r.sold.toLocaleString()}</td>
                     <td className="px-3 py-2 font-medium">{r.available.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-slate-500">{fmt(r.product.avg_cost)}</td>
                     <td className="px-3 py-2">{r.target.toLocaleString()}</td>
                     <td className="px-3 py-2">{r.stockPercent !== null ? `${r.stockPercent.toFixed(0)}%` : "-"}</td>
                     <td className="px-3 py-2">
@@ -303,7 +305,7 @@ export default function WarehousePage() {
               })}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center text-slate-400 py-8">
+                <td colSpan={10} className="text-center text-slate-400 py-8">
                   {t("warehouse_empty")}
                 </td>
               </tr>
