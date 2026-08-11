@@ -16,9 +16,10 @@ type FormState = {
   sku: string;
   price: string;
   stock_qty: string;
+  avg_cost: string;
 };
 
-const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "" };
+const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "" };
 
 export default function ProductsPage() {
   const { storeId } = useStore();
@@ -70,6 +71,7 @@ export default function ProductsPage() {
       sku: p.sku || "",
       price: String(p.price),
       stock_qty: String(p.stock_qty),
+      avg_cost: String(p.avg_cost),
     });
     setShowForm(true);
   }
@@ -79,8 +81,10 @@ export default function ProductsPage() {
     if (!form.name.trim()) return showToast("Product name လိုအပ်ပါတယ်");
     const price = Number(form.price);
     const stock_qty = Number(form.stock_qty);
+    const avg_cost = form.avg_cost === "" ? 0 : Number(form.avg_cost);
     if (isNaN(price) || price < 0) return showToast("Price မှားနေပါတယ်");
     if (isNaN(stock_qty) || stock_qty < 0) return showToast("Stock qty မှားနေပါတယ်");
+    if (isNaN(avg_cost) || avg_cost < 0) return showToast("Avg cost မှားနေပါတယ်");
 
     setSaving(true);
     try {
@@ -93,6 +97,7 @@ export default function ProductsPage() {
             sku: form.sku.trim() || null,
             price,
             stock_qty,
+            avg_cost,
             updated_at: new Date().toISOString(),
           })
           .eq("id", form.id);
@@ -105,6 +110,7 @@ export default function ProductsPage() {
           sku: form.sku.trim() || null,
           price,
           stock_qty,
+          avg_cost,
           store_id: storeId,
         });
         if (error) throw error;
@@ -230,11 +236,23 @@ export default function ProductsPage() {
             <label className="text-sm text-slate-600">Stock Quantity</label>
             <input
               type="number"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={form.stock_qty}
               onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
               required
             />
+
+            <label className="text-sm text-slate-600">Avg Cost (MMK)</label>
+            <input
+              type="number"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={form.avg_cost}
+              onChange={(e) => setForm({ ...form, avg_cost: e.target.value })}
+              placeholder="0"
+            />
+            <p className="text-xs text-slate-400 -mt-3 mb-4">
+              ⚠️ Stock-In ကနေ auto တွက်ပေးတာပါ — manual ပြင်ရင် COGS accuracy ကို ထိခိုက်နိုင်ပါတယ်
+            </p>
 
             <div className="flex gap-2">
               <button
