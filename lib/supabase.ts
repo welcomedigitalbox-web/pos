@@ -19,6 +19,14 @@ export type Product = {
   updated_at: string;
 };
 
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string | null;
+  store_id: string;
+  created_at: string;
+};
+
 export type Sale = {
   id: string;
   sale_ref: string | null;
@@ -37,6 +45,9 @@ export type Sale = {
   advance_payment: number;
   balance_due: number;
   note: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  cashier_email: string | null;
   created_at: string;
 };
 
