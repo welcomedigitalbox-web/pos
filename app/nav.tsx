@@ -25,6 +25,8 @@ export default function Nav() {
       ? [
           { href: "/products", label: t("nav_products") },
           { href: "/stock-in", label: t("nav_stockIn") },
+          { href: "/barcode", label: t("nav_barcode") },
+          { href: "/ledger", label: t("nav_ledger") },
           { href: "/dashboard", label: t("nav_dashboard") },
         ]
       : []),
