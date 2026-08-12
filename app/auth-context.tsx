@@ -10,6 +10,7 @@ type Profile = {
   email: string;
   role: "cashier" | "manager" | "admin";
   store_id: string;
+  permissions: string[];
 };
 
 type AuthContextType = {
