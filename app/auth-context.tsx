@@ -5,10 +5,12 @@ import { supabase } from "@/lib/supabase";
 import { useRouter, usePathname } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 
+import type { UserRole } from "./permissions";
+
 type Profile = {
   id: string;
   email: string;
-  role: "cashier" | "manager" | "admin";
+  role: UserRole;
   store_id: string;
   permissions: string[];
 };
