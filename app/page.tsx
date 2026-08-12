@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, StoreSettings } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
@@ -16,7 +16,6 @@ type CartItem = {
   avg_cost: number;
 };
 
-type PaymentMethod = "cash" | "card" | "bank_transfer" | "cod";
 type DiscountType = "percent" | "flat";
 
 const STANDARD_VAT_PERCENT = 5;
@@ -35,7 +34,9 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
 
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
   const [discountType, setDiscountType] = useState<DiscountType>("flat");
   const [discountValue, setDiscountValue] = useState("");
   const [vatEnabled, setVatEnabled] = useState(false);
@@ -54,9 +55,27 @@ export default function POSPage() {
   useEffect(() => {
     loadProducts();
     loadCustomers();
+    loadPaymentMethods();
+    loadStoreSettings();
     resetOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
+
+  async function loadPaymentMethods() {
+    const { data } = await supabase
+      .from("payment_methods")
+      .select("*")
+      .eq("store_id", storeId)
+      .eq("is_active", true)
+      .order("sort_order");
+    setPaymentMethods(data || []);
+    if (data && data.length > 0) setPaymentMethod(data[0].code);
+  }
+
+  async function loadStoreSettings() {
+    const { data } = await supabase.from("store_settings").select("*").eq("store_id", storeId).maybeSingle();
+    setStoreSettings(data);
+  }
 
   async function loadProducts() {
     const { data, error } = await supabase
@@ -83,7 +102,7 @@ export default function POSPage() {
 
   function resetOrder() {
     setCart([]);
-    setPaymentMethod("cash");
+    setPaymentMethod(paymentMethods[0]?.code || "cash");
     setDiscountType("flat");
     setDiscountValue("");
     setVatEnabled(false);
@@ -174,21 +193,25 @@ export default function POSPage() {
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
   const grandTotal = afterDiscount + vatAmount;
 
+  const selectedMethod = paymentMethods.find((m) => m.code === paymentMethod);
+  const isCashMethod = selectedMethod?.is_cash ?? false;
+  const isCodMethod = selectedMethod?.is_cod ?? false;
+
   const amountReceivedNum = Number(amountReceived) || 0;
-  const change = paymentMethod === "cash" ? Math.max(amountReceivedNum - grandTotal, 0) : 0;
+  const change = isCashMethod ? Math.max(amountReceivedNum - grandTotal, 0) : 0;
 
   const advancePaymentNum = Number(advancePayment) || 0;
-  const codOverpaid = paymentMethod === "cod" && advancePaymentNum > grandTotal;
-  const balanceDue = paymentMethod === "cod" ? Math.max(grandTotal - advancePaymentNum, 0) : 0;
+  const codOverpaid = isCodMethod && advancePaymentNum > grandTotal;
+  const balanceDue = isCodMethod ? Math.max(grandTotal - advancePaymentNum, 0) : 0;
   const codChange = codOverpaid ? advancePaymentNum - grandTotal : 0;
 
   const canCheckout =
     cart.length > 0 &&
-    (paymentMethod !== "cash" || amountReceivedNum >= grandTotal);
+    (!isCashMethod || amountReceivedNum >= grandTotal);
 
   async function checkout() {
     if (cart.length === 0) return;
-    if (paymentMethod === "cash" && amountReceivedNum < grandTotal) {
+    if (isCashMethod && amountReceivedNum < grandTotal) {
       return showToast(t("pos_amountInsufficient"));
     }
     setLoading(true);
@@ -206,9 +229,9 @@ export default function POSPage() {
           discount_amount: discountAmount,
           vat_percent: vatPercentNum,
           vat_amount: vatAmount,
-          amount_received: paymentMethod === "cash" ? amountReceivedNum : grandTotal,
-          change_amount: paymentMethod === "cod" ? codChange : change,
-          advance_payment: paymentMethod === "cod" ? advancePaymentNum : 0,
+          amount_received: isCashMethod ? amountReceivedNum : grandTotal,
+          change_amount: isCodMethod ? codChange : change,
+          advance_payment: isCodMethod ? advancePaymentNum : 0,
           balance_due: balanceDue,
           note: note.trim() || null,
           customer_id: selectedCustomer?.id || null,
@@ -260,15 +283,13 @@ export default function POSPage() {
         }
       }
 
-      const paymentLabelMap: Record<PaymentMethod, string> = {
-        cash: "Cash",
-        card: "Card",
-        bank_transfer: "Bank Transfer",
-        cod: "COD",
-      };
-
       setReceiptData({
         storeId,
+        businessName: storeSettings?.business_name || null,
+        phone: storeSettings?.phone || null,
+        address: storeSettings?.address || null,
+        footerText: storeSettings?.receipt_footer || null,
+        logoText: storeSettings?.logo_text || null,
         saleRef: sale.id.slice(0, 8).toUpperCase(),
         createdAt: sale.created_at,
         items: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.price, lineTotal: c.price * c.qty })),
@@ -278,7 +299,7 @@ export default function POSPage() {
         vatPercent: vatPercentNum,
         vatAmount,
         grandTotal,
-        paymentMethod: paymentLabelMap[paymentMethod],
+        paymentMethod: selectedMethod?.name || paymentMethod,
         amountReceived: amountReceivedNum,
         change: paymentMethod === "cod" ? codChange : change,
         advancePayment: advancePaymentNum,
@@ -527,16 +548,17 @@ export default function POSPage() {
               <select
                 className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                onChange={(e) => setPaymentMethod(e.target.value)}
               >
-                <option value="cash">{t("pos_cash")}</option>
-                <option value="card">{t("pos_card")}</option>
-                <option value="bank_transfer">{t("pos_bankTransfer")}</option>
-                <option value="cod">{t("pos_cod")}</option>
+                {paymentMethods.map((m) => (
+                  <option key={m.id} value={m.code}>
+                    {m.name}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {paymentMethod === "cash" && (
+            {isCashMethod && (
               <div className="mt-2">
                 <label className="text-xs text-slate-500">{t("pos_amountReceived")}</label>
                 <input
@@ -555,7 +577,7 @@ export default function POSPage() {
               </div>
             )}
 
-            {paymentMethod === "cod" && (
+            {isCodMethod && (
               <div className="mt-2">
                 <label className="text-xs text-slate-500">{t("pos_advancePayment")}</label>
                 <input
