@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase, Product } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -25,7 +26,7 @@ export default function LedgerPage() {
   const [rows, setRows] = useState<(LedgerRow & { balance: number })[]>([]);
 
   useEffect(() => {
-    if (profile && profile.role === "cashier") router.replace("/");
+    if (profile && !hasPermission(profile, "ledger")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
@@ -40,7 +41,7 @@ export default function LedgerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
-  if (!profile || profile.role === "cashier") return null;
+  if (!profile || !hasPermission(profile, "ledger")) return null;
 
   async function loadProducts() {
     const { data } = await supabase.from("products").select("*").eq("store_id", storeId).order("name");
