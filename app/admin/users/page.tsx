@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
+import { useStore } from "../../store-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../../language-context";
 import { PAGE_OPTIONS, DEFAULT_PERMISSIONS, PageKey } from "../../permissions";
 
-const STORES = ["SR-BAK", "SR-MDY", "SR-NOKL", "SR-WZYD"];
+
 
 type UserRow = {
   id: string;
@@ -20,6 +21,7 @@ type UserRow = {
 export default function AdminUsersPage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
+  const { stores } = useStore();
   const router = useRouter();
 
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -30,7 +32,7 @@ export default function AdminUsersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"cashier" | "manager" | "admin">("cashier");
-  const [store, setStore] = useState("SR-BAK");
+  const [store, setStore] = useState("");
   const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS.cashier);
   const [saving, setSaving] = useState(false);
 
@@ -61,7 +63,7 @@ export default function AdminUsersPage() {
     setEmail("");
     setPassword("");
     setRole("cashier");
-    setStore("SR-BAK");
+    setStore(stores[0]?.id || "");
     setPermissions(DEFAULT_PERMISSIONS.cashier);
     setShowForm(true);
   }
@@ -85,6 +87,25 @@ export default function AdminUsersPage() {
 
   function togglePermission(key: PageKey) {
     setPermissions((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]));
+  }
+
+  async function handleDeleteUser(u: UserRow) {
+    if (!confirm(`${t("admin_deleteUserConfirm")} (${u.email})`)) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      const { data, error } = await supabase.functions.invoke("admin-create-user", {
+        body: { action: "delete", user_id: u.id },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      showToast(t("admin_userDeleted"));
+      await loadUsers();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast("❌ " + message);
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -152,10 +173,15 @@ export default function AdminUsersPage() {
                 <td className="px-4 py-2 text-slate-400 text-xs">
                   {u.role === "admin" ? "All" : (u.permissions || []).join(", ") || "-"}
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-right space-x-2">
                   <button onClick={() => openEdit(u)} className="text-blue-600 text-xs font-medium">
                     {t("admin_edit")}
                   </button>
+                  {u.id !== profile.id && (
+                    <button onClick={() => handleDeleteUser(u)} className="text-red-600 text-xs font-medium">
+                      {t("admin_delete")}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -212,9 +238,9 @@ export default function AdminUsersPage() {
               value={store}
               onChange={(e) => setStore(e.target.value)}
             >
-              {STORES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
+              {stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
                 </option>
               ))}
             </select>
