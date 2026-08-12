@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase, Product } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
+import { useStore } from "../store-context";
 import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
-const STORES = ["SR-BAK", "SR-MDY", "SR-NOKL", "SR-WZYD"];
+
 
 type Status = "healthy" | "warning" | "urgent" | "out" ;
 
@@ -44,6 +45,7 @@ function statusInfo(status: Status, t: (k: any) => string) {
 export default function WarehousePage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
+  const { stores } = useStore();
   const router = useRouter();
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -175,9 +177,9 @@ export default function WarehousePage() {
           onChange={(e) => setStoreFilter(e.target.value)}
         >
           <option value="all">{t("warehouse_allStores")}</option>
-          {STORES.map((s) => (
-            <option key={s} value={s}>
-              {s}
+          {stores.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
             </option>
           ))}
         </select>
