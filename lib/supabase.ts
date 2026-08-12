@@ -74,3 +74,23 @@ export type StockBatch = {
   remaining_qty: number;
   created_at: string;
 };
+
+export type PaymentMethodRow = {
+  id: string;
+  store_id: string;
+  name: string;
+  code: string;
+  is_cash: boolean;
+  is_cod: boolean;
+  is_active: boolean;
+  sort_order: number;
+};
+
+export type StoreSettings = {
+  store_id: string;
+  business_name: string | null;
+  phone: string | null;
+  address: string | null;
+  receipt_footer: string | null;
+  logo_text: string | null;
+};
