@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase, Product, StockBatch } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -26,11 +27,11 @@ export default function BarcodePage() {
   const [batches, setBatches] = useState<StockBatch[]>([]);
 
   useEffect(() => {
-    if (profile && profile.role === "cashier") router.replace("/");
+    if (profile && !hasPermission(profile, "barcode")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  if (!profile || profile.role === "cashier") return null;
+  if (!profile || !hasPermission(profile, "barcode")) return null;
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
