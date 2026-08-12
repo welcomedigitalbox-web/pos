@@ -94,3 +94,9 @@ export type StoreSettings = {
   receipt_footer: string | null;
   logo_text: string | null;
 };
+
+export type StoreRow = {
+  id: string;
+  name: string;
+  created_at: string;
+};
