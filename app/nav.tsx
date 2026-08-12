@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
+import { PAGE_OPTIONS, hasPermission } from "./permissions";
 
 const STORES = ["SR-BAK", "SR-MDY", "SR-NOKL", "SR-WZYD"];
 
@@ -16,22 +17,14 @@ export default function Nav() {
 
   if (pathname === "/login" || !profile) return null;
 
-  const isManager = profile.role === "manager" || profile.role === "admin";
+  const tabs = PAGE_OPTIONS.filter((p) => hasPermission(profile, p.key)).map((p) => ({
+    href: p.href,
+    label: t(p.labelKey as any),
+  }));
 
-  const tabs = [
-    { href: "/", label: t("nav_pos") },
-    { href: "/history", label: t("nav_history") },
-    ...(isManager
-      ? [
-          { href: "/products", label: t("nav_products") },
-          { href: "/stock-in", label: t("nav_stockIn") },
-          { href: "/barcode", label: t("nav_barcode") },
-          { href: "/ledger", label: t("nav_ledger") },
-          { href: "/warehouse", label: t("nav_warehouse") },
-          { href: "/dashboard", label: t("nav_dashboard") },
-        ]
-      : []),
-  ];
+  if (profile.role === "admin") {
+    tabs.push({ href: "/admin/users", label: t("nav_admin") });
+  }
 
   return (
     <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
