@@ -6,14 +6,14 @@ import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../../language-context";
-import { PAGE_OPTIONS, DEFAULT_PERMISSIONS, PageKey } from "../../permissions";
+import { PAGE_OPTIONS, DEFAULT_PERMISSIONS, PageKey, UserRole, ROLE_OPTIONS } from "../../permissions";
 
 
 
 type UserRow = {
   id: string;
   email: string;
-  role: "cashier" | "manager" | "admin";
+  role: UserRole;
   store_id: string;
   permissions: string[];
 };
@@ -31,7 +31,7 @@ export default function AdminUsersPage() {
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"cashier" | "manager" | "admin">("cashier");
+  const [role, setRole] = useState<UserRole>("cashier");
   const [store, setStore] = useState("");
   const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS.cashier);
   const [saving, setSaving] = useState(false);
@@ -78,11 +78,10 @@ export default function AdminUsersPage() {
     setShowForm(true);
   }
 
-  function onRoleChange(newRole: "cashier" | "manager" | "admin") {
+  function onRoleChange(newRole: UserRole) {
     setRole(newRole);
-    if (newRole === "cashier") setPermissions(DEFAULT_PERMISSIONS.cashier);
-    else if (newRole === "manager") setPermissions(DEFAULT_PERMISSIONS.manager);
-    else setPermissions(PAGE_OPTIONS.map((p) => p.key));
+    if (newRole === "admin") setPermissions(PAGE_OPTIONS.map((p) => p.key));
+    else setPermissions(DEFAULT_PERMISSIONS[newRole]);
   }
 
   function togglePermission(key: PageKey) {
@@ -225,11 +224,13 @@ export default function AdminUsersPage() {
             <select
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={role}
-              onChange={(e) => onRoleChange(e.target.value as "cashier" | "manager" | "admin")}
+              onChange={(e) => onRoleChange(e.target.value as UserRole)}
             >
-              <option value="cashier">{t("admin_role_cashier")}</option>
-              <option value="manager">{t("admin_role_manager")}</option>
-              <option value="admin">{t("admin_role_admin")}</option>
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  {t(`admin_role_${r}` as any)}
+                </option>
+              ))}
             </select>
 
             <label className="text-sm text-slate-600">{t("admin_store")}</label>
