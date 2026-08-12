@@ -11,6 +11,9 @@ export const translations = {
     nav_mySales: "ကျွန်ုပ်ရဲ့ ရောင်းအား",
     nav_saleOrder: "အော်ဒါတင်",
     nav_admin: "Admin",
+    nav_group_sale: "အရောင်း",
+    nav_group_inventory: "ကုန်ပစ္စည်း",
+    nav_group_reports: "အစီရင်ခံစာ",
     logout: "ထွက်မည်",
 
     login_title: "🛒 POS Login",
@@ -268,6 +271,9 @@ export const translations = {
     nav_mySales: "My Sales",
     nav_saleOrder: "Sale Order",
     nav_admin: "Admin",
+    nav_group_sale: "Sale",
+    nav_group_inventory: "Inventory",
+    nav_group_reports: "Reports",
     logout: "Logout",
 
     login_title: "🛒 POS Login",
