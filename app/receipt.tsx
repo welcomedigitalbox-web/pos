@@ -6,6 +6,11 @@ function fmt(n: number) {
 
 export type ReceiptData = {
   storeId: string;
+  businessName: string | null;
+  phone: string | null;
+  address: string | null;
+  footerText: string | null;
+  logoText: string | null;
   saleRef: string;
   createdAt: string;
   items: { name: string; qty: number; price: number; lineTotal: number }[];
@@ -31,7 +36,10 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
   return (
     <div id="receipt-print">
       <div style={{ textAlign: "center", marginBottom: 8 }}>
-        <div style={{ fontWeight: "bold", fontSize: 14 }}>{data.storeId}</div>
+        {data.logoText && <div style={{ fontSize: 20 }}>{data.logoText}</div>}
+        <div style={{ fontWeight: "bold", fontSize: 14 }}>{data.businessName || data.storeId}</div>
+        {data.address && <div>{data.address}</div>}
+        {data.phone && <div>{data.phone}</div>}
         <div>{new Date(data.createdAt).toLocaleString()}</div>
         <div>Receipt: {data.saleRef}</div>
         {data.customerName && <div>Customer: {data.customerName}</div>}
@@ -121,7 +129,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
           <div>Note: {data.note}</div>
         </>
       )}
-      <div style={{ textAlign: "center", marginTop: 10 }}>Thank you!</div>
+      <div style={{ textAlign: "center", marginTop: 10 }}>{data.footerText || "Thank you!"}</div>
     </div>
   );
 }
