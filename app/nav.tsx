@@ -7,11 +7,9 @@ import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
 import { PAGE_OPTIONS, hasPermission } from "./permissions";
 
-const STORES = ["SR-BAK", "SR-MDY", "SR-NOKL", "SR-WZYD"];
-
 export default function Nav() {
   const pathname = usePathname();
-  const { storeId, setStoreId } = useStore();
+  const { storeId, setStoreId, stores } = useStore();
   const { profile, signOut } = useAuth();
   const { lang, setLang, t } = useLanguage();
 
@@ -36,9 +34,9 @@ export default function Nav() {
             value={storeId}
             onChange={(e) => setStoreId(e.target.value)}
           >
-            {STORES.map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {stores.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
               </option>
             ))}
           </select>
