@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -22,7 +23,7 @@ export default function DashboardPage() {
   const [todayCogs, setTodayCogs] = useState(0);
 
   useEffect(() => {
-    if (profile && profile.role === "cashier") {
+    if (profile && !hasPermission(profile, "dashboard")) {
       router.replace("/");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -33,7 +34,7 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
-  if (!profile || profile.role === "cashier") return null;
+  if (!profile || !hasPermission(profile, "dashboard")) return null;
 
   async function load() {
     const todayStart = new Date();
