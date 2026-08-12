@@ -5,6 +5,8 @@ import { supabase, Product, Customer, PaymentMethodRow, StoreSettings } from "@/
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
+import { useRouter } from "next/navigation";
+import { hasPermission } from "./permissions";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
@@ -28,6 +30,13 @@ export default function POSPage() {
   const { storeId } = useStore();
   const { t } = useLanguage();
   const { profile } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (profile && !hasPermission(profile, "pos")) router.replace("/sale-order");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -321,6 +330,8 @@ export default function POSPage() {
       setLoading(false);
     }
   }
+
+  if (profile && !hasPermission(profile, "pos")) return null;
 
   return (
     <div className="pt-4 grid grid-cols-1 md:grid-cols-[1fr_360px] gap-4">
