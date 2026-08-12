@@ -86,7 +86,7 @@ export default function Nav() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 flex gap-1 overflow-x-auto relative">
+      <div className="max-w-6xl mx-auto px-4 flex flex-wrap gap-1 relative">
         {groupedPages.map(({ group, pages }) => {
           const isGroupActive = pages.some((p) => p.href === pathname);
           const singlePage = pages.length === 1 ? pages[0] : null;
