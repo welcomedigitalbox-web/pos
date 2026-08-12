@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
+import { useStore } from "../../store-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../../language-context";
 
-const STORES = ["SR-BAK", "SR-MDY", "SR-NOKL", "SR-WZYD"];
+
 
 type StoreSettings = {
   store_id: string;
@@ -20,11 +21,12 @@ type StoreSettings = {
 export default function AdminSettingsPage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
+  const { stores } = useStore();
   const router = useRouter();
 
-  const [storeId, setStoreId] = useState("SR-BAK");
+  const [storeId, setStoreId] = useState("");
   const [settings, setSettings] = useState<StoreSettings>({
-    store_id: "SR-BAK",
+    store_id: "",
     business_name: "",
     phone: "",
     address: "",
@@ -40,7 +42,12 @@ export default function AdminSettingsPage() {
   }, [profile]);
 
   useEffect(() => {
-    loadSettings();
+    if (stores.length > 0 && !storeId) setStoreId(stores[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stores]);
+
+  useEffect(() => {
+    if (storeId) loadSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
@@ -93,9 +100,9 @@ export default function AdminSettingsPage() {
         value={storeId}
         onChange={(e) => setStoreId(e.target.value)}
       >
-        {STORES.map((s) => (
-          <option key={s} value={s}>
-            {s}
+        {stores.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
           </option>
         ))}
       </select>
