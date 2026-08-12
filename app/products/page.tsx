@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase, Product } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -34,7 +35,7 @@ export default function ProductsPage() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    if (profile && profile.role === "cashier") {
+    if (profile && !hasPermission(profile, "products")) {
       router.replace("/");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -45,7 +46,7 @@ export default function ProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
-  if (!profile || profile.role === "cashier") return null;
+  if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
     const { data, error } = await supabase
