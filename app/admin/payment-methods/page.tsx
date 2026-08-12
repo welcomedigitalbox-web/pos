@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
+import { useStore } from "../../store-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../../language-context";
-
-const STORES = ["SR-BAK", "SR-MDY", "SR-NOKL", "SR-WZYD"];
 
 type PaymentMethod = {
   id: string;
@@ -22,13 +21,15 @@ type PaymentMethod = {
 export default function AdminPaymentMethodsPage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
+  const { stores } = useStore();
   const router = useRouter();
 
-  const [storeId, setStoreId] = useState("SR-BAK");
+  const [storeId, setStoreId] = useState("");
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [toast, setToast] = useState("");
 
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [isCash, setIsCash] = useState(false);
@@ -40,7 +41,12 @@ export default function AdminPaymentMethodsPage() {
   }, [profile]);
 
   useEffect(() => {
-    loadMethods();
+    if (stores.length > 0 && !storeId) setStoreId(stores[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stores]);
+
+  useEffect(() => {
+    if (storeId) loadMethods();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
@@ -61,6 +67,7 @@ export default function AdminPaymentMethodsPage() {
   }
 
   function openNew() {
+    setEditingId(null);
     setName("");
     setCode("");
     setIsCash(false);
@@ -68,21 +75,42 @@ export default function AdminPaymentMethodsPage() {
     setShowForm(true);
   }
 
-  async function handleAdd(e: React.FormEvent) {
+  function openEdit(m: PaymentMethod) {
+    setEditingId(m.id);
+    setName(m.name);
+    setCode(m.code);
+    setIsCash(m.is_cash);
+    setIsCod(m.is_cod);
+    setShowForm(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     const finalCode = code.trim() || name.trim().toLowerCase().replace(/\s+/g, "_");
-    const { error } = await supabase.from("payment_methods").insert({
-      store_id: storeId,
-      name: name.trim(),
-      code: finalCode,
-      is_cash: isCash,
-      is_cod: isCod,
-      sort_order: methods.length + 1,
-    });
-    if (error) {
-      showToast("❌ " + error.message);
-      return;
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("payment_methods")
+        .update({ name: name.trim(), code: finalCode, is_cash: isCash, is_cod: isCod })
+        .eq("id", editingId);
+      if (error) {
+        showToast("❌ " + error.message);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from("payment_methods").insert({
+        store_id: storeId,
+        name: name.trim(),
+        code: finalCode,
+        is_cash: isCash,
+        is_cod: isCod,
+        sort_order: methods.length + 1,
+      });
+      if (error) {
+        showToast("❌ " + error.message);
+        return;
+      }
     }
     setShowForm(false);
     await loadMethods();
@@ -113,15 +141,15 @@ export default function AdminPaymentMethodsPage() {
         value={storeId}
         onChange={(e) => setStoreId(e.target.value)}
       >
-        {STORES.map((s) => (
-          <option key={s} value={s}>
-            {s}
+        {stores.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
           </option>
         ))}
       </select>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[500px]">
+        <table className="w-full text-sm min-w-[550px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-4 py-2">{t("admin_methodName")}</th>
@@ -140,11 +168,12 @@ export default function AdminPaymentMethodsPage() {
                 <td className="px-4 py-2">{m.is_cash ? "✅" : "-"}</td>
                 <td className="px-4 py-2">{m.is_cod ? "✅" : "-"}</td>
                 <td className="px-4 py-2">
-                  <button onClick={() => toggleActive(m)}>
-                    {m.is_active ? "🟢" : "⚪"}
-                  </button>
+                  <button onClick={() => toggleActive(m)}>{m.is_active ? "🟢" : "⚪"}</button>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-right space-x-2">
+                  <button onClick={() => openEdit(m)} className="text-blue-600 text-xs font-medium">
+                    {t("admin_edit")}
+                  </button>
                   <button onClick={() => handleDelete(m.id)} className="text-red-600 text-xs font-medium">
                     {t("admin_delete")}
                   </button>
@@ -157,8 +186,10 @@ export default function AdminPaymentMethodsPage() {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleAdd} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
-            <h3 className="font-semibold text-lg mb-4">{t("admin_addMethod")}</h3>
+          <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-4">
+              {editingId ? t("admin_edit") : t("admin_addMethod")}
+            </h3>
 
             <label className="text-sm text-slate-600">{t("admin_methodName")}</label>
             <input
@@ -193,10 +224,7 @@ export default function AdminPaymentMethodsPage() {
               >
                 {t("admin_cancel")}
               </button>
-              <button
-                type="submit"
-                className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold"
-              >
+              <button type="submit" className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold">
                 {t("admin_save")}
               </button>
             </div>
