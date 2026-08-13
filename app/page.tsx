@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, StoreSettings } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "./permissions";
-import { loyaltyDiscountPercent } from "./loyalty";
+import { tierDiscountPercent } from "./loyalty";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
@@ -55,6 +55,7 @@ export default function POSPage() {
   const [note, setNote] = useState("");
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -64,17 +65,18 @@ export default function POSPage() {
 
   // Auto-apply loyalty tier discount whenever a loyalty customer is selected
   useEffect(() => {
-    const tierPercent = loyaltyDiscountPercent(selectedCustomer?.loyalty_tier);
+    const tierPercent = tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id);
     if (tierPercent > 0) {
       setDiscountType("percent");
       setDiscountValue(String(tierPercent));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCustomer]);
+  }, [selectedCustomer, loyaltyTiers]);
 
   useEffect(() => {
     loadProducts();
     loadCustomers();
+    loadLoyaltyTiers();
     loadPaymentMethods();
     loadStoreSettings();
     resetOrder();
@@ -113,6 +115,15 @@ export default function POSPage() {
       .eq("store_id", storeId)
       .order("name");
     setCustomers(data || []);
+  }
+
+  async function loadLoyaltyTiers() {
+    const { data } = await supabase
+      .from("loyalty_tiers")
+      .select("*")
+      .eq("store_id", storeId)
+      .order("sort_order");
+    setLoyaltyTiers(data || []);
   }
 
   function showToast(msg: string) {
@@ -500,9 +511,9 @@ export default function POSPage() {
             {/* Discount */}
             <div className="mb-2">
               <label className="text-xs text-slate-500">{t("pos_discount")}</label>
-              {loyaltyDiscountPercent(selectedCustomer?.loyalty_tier) > 0 && (
+              {tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && (
                 <p className="text-xs text-green-600 font-medium mt-0.5">
-                  🎖️ {t("customers_loyaltyApplied")} ({loyaltyDiscountPercent(selectedCustomer?.loyalty_tier)}%)
+                  🎖️ {t("customers_loyaltyApplied")} ({tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id)}%)
                 </p>
               )}
               <div className="flex gap-1 mt-1">
