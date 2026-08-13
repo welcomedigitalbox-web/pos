@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, fetchProductsWithStock, fetchProductWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems, fetchSellableItem, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ import { hasPermission } from "../permissions";
 type RequestRow = {
   id: string;
   product_id: string;
+  variant_id: string | null;
   requested_qty: number;
   received_qty: number | null;
   note: string | null;
@@ -19,7 +20,8 @@ type RequestRow = {
   received_by: string | null;
   approved_by: string | null;
   created_at: string;
-  products: { name: string; avg_cost: number; stock_qty: number } | null;
+  products: { name: string } | null;
+  product_variants: { variant_name: string } | null;
 };
 
 function fmt(n: number) {
@@ -40,12 +42,12 @@ export default function StockRequestPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<SellableItem[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [toast, setToast] = useState("");
 
   const [showNewForm, setShowNewForm] = useState(false);
-  const [productId, setProductId] = useState("");
+  const [itemKey, setItemKey] = useState("");
   const [requestedQty, setRequestedQty] = useState("");
   const [note, setNote] = useState("");
 
@@ -69,14 +71,14 @@ export default function StockRequestPage() {
   if (!profile || !hasPermission(profile, "stock-request")) return null;
 
   async function loadProducts() {
-    const data = await fetchProductsWithStock(storeId);
-    setProducts(data);
+    const data = await fetchSellableItems(storeId);
+    setItems(data);
   }
 
   async function loadRequests() {
     const { data } = await supabase
       .from("stock_requests")
-      .select("*, products(name, avg_cost, stock_qty)")
+      .select("*, products(name), product_variants(variant_name)")
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -90,10 +92,12 @@ export default function StockRequestPage() {
 
   async function submitRequest(e: React.FormEvent) {
     e.preventDefault();
-    if (!productId || !requestedQty) return;
+    const item = items.find((i) => i.key === itemKey);
+    if (!item || !requestedQty) return;
     const { error } = await supabase.from("stock_requests").insert({
       store_id: storeId,
-      product_id: productId,
+      product_id: item.product_id,
+      variant_id: item.variant_id,
       requested_qty: Number(requestedQty),
       note: note.trim() || null,
       requested_by: profile?.email || null,
@@ -104,7 +108,7 @@ export default function StockRequestPage() {
     }
     showToast(t("stockRequest_created"));
     setShowNewForm(false);
-    setProductId("");
+    setItemKey("");
     setRequestedQty("");
     setNote("");
     await loadRequests();
@@ -122,12 +126,9 @@ export default function StockRequestPage() {
     if (!qty || qty <= 0) return showToast(t("stockRequest_qtyInvalid"));
     if (isNaN(cost) || cost < 0) return showToast(t("stockIn_costInvalid"));
 
-    const product = r.products;
-    if (!product) return;
-
     try {
       // Moving average update (same logic as Stock-In)
-      const fullProduct = await fetchProductWithStock(r.product_id, storeId);
+      const fullProduct = await fetchSellableItem(r.product_id, r.variant_id, storeId);
       if (!fullProduct) throw new Error("Product not found");
 
       const existingValue = fullProduct.stock_qty * fullProduct.avg_cost;
@@ -139,6 +140,7 @@ export default function StockRequestPage() {
         .from("stock_purchases")
         .insert({
           product_id: r.product_id,
+          variant_id: r.variant_id,
           store_id: storeId,
           supplier: null,
           qty,
@@ -152,7 +154,7 @@ export default function StockRequestPage() {
         .single();
       if (batchErr) throw batchErr;
 
-      await upsertStoreInventory(storeId, r.product_id, {
+      await upsertStoreInventory(storeId, r.product_id, r.variant_id, {
         stock_qty: newQty,
         avg_cost: newAvgCost,
         previous_avg_cost: fullProduct.avg_cost,
@@ -217,7 +219,12 @@ export default function StockRequestPage() {
             {requests.map((r) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
-                <td className="px-3 py-2">{r.products?.name || "-"}</td>
+                <td className="px-3 py-2">
+                  {r.products?.name || "-"}
+                  {r.product_variants?.variant_name && (
+                    <span className="text-blue-600 text-xs ml-1">({r.product_variants.variant_name})</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">{r.requested_qty}</td>
                 <td className="px-3 py-2">{r.received_qty ?? "-"}</td>
                 <td className="px-3 py-2">
@@ -259,14 +266,14 @@ export default function StockRequestPage() {
             <label className="text-sm text-slate-600">{t("stockIn_product")}</label>
             <select
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              value={itemKey}
+              onChange={(e) => setItemKey(e.target.value)}
               required
             >
               <option value="">{t("stockIn_selectPlaceholder")}</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({t("barcode_balanceStock")}: {p.stock_qty})
+              {items.map((i) => (
+                <option key={i.key} value={i.key}>
+                  {i.display_name} ({t("barcode_balanceStock")}: {i.stock_qty})
                 </option>
               ))}
             </select>
