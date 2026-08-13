@@ -27,7 +27,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const { data } = await supabase.from("stores").select("*").order("name");
     setStores(data || []);
     if (data && data.length > 0 && !storeId) {
-      setStoreIdState(data[0].id);
+      const firstRetail = data.find((s) => !s.is_warehouse) || data[0];
+      setStoreIdState(firstRetail.id);
     }
   }
 
