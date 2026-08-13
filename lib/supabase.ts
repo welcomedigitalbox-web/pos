@@ -28,6 +28,7 @@ export type Customer = {
   delivery_address: string | null;
   facebook: string | null;
   tiktok: string | null;
+  loyalty_tier: "none" | "silver" | "gold";
   store_id: string;
   created_at: string;
 };
