@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, ProductVariant, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { useEffect, useMemo, useState } from "react";
+import { supabase, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
@@ -11,10 +11,10 @@ import { tierDiscountPercent } from "./loyalty";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
-  line_id: string;
+  key: string; // productId:variantId — one cart line per sellable item
   product_id: string;
+  variant_id: string | null;
   name: string;
-  variant_name: string | null;
   price: number;
   qty: number;
   stock_qty: number;
@@ -40,7 +40,7 @@ export default function POSPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<SellableItem[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,8 +73,7 @@ export default function POSPage() {
   const [saleRepId, setSaleRepId] = useState("");
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [allVariants, setAllVariants] = useState<ProductVariant[]>([]);
-  const [variantPickerProduct, setVariantPickerProduct] = useState<Product | null>(null);
+  const [variantPickerProductId, setVariantPickerProductId] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -126,8 +125,8 @@ export default function POSPage() {
   }
 
   async function loadProducts() {
-    const data = await fetchProductsWithStock(storeId);
-    setProducts(data);
+    const data = await fetchSellableItems(storeId);
+    setItems(data);
   }
 
   async function loadCustomers() {
@@ -159,8 +158,6 @@ export default function POSPage() {
   async function loadCategoriesAndVariants() {
     const { data: cats } = await supabase.from("product_categories").select("*").order("sort_order");
     setCategories(cats || []);
-    const { data: vars } = await supabase.from("product_variants").select("*").order("created_at");
-    setAllVariants(vars || []);
   }
 
   function showToast(msg: string) {
@@ -234,75 +231,89 @@ export default function POSPage() {
     }
   }
 
-  function variantsOf(productId: string) {
-    return allVariants.filter((v) => v.product_id === productId);
+  // Group sellable items by their parent product so the grid shows one card per
+  // product; products with variants open a picker instead of adding directly.
+  const productGroups = useMemo(() => {
+    const groups = new Map<string, { productName: string; categoryId: string | null; items: SellableItem[] }>();
+    for (const item of items) {
+      const g = groups.get(item.product_id) || {
+        productName: item.product_name,
+        categoryId: item.category_id,
+        items: [],
+      };
+      g.items.push(item);
+      groups.set(item.product_id, g);
+    }
+    return groups;
+  }, [items]);
+
+  function cartQtyForItem(key: string) {
+    return cart.find((c) => c.key === key)?.qty || 0;
   }
 
-  // Total qty already in the cart for a product, across all its variant lines
-  function cartQtyForProduct(productId: string) {
-    return cart.filter((c) => c.product_id === productId).reduce((s, c) => s + c.qty, 0);
-  }
-
-  function handleProductClick(p: Product) {
-    if (p.stock_qty <= 0) return showToast(t("pos_outOfStock"));
-    const variants = variantsOf(p.id);
-    if (variants.length > 0) {
-      setVariantPickerProduct(p);
+  function handleProductClick(productId: string) {
+    const group = productGroups.get(productId);
+    if (!group) return;
+    const hasVariants = group.items.some((i) => i.variant_id !== null);
+    if (hasVariants) {
+      setVariantPickerProductId(productId);
       return;
     }
-    addToCart(p, null);
+    addToCart(group.items[0]);
   }
 
-  function addToCart(p: Product, variant: ProductVariant | null) {
-    if (p.stock_qty <= 0) return showToast(t("pos_outOfStock"));
-    if (cartQtyForProduct(p.id) >= p.stock_qty) return showToast(t("pos_notEnoughStock"));
-
-    const variantName = variant?.variant_name || null;
-    const unitPrice = variant?.price_override ?? p.price;
+  function addToCart(item: SellableItem) {
+    if (item.stock_qty <= 0) return showToast(t("pos_outOfStock"));
+    if (cartQtyForItem(item.key) >= item.stock_qty) return showToast(t("pos_notEnoughStock"));
 
     setCart((prev) => {
-      const existing = prev.find((c) => c.product_id === p.id && c.variant_name === variantName);
+      const existing = prev.find((c) => c.key === item.key);
       if (existing) {
-        return prev.map((c) => (c.line_id === existing.line_id ? { ...c, qty: c.qty + 1 } : c));
+        return prev.map((c) => (c.key === item.key ? { ...c, qty: c.qty + 1 } : c));
       }
       return [
         ...prev,
         {
-          line_id: crypto.randomUUID(),
-          product_id: p.id,
-          name: p.name,
-          variant_name: variantName,
-          price: unitPrice,
+          key: item.key,
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          name: item.display_name,
+          price: item.price,
           qty: 1,
-          stock_qty: p.stock_qty,
-          avg_cost: p.avg_cost,
+          stock_qty: item.stock_qty,
+          avg_cost: item.avg_cost,
         },
       ];
     });
-    setVariantPickerProduct(null);
+    setVariantPickerProductId(null);
   }
 
-  function changeQty(lineId: string, delta: number) {
+  function changeQty(key: string, delta: number) {
     setCart((prev) => {
-      const line = prev.find((c) => c.line_id === lineId);
+      const line = prev.find((c) => c.key === key);
       if (!line) return prev;
-      if (delta > 0 && cartQtyForProduct(line.product_id) >= line.stock_qty) {
+      if (delta > 0 && line.qty >= line.stock_qty) {
         showToast(t("pos_notEnoughStock"));
         return prev;
       }
       return prev
-        .map((c) => (c.line_id === lineId ? { ...c, qty: c.qty + delta } : c))
+        .map((c) => (c.key === key ? { ...c, qty: c.qty + delta } : c))
         .filter((c) => c.qty > 0);
     });
   }
 
-  const filtered = products.filter((p) => {
-    if (categoryFilter !== "all" && p.category_id !== categoryFilter) return false;
-    return (
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.sku || "").toLowerCase().includes(search.toLowerCase())
-    );
-  });
+  // One entry per parent product, filtered by category + search
+  const filteredGroups = useMemo(() => {
+    const q = search.toLowerCase();
+    return Array.from(productGroups.entries()).filter(([, g]) => {
+      if (categoryFilter !== "all" && g.categoryId !== categoryFilter) return false;
+      if (!q) return true;
+      return (
+        g.productName.toLowerCase().includes(q) ||
+        g.items.some((i) => (i.sku || "").toLowerCase().includes(q) || i.display_name.toLowerCase().includes(q))
+      );
+    });
+  }, [productGroups, categoryFilter, search]);
 
   const filteredCustomers = customers.filter(
     (c) =>
@@ -405,7 +416,8 @@ export default function POSPage() {
       const items = cart.map((c) => ({
         sale_id: sale.id,
         product_id: c.product_id,
-        product_name: c.variant_name ? `${c.name} (${c.variant_name})` : c.name,
+        variant_id: c.variant_id,
+        product_name: c.name,
         qty: c.qty,
         unit_price: c.price,
         line_total: c.price * c.qty,
@@ -415,32 +427,28 @@ export default function POSPage() {
       const { error: itemsErr } = await supabase.from("sale_items").insert(items);
       if (itemsErr) throw itemsErr;
 
-      // Group cart lines by product — variants of the same product share one stock pool,
-      // so their quantities must be summed before deducting.
-      const deductions = new Map<string, { qty: number; stock_qty: number }>();
+      // Each cart line is already one distinct sellable item (product+variant),
+      // so its stock deducts independently — no grouping needed.
       for (const c of cart) {
-        const prev = deductions.get(c.product_id);
-        deductions.set(c.product_id, {
-          qty: (prev?.qty || 0) + c.qty,
-          stock_qty: c.stock_qty,
+        await upsertStoreInventory(storeId, c.product_id, c.variant_id, {
+          stock_qty: c.stock_qty - c.qty,
         });
-      }
-
-      for (const [productId, d] of deductions) {
-        const newStock = d.stock_qty - d.qty;
-        await upsertStoreInventory(storeId, productId, { stock_qty: newStock });
 
         // FEFO: deduct from batches with the earliest expiry first (no-expiry batches last)
-        const { data: batches } = await supabase
+        let batchQuery = supabase
           .from("stock_purchases")
           .select("id, remaining_qty, expiry_date, created_at")
-          .eq("product_id", productId)
+          .eq("product_id", c.product_id)
           .eq("store_id", storeId)
-          .gt("remaining_qty", 0)
+          .gt("remaining_qty", 0);
+        batchQuery = c.variant_id
+          ? batchQuery.eq("variant_id", c.variant_id)
+          : batchQuery.is("variant_id", null);
+        const { data: batches } = await batchQuery
           .order("expiry_date", { ascending: true, nullsFirst: false })
           .order("created_at", { ascending: true });
 
-        let remainingToDeduct = d.qty;
+        let remainingToDeduct = c.qty;
         for (const batch of batches || []) {
           if (remainingToDeduct <= 0) break;
           const deductFromBatch = Math.min(batch.remaining_qty, remainingToDeduct);
@@ -462,7 +470,7 @@ export default function POSPage() {
         saleRef: sale.id.slice(0, 8).toUpperCase(),
         createdAt: sale.created_at,
         items: cart.map((c) => ({
-          name: c.variant_name ? `${c.name} (${c.variant_name})` : c.name,
+          name: c.name,
           qty: c.qty,
           price: c.price,
           lineTotal: c.price * c.qty,
@@ -509,11 +517,11 @@ export default function POSPage() {
             const value = e.target.value;
             setSearch(value);
             // Barcode scanner support: exact SKU match -> add to cart immediately, clear search
-            const exactSkuMatch = products.find(
-              (p) => (p.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
+            const exactSkuMatch = items.find(
+              (i) => (i.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
             );
             if (exactSkuMatch) {
-              handleProductClick(exactSkuMatch);
+              addToCart(exactSkuMatch);
               setSearch("");
             }
           }}
@@ -544,34 +552,38 @@ export default function POSPage() {
         )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {filtered.map((p) => {
-            const vCount = variantsOf(p.id).length;
+          {filteredGroups.map(([productId, g]) => {
+            const hasVariants = g.items.some((i) => i.variant_id !== null);
+            const totalStock = g.items.reduce((s, i) => s + i.stock_qty, 0);
+            const prices = g.items.map((i) => i.price);
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
             return (
               <button
-                key={p.id}
-                onClick={() => handleProductClick(p)}
+                key={productId}
+                onClick={() => handleProductClick(productId)}
                 className={`text-left bg-white border border-slate-200 rounded-xl p-3 hover:shadow-md hover:-translate-y-0.5 transition ${
-                  p.stock_qty <= 5 ? "border-red-300" : ""
+                  totalStock <= 5 ? "border-red-300" : ""
                 }`}
               >
                 <div className="font-semibold text-sm">
-                  {p.name}
-                  {vCount > 0 && (
-                    <span className="ml-1 text-[10px] text-blue-600 font-medium">({vCount})</span>
+                  {g.productName}
+                  {hasVariants && (
+                    <span className="ml-1 text-[10px] text-blue-600 font-medium">
+                      {g.items.length} {t("pos_variantCount")}
+                    </span>
                   )}
                 </div>
-                <div className="text-blue-600 font-bold text-sm">{fmt(p.price)}</div>
-                <div
-                  className={`text-xs mt-1 ${
-                    p.stock_qty <= 5 ? "text-red-600" : "text-slate-500"
-                  }`}
-                >
-                  {t("pos_stock")}: {p.stock_qty}
+                <div className="text-blue-600 font-bold text-sm">
+                  {minPrice === maxPrice ? fmt(minPrice) : `${fmt(minPrice)} – ${fmt(maxPrice)}`}
+                </div>
+                <div className={`text-xs mt-1 ${totalStock <= 5 ? "text-red-600" : "text-slate-500"}`}>
+                  {t("pos_stock")}: {totalStock}
                 </div>
               </button>
             );
           })}
-          {filtered.length === 0 && (
+          {filteredGroups.length === 0 && (
             <div className="col-span-full text-center text-slate-400 py-8">
               {t("pos_noProduct")}
             </div>
@@ -587,29 +599,24 @@ export default function POSPage() {
           <div className="space-y-2 mb-3">
             {cart.map((c) => (
               <div
-                key={c.line_id}
+                key={c.key}
                 className="flex justify-between items-center border-b border-slate-100 pb-2 text-sm"
               >
                 <div>
-                  <div>
-                    {c.name}
-                    {c.variant_name && (
-                      <span className="ml-1 text-xs text-blue-600 font-medium">({c.variant_name})</span>
-                    )}
-                  </div>
+                  <div>{c.name}</div>
                   <div className="text-slate-400">{fmt(c.price)}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     className="w-6 h-6 border border-slate-200 rounded"
-                    onClick={() => changeQty(c.line_id, -1)}
+                    onClick={() => changeQty(c.key, -1)}
                   >
                     -
                   </button>
                   <span>{c.qty}</span>
                   <button
                     className="w-6 h-6 border border-slate-200 rounded"
-                    onClick={() => changeQty(c.line_id, 1)}
+                    onClick={() => changeQty(c.key, 1)}
                   >
                     +
                   </button>
@@ -882,32 +889,45 @@ export default function POSPage() {
         </div>
       )}
 
-      {variantPickerProduct && (
+      {variantPickerProductId && (
         <div
           className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4"
-          onClick={() => setVariantPickerProduct(null)}
+          onClick={() => setVariantPickerProductId(null)}
         >
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-lg mb-1">{variantPickerProduct.name}</h3>
+            <h3 className="font-semibold text-lg mb-1">
+              {productGroups.get(variantPickerProductId)?.productName}
+            </h3>
             <p className="text-sm text-slate-500 mb-4">{t("pos_chooseVariant")}</p>
 
-            <div className="space-y-2">
-              {variantsOf(variantPickerProduct.id).map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => addToCart(variantPickerProduct, v)}
-                  className="w-full flex justify-between items-center border border-slate-200 rounded-lg px-4 py-3 text-sm hover:bg-slate-50"
-                >
-                  <span className="font-medium">{v.variant_name}</span>
-                  <span className="text-blue-600 font-bold">
-                    {fmt(v.price_override ?? variantPickerProduct.price)}
-                  </span>
-                </button>
-              ))}
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {(productGroups.get(variantPickerProductId)?.items || []).map((v) => {
+                const soldOut = v.stock_qty <= 0;
+                return (
+                  <button
+                    key={v.key}
+                    onClick={() => addToCart(v)}
+                    disabled={soldOut}
+                    className={`w-full flex justify-between items-center border rounded-lg px-4 py-3 text-sm ${
+                      soldOut
+                        ? "border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                        : "border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="text-left">
+                      <span className="font-medium">{v.variant_name}</span>
+                      <span className={`block text-xs ${soldOut ? "text-red-300" : "text-slate-400"}`}>
+                        {t("pos_stock")}: {v.stock_qty}
+                      </span>
+                    </span>
+                    <span className={soldOut ? "font-bold" : "text-blue-600 font-bold"}>{fmt(v.price)}</span>
+                  </button>
+                );
+              })}
             </div>
 
             <button
-              onClick={() => setVariantPickerProduct(null)}
+              onClick={() => setVariantPickerProductId(null)}
               className="w-full mt-4 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
             >
               {t("products_cancel")}
