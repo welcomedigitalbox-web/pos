@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product } from "@/lib/supabase";
+import { supabase, Product, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -55,7 +56,7 @@ export default function StockInPage() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    if (profile && profile.role === "cashier") router.replace("/");
+    if (profile && !hasPermission(profile, "stock-in")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
@@ -65,11 +66,11 @@ export default function StockInPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
-  if (!profile || profile.role === "cashier") return null;
+  if (!profile || !hasPermission(profile, "stock-in")) return null;
 
   async function loadProducts() {
-    const { data } = await supabase.from("products").select("*").eq("store_id", storeId).order("name");
-    setProducts(data || []);
+    const data = await fetchProductsWithStock(storeId);
+    setProducts(data);
   }
 
   async function loadHistory() {
@@ -166,16 +167,11 @@ export default function StockInPage() {
           .eq("id", editId);
         if (purchaseErr) throw purchaseErr;
 
-        const { error: updateErr } = await supabase
-          .from("products")
-          .update({
-            stock_qty: newQty,
-            avg_cost: newAvgCost,
-            last_purchase_cost: unitCostNum,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", selectedProduct.id);
-        if (updateErr) throw updateErr;
+        await upsertStoreInventory(storeId, selectedProduct.id, {
+          stock_qty: newQty,
+          avg_cost: newAvgCost,
+          last_purchase_cost: unitCostNum,
+        });
 
         showToast(`✅ ${t("stockIn_editTitle")} — ${fmt(newAvgCost)}`);
       } else {
@@ -197,17 +193,12 @@ export default function StockInPage() {
         });
         if (purchaseErr) throw purchaseErr;
 
-        const { error: updateErr } = await supabase
-          .from("products")
-          .update({
-            stock_qty: newQty,
-            avg_cost: newAvgCost,
-            previous_avg_cost: selectedProduct.avg_cost,
-            last_purchase_cost: unitCostNum,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", selectedProduct.id);
-        if (updateErr) throw updateErr;
+        await upsertStoreInventory(storeId, selectedProduct.id, {
+          stock_qty: newQty,
+          avg_cost: newAvgCost,
+          previous_avg_cost: selectedProduct.avg_cost,
+          last_purchase_cost: unitCostNum,
+        });
 
         showToast(`${t("stockIn_success")} ${fmt(newAvgCost)}`);
       }
@@ -266,15 +257,10 @@ export default function StockInPage() {
       const revertedQty = product.stock_qty - row.qty;
       const revertedAvgCost = product.previous_avg_cost;
 
-      const { error: updateErr } = await supabase
-        .from("products")
-        .update({
-          stock_qty: revertedQty,
-          avg_cost: revertedAvgCost,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", product.id);
-      if (updateErr) throw updateErr;
+      await upsertStoreInventory(storeId, product.id, {
+        stock_qty: revertedQty,
+        avg_cost: revertedAvgCost,
+      });
 
       const { error: deleteErr } = await supabase.from("stock_purchases").delete().eq("id", row.id);
       if (deleteErr) throw deleteErr;
