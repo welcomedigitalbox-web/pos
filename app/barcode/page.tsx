@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, StockBatch, fetchProductWithStock } from "@/lib/supabase";
+import { supabase, SellableItem, StockBatch, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -19,7 +19,7 @@ export default function BarcodePage() {
   const router = useRouter();
 
   const [code, setCode] = useState("");
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<SellableItem | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [soldQty, setSoldQty] = useState(0);
   const [totalSale, setTotalSale] = useState(0);
@@ -39,18 +39,11 @@ export default function BarcodePage() {
     const query = code.trim();
     if (!query) return;
 
-    const { data: prodRow } = await supabase
-      .from("products")
-      .select("*")
-      .ilike("sku", query)
-      .maybeSingle();
+    // Search across every sellable unit (variant SKUs included), not just parent SKUs
+    const allItems = await fetchSellableItems(storeId, true);
+    const prod =
+      allItems.find((i) => (i.sku || "").toLowerCase() === query.toLowerCase()) || null;
 
-    if (!prodRow) {
-      setProduct(null);
-      setNotFound(true);
-      return;
-    }
-    const prod = await fetchProductWithStock(prodRow.id, storeId);
     if (!prod) {
       setProduct(null);
       setNotFound(true);
@@ -59,10 +52,14 @@ export default function BarcodePage() {
     setNotFound(false);
     setProduct(prod);
 
-    const { data: items } = await supabase
+    let saleQuery = supabase
       .from("sale_items")
       .select("qty, line_total, line_cogs")
-      .eq("product_id", prod.id);
+      .eq("product_id", prod.product_id);
+    saleQuery = prod.variant_id
+      ? saleQuery.eq("variant_id", prod.variant_id)
+      : saleQuery.is("variant_id", null);
+    const { data: items } = await saleQuery;
 
     const sold = (items || []).reduce((sum, i) => sum + Number(i.qty), 0);
     const sale = (items || []).reduce((sum, i) => sum + Number(i.line_total), 0);
@@ -71,21 +68,29 @@ export default function BarcodePage() {
     setTotalSale(sale);
     setTotalMargin(margin);
 
-    const { data: batchData } = await supabase
+    let batchQuery = supabase
       .from("stock_purchases")
       .select("*")
-      .eq("product_id", prod.id)
+      .eq("product_id", prod.product_id)
       .eq("store_id", storeId)
-      .gt("remaining_qty", 0)
+      .gt("remaining_qty", 0);
+    batchQuery = prod.variant_id
+      ? batchQuery.eq("variant_id", prod.variant_id)
+      : batchQuery.is("variant_id", null);
+    const { data: batchData } = await batchQuery
       .order("expiry_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
     setBatches(batchData || []);
 
     // Stock breakdown across ALL stores (not just the current one)
-    const { data: inventoryRows } = await supabase
+    let invQuery = supabase
       .from("store_inventory")
       .select("store_id, stock_qty, avg_cost, stores(name)")
-      .eq("product_id", prod.id);
+      .eq("product_id", prod.product_id);
+    invQuery = prod.variant_id
+      ? invQuery.eq("variant_id", prod.variant_id)
+      : invQuery.is("variant_id", null);
+    const { data: inventoryRows } = await invQuery;
     const breakdown = ((inventoryRows as any[]) || [])
       .map((row) => ({
         storeId: row.store_id,
@@ -126,7 +131,7 @@ export default function BarcodePage() {
       {product && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <div className="font-semibold text-lg">{product.name}</div>
+            <div className="font-semibold text-lg">{product.display_name}</div>
             <div className="text-slate-400 text-sm mb-3">{product.sku}</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
