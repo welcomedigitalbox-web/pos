@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, LoyaltyTier } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useLanguage } from "../language-context";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "../permissions";
-import { loyaltyDiscountPercent } from "../loyalty";
+import { tierDiscountPercent } from "../loyalty";
 
 type OrderLine = {
   tempId: string;
@@ -48,6 +48,7 @@ export default function SaleOrderPage() {
   }, [profile]);
 
   const [fulfillStoreId, setFulfillStoreId] = useState("");
+  const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
   const [storeProducts, setStoreProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductDropdown, setShowProductDropdown] = useState(false);
@@ -80,6 +81,7 @@ export default function SaleOrderPage() {
       loadStoreProducts();
       loadCustomers();
       loadPaymentMethods();
+      loadLoyaltyTiers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fulfillStoreId]);
@@ -97,6 +99,15 @@ export default function SaleOrderPage() {
   async function loadCustomers() {
     const { data } = await supabase.from("customers").select("*").eq("store_id", fulfillStoreId).order("name");
     setCustomers(data || []);
+  }
+
+  async function loadLoyaltyTiers() {
+    const { data } = await supabase
+      .from("loyalty_tiers")
+      .select("*")
+      .eq("store_id", fulfillStoreId)
+      .order("sort_order");
+    setLoyaltyTiers(data || []);
   }
 
   async function loadPaymentMethods() {
@@ -198,7 +209,7 @@ export default function SaleOrderPage() {
   }
 
   const subtotal = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
-  const discountPercent = loyaltyDiscountPercent(selectedCustomer?.loyalty_tier);
+  const discountPercent = tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id);
   const discountAmount = (subtotal * discountPercent) / 100;
   const total = subtotal - discountAmount;
   const orderTypeValue = profile?.role === "wholesale" ? "wholesale" : "online";
