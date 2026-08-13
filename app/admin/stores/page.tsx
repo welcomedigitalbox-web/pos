@@ -46,13 +46,8 @@ export default function AdminStoresPage() {
       const { error } = await supabase.from("stores").insert({ id: id.trim(), name: name.trim() });
       if (error) throw error;
 
-      // Seed default payment methods for the new store so checkout works immediately
-      await supabase.from("payment_methods").insert([
-        { store_id: id.trim(), name: "Cash", code: "cash", is_cash: true, sort_order: 1 },
-        { store_id: id.trim(), name: "Card", code: "card", sort_order: 2 },
-        { store_id: id.trim(), name: "Bank Transfer", code: "bank_transfer", sort_order: 3 },
-        { store_id: id.trim(), name: "COD", code: "cod", is_cod: true, sort_order: 4 },
-      ]);
+      // Payment methods and loyalty tiers are shared across all stores now —
+      // no per-store seeding needed here.
 
       showToast("✅ " + t("admin_storeCreated"));
       setShowForm(false);
