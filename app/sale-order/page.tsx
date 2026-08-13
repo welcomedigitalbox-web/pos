@@ -7,6 +7,7 @@ import { useAuth } from "../auth-context";
 import { useLanguage } from "../language-context";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "../permissions";
+import { loyaltyDiscountPercent } from "../loyalty";
 
 type OrderLine = {
   tempId: string;
@@ -196,7 +197,10 @@ export default function SaleOrderPage() {
     setShowCustomerDropdown(false);
   }
 
-  const total = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
+  const subtotal = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
+  const discountPercent = loyaltyDiscountPercent(selectedCustomer?.loyalty_tier);
+  const discountAmount = (subtotal * discountPercent) / 100;
+  const total = subtotal - discountAmount;
   const orderTypeValue = profile?.role === "wholesale" ? "wholesale" : "online";
   const hasShortage = lines.some((l) => l.qty > l.available_stock);
 
@@ -213,7 +217,10 @@ export default function SaleOrderPage() {
         .insert({
           store_id: fulfillStoreId,
           total,
-          subtotal: total,
+          subtotal,
+          discount_type: "percent",
+          discount_value: discountPercent,
+          discount_amount: discountAmount,
           cashier_email: profile?.email || null,
           payment_method: paymentMethod,
           order_type: orderTypeValue,
@@ -491,6 +498,20 @@ export default function SaleOrderPage() {
 
         {/* Side panel: customer + delivery + payment */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 h-fit sticky top-24">
+          {discountAmount > 0 && (
+            <div className="text-xs space-y-1 mb-2">
+              <div className="flex justify-between text-slate-500">
+                <span>{t("pos_subtotal")}</span>
+                <span>{fmt(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-green-600 font-medium">
+                <span>
+                  🎖️ {t("customers_loyaltyApplied")} ({discountPercent}%)
+                </span>
+                <span>-{fmt(discountAmount)}</span>
+              </div>
+            </div>
+          )}
           <div className="flex justify-between font-bold text-lg border-b border-slate-100 pb-3 mb-3">
             <span>{t("pos_total")}</span>
             <span>{fmt(total)}</span>
