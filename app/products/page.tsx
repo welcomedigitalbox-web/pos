@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase, Product, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, Product, ProductCategory, ProductVariant, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -20,9 +20,10 @@ type FormState = {
   price: string;
   stock_qty: string;
   avg_cost: string;
+  category_id: string;
 };
 
-const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "" };
+const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "", category_id: "" };
 
 export default function ProductsPage() {
   const { storeId } = useStore();
@@ -30,6 +31,11 @@ export default function ProductsPage() {
   const { t } = useLanguage();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [editingVariants, setEditingVariants] = useState<ProductVariant[]>([]);
+  const [newVariantName, setNewVariantName] = useState("");
+  const [newVariantSku, setNewVariantSku] = useState("");
+  const [newVariantPrice, setNewVariantPrice] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -44,6 +50,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     load();
+    loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
@@ -52,6 +59,20 @@ export default function ProductsPage() {
   async function load() {
     const data = await fetchProductsWithStock(storeId, true);
     setProducts(data);
+  }
+
+  async function loadCategories() {
+    const { data } = await supabase.from("product_categories").select("*").order("sort_order");
+    setCategories(data || []);
+  }
+
+  async function loadVariants(productId: string) {
+    const { data } = await supabase
+      .from("product_variants")
+      .select("*")
+      .eq("product_id", productId)
+      .order("created_at");
+    setEditingVariants(data || []);
   }
 
   function showToast(msg: string) {
@@ -68,10 +89,11 @@ export default function ProductsPage() {
 
   function openNew() {
     setForm({ ...emptyForm, sku: generateSku() });
+    setEditingVariants([]);
     setShowForm(true);
   }
 
-  function openEdit(p: Product) {
+  async function openEdit(p: Product) {
     setForm({
       id: p.id,
       name: p.name,
@@ -79,7 +101,9 @@ export default function ProductsPage() {
       price: String(p.price),
       stock_qty: String(p.stock_qty),
       avg_cost: String(p.avg_cost),
+      category_id: p.category_id || "",
     });
+    await loadVariants(p.id);
     setShowForm(true);
   }
 
@@ -103,6 +127,7 @@ export default function ProductsPage() {
             name: form.name.trim(),
             sku: form.sku.trim() || null,
             price,
+            category_id: form.category_id || null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", form.id);
@@ -116,6 +141,7 @@ export default function ProductsPage() {
             name: form.name.trim(),
             sku: form.sku.trim() || null,
             price,
+            category_id: form.category_id || null,
             store_id: storeId,
           })
           .select()
@@ -153,6 +179,29 @@ export default function ProductsPage() {
     }
     showToast(t("products_deleteSuccess"));
     await load();
+  }
+
+  async function addVariant() {
+    if (!form.id || !newVariantName.trim()) return;
+    const { error } = await supabase.from("product_variants").insert({
+      product_id: form.id,
+      variant_name: newVariantName.trim(),
+      sku: newVariantSku.trim() || null,
+      price_override: newVariantPrice ? Number(newVariantPrice) : null,
+    });
+    if (error) {
+      showToast("❌ " + error.message);
+      return;
+    }
+    setNewVariantName("");
+    setNewVariantSku("");
+    setNewVariantPrice("");
+    await loadVariants(form.id);
+  }
+
+  async function deleteVariant(id: string) {
+    await supabase.from("product_variants").delete().eq("id", id);
+    if (form.id) await loadVariants(form.id);
   }
 
   async function handleToggleActive(p: Product) {
@@ -301,6 +350,20 @@ export default function ProductsPage() {
               required
             />
 
+            <label className="text-sm text-slate-600">{t("nav_productCategory")}</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.category_id}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+            >
+              <option value="">{t("customers_tierNone")}</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
             <label className="text-sm text-slate-600">{t("products_stockQty")}</label>
             <input
               type="number"
@@ -319,6 +382,55 @@ export default function ProductsPage() {
               placeholder="0"
             />
             <p className="text-xs text-slate-400 -mt-3 mb-4">{t("products_avgCostWarning")}</p>
+
+            {form.id && (
+              <div className="mb-4 border-t border-slate-100 pt-3">
+                <label className="text-sm text-slate-600 block mb-2">{t("nav_productVariant")}</label>
+                {editingVariants.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {editingVariants.map((v) => (
+                      <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1.5">
+                        <span>
+                          {v.variant_name}
+                          {v.sku && <span className="text-slate-400"> · {v.sku}</span>}
+                          {v.price_override && (
+                            <span className="text-slate-400"> · {v.price_override.toLocaleString()} MMK</span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => deleteVariant(v.id)}
+                          className="text-red-500 ml-2"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-1">
+                  <input
+                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                    value={newVariantName}
+                    onChange={(e) => setNewVariantName(e.target.value)}
+                    placeholder={t("productVariant_variantName")}
+                  />
+                  <input
+                    className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                    value={newVariantSku}
+                    onChange={(e) => setNewVariantSku(e.target.value)}
+                    placeholder={t("products_sku")}
+                  />
+                  <button
+                    type="button"
+                    onClick={addVariant}
+                    className="px-3 py-1.5 bg-slate-700 text-white rounded-lg text-xs font-medium"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button
