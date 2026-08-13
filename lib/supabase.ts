@@ -1,108 +1,38 @@
-import { createClient } from "@supabase/supabase-js";
+-- ============================================
+-- Dynamic Loyalty Tiers (Sale Manager/Owner/Admin can create custom tiers)
+-- ============================================
+create table if not exists loyalty_tiers (
+  id uuid primary key default gen_random_uuid(),
+  store_id text not null,
+  name text not null,
+  discount_percent numeric not null default 0,
+  sort_order integer not null default 0,
+  created_at timestamptz default now()
+);
+create index idx_loyalty_tiers_store on loyalty_tiers(store_id);
+alter table loyalty_tiers enable row level security;
+create policy "authenticated read/write - loyalty_tiers" on loyalty_tiers
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+-- Seed default Silver/Gold tiers for each existing store
+insert into loyalty_tiers (store_id, name, discount_percent, sort_order)
+select s.id, m.name, m.discount_percent, m.sort_order
+from stores s
+cross join (values
+  ('Silver', 3, 1),
+  ('Gold', 5, 2)
+) as m(name, discount_percent, sort_order);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+-- Add new FK column on customers (nullable = no tier)
+alter table customers add column if not exists loyalty_tier_id uuid references loyalty_tiers(id);
 
-export type Product = {
-  id: string;
-  name: string;
-  sku: string | null;
-  price: number;
-  stock_qty: number;
-  store_id: string;
-  avg_cost: number;
-  previous_avg_cost: number;
-  last_purchase_cost: number;
-  created_at: string;
-  updated_at: string;
-};
+-- Best-effort migrate old text-based tier values to the new tier records
+update customers c
+set loyalty_tier_id = lt.id
+from loyalty_tiers lt
+where lt.store_id = c.store_id
+  and lower(lt.name) = c.loyalty_tier
+  and c.loyalty_tier in ('silver','gold');
 
-export type Customer = {
-  id: string;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  date_of_birth: string | null;
-  delivery_address: string | null;
-  facebook: string | null;
-  tiktok: string | null;
-  loyalty_tier: "none" | "silver" | "gold";
-  store_id: string;
-  created_at: string;
-};
-
-export type Sale = {
-  id: string;
-  sale_ref: string | null;
-  store_id: string;
-  cashier: string | null;
-  total: number;
-  payment_method: "cash" | "card" | "bank_transfer" | "cod";
-  subtotal: number;
-  discount_type: "percent" | "flat";
-  discount_value: number;
-  discount_amount: number;
-  vat_percent: number;
-  vat_amount: number;
-  amount_received: number;
-  change_amount: number;
-  advance_payment: number;
-  balance_due: number;
-  note: string | null;
-  customer_id: string | null;
-  customer_name: string | null;
-  cashier_email: string | null;
-  created_at: string;
-};
-
-export type SaleItem = {
-  id: string;
-  sale_id: string;
-  product_id: string;
-  product_name: string;
-  qty: number;
-  unit_price: number;
-  line_total: number;
-};
-
-export type StockBatch = {
-  id: string;
-  product_id: string;
-  store_id: string;
-  supplier: string | null;
-  qty: number;
-  unit_cost: number;
-  total_cost: number;
-  new_avg_cost: number;
-  expiry_date: string | null;
-  remaining_qty: number;
-  created_at: string;
-};
-
-export type PaymentMethodRow = {
-  id: string;
-  store_id: string;
-  name: string;
-  code: string;
-  is_cash: boolean;
-  is_cod: boolean;
-  is_active: boolean;
-  sort_order: number;
-};
-
-export type StoreSettings = {
-  store_id: string;
-  business_name: string | null;
-  phone: string | null;
-  address: string | null;
-  receipt_footer: string | null;
-  logo_text: string | null;
-};
-
-export type StoreRow = {
-  id: string;
-  name: string;
-  created_at: string;
-};
+-- Drop the old hardcoded column
+alter table customers drop column if exists loyalty_tier;
