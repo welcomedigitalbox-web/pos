@@ -115,3 +115,81 @@ export type LoyaltyTier = {
   sort_order: number;
   created_at: string;
 };
+
+export type StoreInventory = {
+  id: string;
+  store_id: string;
+  product_id: string;
+  stock_qty: number;
+  avg_cost: number;
+  previous_avg_cost: number;
+  last_purchase_cost: number;
+  updated_at: string;
+};
+
+// Merges the global product catalog with a specific store's stock/cost data.
+// Returns the SAME shape the app always used (Product + stock_qty/avg_cost/etc),
+// so existing UI code barely has to change.
+export async function fetchProductsWithStock(storeId: string): Promise<Product[]> {
+  const { data: products } = await supabase.from("products").select("*").order("name");
+  const { data: inv } = await supabase.from("store_inventory").select("*").eq("store_id", storeId);
+  const invMap = new Map((inv || []).map((i) => [i.product_id, i]));
+  return (products || []).map((p) => {
+    const i = invMap.get(p.id);
+    return {
+      ...p,
+      stock_qty: i?.stock_qty ?? 0,
+      avg_cost: i?.avg_cost ?? 0,
+      previous_avg_cost: i?.previous_avg_cost ?? 0,
+      last_purchase_cost: i?.last_purchase_cost ?? 0,
+    } as Product;
+  });
+}
+
+export async function fetchProductWithStock(productId: string, storeId: string): Promise<Product | null> {
+  const { data: p } = await supabase.from("products").select("*").eq("id", productId).maybeSingle();
+  if (!p) return null;
+  const { data: i } = await supabase
+    .from("store_inventory")
+    .select("*")
+    .eq("product_id", productId)
+    .eq("store_id", storeId)
+    .maybeSingle();
+  return {
+    ...p,
+    stock_qty: i?.stock_qty ?? 0,
+    avg_cost: i?.avg_cost ?? 0,
+    previous_avg_cost: i?.previous_avg_cost ?? 0,
+    last_purchase_cost: i?.last_purchase_cost ?? 0,
+  } as Product;
+}
+
+// Creates or updates a store's stock/cost row for a product. Any field left out keeps its current value.
+export async function upsertStoreInventory(
+  storeId: string,
+  productId: string,
+  fields: Partial<Pick<StoreInventory, "stock_qty" | "avg_cost" | "previous_avg_cost" | "last_purchase_cost">>
+) {
+  const { data: existing } = await supabase
+    .from("store_inventory")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("product_id", productId)
+    .maybeSingle();
+
+  const merged = {
+    store_id: storeId,
+    product_id: productId,
+    stock_qty: fields.stock_qty ?? existing?.stock_qty ?? 0,
+    avg_cost: fields.avg_cost ?? existing?.avg_cost ?? 0,
+    previous_avg_cost: fields.previous_avg_cost ?? existing?.previous_avg_cost ?? 0,
+    last_purchase_cost: fields.last_purchase_cost ?? existing?.last_purchase_cost ?? 0,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    await supabase.from("store_inventory").update(merged).eq("id", existing.id);
+  } else {
+    await supabase.from("store_inventory").insert(merged);
+  }
+}
