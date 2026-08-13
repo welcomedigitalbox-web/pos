@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product } from "@/lib/supabase";
+import Link from "next/link";
+import { supabase, Product, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -49,12 +50,8 @@ export default function ProductsPage() {
   if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("store_id", storeId)
-      .order("name");
-    if (!error) setProducts(data || []);
+    const data = await fetchProductsWithStock(storeId);
+    setProducts(data);
   }
 
   function showToast(msg: string) {
@@ -106,23 +103,25 @@ export default function ProductsPage() {
             name: form.name.trim(),
             sku: form.sku.trim() || null,
             price,
-            stock_qty,
-            avg_cost,
             updated_at: new Date().toISOString(),
           })
           .eq("id", form.id);
         if (error) throw error;
+        await upsertStoreInventory(storeId, form.id, { stock_qty, avg_cost });
         showToast(t("products_updateSuccess"));
       } else {
-        const { error } = await supabase.from("products").insert({
-          name: form.name.trim(),
-          sku: form.sku.trim() || null,
-          price,
-          stock_qty,
-          avg_cost,
-          store_id: storeId,
-        });
+        const { data: created, error } = await supabase
+          .from("products")
+          .insert({
+            name: form.name.trim(),
+            sku: form.sku.trim() || null,
+            price,
+            store_id: storeId,
+          })
+          .select()
+          .single();
         if (error) throw error;
+        await upsertStoreInventory(storeId, created.id, { stock_qty, avg_cost });
         showToast(t("products_createSuccess"));
       }
       setShowForm(false);
@@ -192,6 +191,9 @@ export default function ProductsPage() {
                   {p.stock_qty}
                 </td>
                 <td className="px-4 py-2 text-right space-x-2">
+                  <Link href={`/products/${p.id}`} className="text-slate-500 text-xs font-medium">
+                    {t("products_view")}
+                  </Link>
                   <button
                     onClick={() => openEdit(p)}
                     className="text-blue-600 text-xs font-medium"
