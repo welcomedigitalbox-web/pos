@@ -52,7 +52,7 @@ export default function Nav() {
       ? PAGE_OPTIONS.filter((p) => p.group === activeDept && hasPermission(profile, p.key))
       : [];
 
-  const showStoreSelector = activeDept === "sale" || activeDept === "inventory";
+  const showStoreSelector = activeDept === "sale" || activeDept === "inventory" || activeDept === "merchandising";
 
   return (
     <>
