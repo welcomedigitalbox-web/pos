@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase, Product, StockBatch } from "@/lib/supabase";
+import { supabase, Product, StockBatch, fetchProductWithStock } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
+import { useStore } from "../../store-context";
 import { useLanguage } from "../../language-context";
 import { hasPermission } from "../../permissions";
 import Link from "next/link";
@@ -26,6 +27,7 @@ export default function ProductDetailPage() {
   const id = params.id as string;
   const router = useRouter();
   const { profile } = useAuth();
+  const { storeId } = useStore();
   const { t } = useLanguage();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -50,12 +52,12 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (id) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, storeId]);
 
   if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
-    const { data: prod } = await supabase.from("products").select("*").eq("id", id).maybeSingle();
+    const prod = await fetchProductWithStock(id, storeId);
     if (!prod) {
       setNotFound(true);
       return;
@@ -77,28 +79,32 @@ export default function ProductDetailPage() {
       .from("stock_purchases")
       .select("*")
       .eq("product_id", id)
+      .eq("store_id", storeId)
       .gt("remaining_qty", 0)
       .order("expiry_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
     setBatches(batchData || []);
 
-    // Combined ledger: stock-in (IN), sales (OUT), damages (OUT)
+    // Combined ledger: stock-in (IN), sales (OUT), damages (OUT) — scoped to this store
     const { data: purchases } = await supabase
       .from("stock_purchases")
       .select("qty, created_at, supplier")
       .eq("product_id", id)
+      .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
     const { data: saleItemRows } = await supabase
       .from("sale_items")
-      .select("qty, created_at, sale_id")
+      .select("qty, created_at, sale_id, sales!inner(store_id)")
       .eq("product_id", id)
+      .eq("sales.store_id", storeId)
       .order("created_at", { ascending: true });
 
     const { data: damageRows } = await supabase
       .from("stock_damages")
       .select("qty, created_at, reason")
       .eq("product_id", id)
+      .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
     const combined: LedgerRow[] = [
@@ -131,7 +137,7 @@ export default function ProductDetailPage() {
   }
 
   if (notFound) {
-    return <div className="pt-8 text-center text-slate-400">Product not found</div>;
+    return <div className="pt-8 text-center text-slate-400">{t("products_notFound")}</div>;
   }
   if (!product) {
     return <div className="pt-8 text-center text-slate-400">...</div>;
