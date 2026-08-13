@@ -85,6 +85,7 @@ export const translations = {
     pos_salesRep: "အရောင်းသမား",
     pos_salesRepNone: "မသတ်မှတ်ရသေးပါ",
     pos_allCategories: "အားလုံး",
+    pos_variantCount: "မျိုးကွဲ",
     pos_chooseVariant: "အမျိုးအစား ရွေးပါ",
     customers_loyalty: "Loyalty Tier",
     customers_loyaltyApplied: "Loyalty auto-discount",
@@ -214,6 +215,7 @@ export const translations = {
     products_restored: "✅ ပြန်ဖော်ပြီးပါပြီ",
     products_restore: "ပြန်ဖော်ရန်",
     products_archivedBadge: "Archived",
+    products_variantStockNote: "ℹ️ Variant ရှိသည့် product ဖြစ်၍ stock/cost ကို variant အလိုက် Stock-In ကနေ စီမံပါ",
 
     stockIn_title: "ကုန်သွင်း (Purchase Receiving)",
     stockIn_product: "ကုန်ပစ္စည်း",
@@ -492,6 +494,7 @@ export const translations = {
     pos_salesRep: "Sales Rep",
     pos_salesRepNone: "Not set",
     pos_allCategories: "All",
+    pos_variantCount: "variants",
     pos_chooseVariant: "Choose a variant",
     customers_loyalty: "Loyalty Tier",
     customers_loyaltyApplied: "Loyalty auto-discount",
@@ -621,6 +624,7 @@ export const translations = {
     products_restored: "✅ Restored",
     products_restore: "Restore",
     products_archivedBadge: "Archived",
+    products_variantStockNote: "ℹ️ This product has variants — manage stock/cost per variant from Stock-In",
 
     stockIn_title: "Stock-In (Purchase Receiving)",
     stockIn_product: "Product",
