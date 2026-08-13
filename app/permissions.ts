@@ -39,7 +39,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "my-sales", href: "/my-sales", labelKey: "nav_mySales", group: "sale" },
   { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
-  { key: "products", href: "/products", labelKey: "nav_products", group: "inventory" },
+  { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
   { key: "damage", href: "/damage", labelKey: "nav_damage", group: "inventory" },
