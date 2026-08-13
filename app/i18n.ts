@@ -1,609 +1,598 @@
-"use client";
+export type Lang = "my" | "en";
 
-import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow } from "@/lib/supabase";
-import { useStore } from "../store-context";
-import { useAuth } from "../auth-context";
-import { useLanguage } from "../language-context";
-import { useRouter } from "next/navigation";
-import { hasPermission } from "../permissions";
+export const translations = {
+  my: {
+    appName: "POS MVP",
+    nav_pos: "POS",
+    nav_history: "အရောင်းမှတ်တမ်း",
+    nav_products: "ကုန်ပစ္စည်း",
+    nav_stockIn: "ကုန်သွင်း",
+    nav_stockRequest: "ကုန်တောင်းခံမှု",
+    nav_damage: "ပျက်စီးကုန်",
+    nav_dashboard: "ဒက်ရှ်ဘုတ်",
+    nav_mySales: "ကျွန်ုပ်ရဲ့ ရောင်းအား",
+    nav_saleOrder: "အော်ဒါတင်",
+    nav_admin: "Admin",
+    nav_group_sale: "အရောင်း",
+    nav_group_inventory: "ကုန်ပစ္စည်း",
+    nav_group_reports: "အစီရင်ခံစာ",
+    logout: "ထွက်မည်",
 
-type OrderLine = {
-  tempId: string;
-  product_id: string;
-  name: string;
-  qty: number;
-  unit_price: number;
-  avg_cost: number;
-  available_stock: number;
-};
+    login_title: "🛒 POS Login",
+    login_subtitle: "Cashier/Manager account နဲ့ login ဝင်ပါ",
+    login_email: "အီးမေးလ်",
+    login_password: "စကားဝှက်",
+    login_button: "Login",
+    login_loading: "Login ဝင်နေသည်...",
+    login_error: "Login မအောင်မြင်ပါ — email/password စစ်ကြည့်ပါ",
 
-type OrderStatus = "pending" | "processing" | "delivered" | "cancelled";
+    pos_search: "ကုန်ပစ္စည်း ရှာပါ...",
+    pos_noProduct: "ကုန်ပစ္စည်း မရှိပါ",
+    pos_cart: "ဈေးဝယ်စာရင်း",
+    pos_emptyCart: "ကုန်ပစ္စည်း ရွေးပါ",
+    pos_total: "စုစုပေါင်း",
+    pos_checkout: "ငွေရှင်းမည်",
+    pos_processing: "လုပ်ဆောင်နေသည်...",
+    pos_stock: "လက်ကျန်",
+    pos_outOfStock: "ကုန်ပစ္စည်း ကုန်နေပါသည်",
+    pos_notEnoughStock: "လက်ကျန် မလုံလောက်ပါ",
+    pos_saleSuccess: "✅ အရောင်း အောင်မြင်ပါသည်! စုစုပေါင်း -",
+    pos_subtotal: "စုစုပေါင်း (VAT/Discount မတိုင်မီ)",
+    pos_discount: "လျှော့ဈေး",
+    pos_discountPercent: "%",
+    pos_discountFlat: "ကျပ်",
+    pos_vat: "VAT %",
+    pos_grandTotal: "ငွေရှင်းရမည့်စုစုပေါင်း",
+    pos_paymentMethod: "ငွေပေးချေမှုပုံစံ",
+    pos_cash: "ငွေသား",
+    pos_card: "ကတ်",
+    pos_bankTransfer: "ဘဏ်လွှဲ",
+    pos_cod: "COD (အိမ်ရောက်ငွေချေ)",
+    pos_amountReceived: "လက်ခံရရှိငွေ",
+    pos_change: "ပြန်ပေးရမည့်ငွေ",
+    pos_advancePayment: "ကြိုတင်ငွေ",
+    pos_balanceDue: "ကျန်ရှိငွေ",
+    pos_note: "မှတ်ချက်",
+    pos_notePlaceholder: "မှတ်ချက် ရှိလျှင် ရေးပါ...",
+    pos_amountInsufficient: "လက်ခံရရှိငွေ မလုံလောက်ပါ",
+    pos_printReceipt: "ပြေစာ ပရင့်ထုတ်မည်",
+    pos_vatToggle: "VAT ကောက်မည်",
+    pos_customer: "ဖောက်သည်",
+    pos_customerSearchPlaceholder: "ဖောက်သည် အမည်/ဖုန်း ရှာပါ...",
+    pos_customerWalkIn: "ဖောက်သည် (walk-in)",
+    pos_customerAddNew: "+ \"{name}\" ကို ဖောက်သည်အသစ် အဖြစ်ထည့်မည်",
+    pos_customerPhone: "ဖုန်းနံပါတ် (ရှိလျှင်)",
+    pos_cashier: "ရောင်းချသူ",
 
-type MyOrderRow = {
-  id: string;
-  created_at: string;
-  total: number;
-  order_status: OrderStatus;
-  customer_name: string | null;
-  delivery_address: string | null;
-  store_id: string;
-  note: string | null;
-};
+    history_time: "အချိန်",
+    history_store: "ဆိုင်",
+    history_items: "ကုန်ပစ္စည်းများ",
+    history_total: "စုစုပေါင်း",
+    history_empty: "အရောင်းမှတ်တမ်း မရှိသေးပါ",
 
-function fmt(n: number) {
-  return n.toLocaleString() + " MMK";
-}
+    dashboard_todaySale: "ယနေ့ ရောင်းအား",
+    dashboard_todayOrder: "ယနေ့ အော်ဒါ",
+    dashboard_todayCogs: "ယနေ့ ကုန်ကျစရိတ် (COGS)",
+    dashboard_gp: "အမြတ်",
+    dashboard_gpMargin: "အမြတ် %",
+    dashboard_lowStock: "လက်ကျန် နည်းနေသောပစ္စည်း",
+    mySales_title: "ကျွန်ုပ်ရဲ့ ယနေ့ ရောင်းအား",
+    mySales_todayTotal: "ယနေ့ စုစုပေါင်း",
+    mySales_todayCount: "ယနေ့ အော်ဒါအရေအတွက်",
+    mySales_time: "အချိန်",
+    mySales_amount: "ပမာဏ",
+    saleOrder_newOrder: "အော်ဒါ အသစ်",
+    saleOrder_myOrders: "ကျွန်ုပ်ရဲ့ အော်ဒါများ",
+    saleOrder_customerRequired: "ဖောက်သည် အချက်အလက် လိုအပ်ပါသည်",
+    saleOrder_deliveryAddress: "ပို့ဆောင်ရမည့်လိပ်စာ",
+    saleOrder_status: "အော်ဒါအခြေအနေ",
+    saleOrder_pending: "စောင့်ဆိုင်းဆဲ",
+    saleOrder_processing: "လုပ်ဆောင်နေဆဲ",
+    saleOrder_delivered: "ပို့ပြီး",
+    saleOrder_cancelled: "ပယ်ဖျက်",
+    saleOrder_submit: "အော်ဒါ တင်မည်",
+    saleOrder_created: "✅ အော်ဒါ အောင်မြင်ပါသည်! စုစုပေါင်း -",
+    saleOrder_fulfillingStore: "ပို့ဆောင်မည့်ဆိုင်",
+    saleOrder_readiness: "လက်ကျန်အခြေအနေ",
+    saleOrder_ready: "အဆင်သင့်",
+    saleOrder_notReady: "မလုံလောက်",
+    saleOrder_noLines: "ကုန်ပစ္စည်း ထည့်ပါ",
+    saleOrder_shortageNotice: "ကုန်ပစ္စည်း အချို့ လက်ကျန် မလုံလောက်ပါ — Submit လုပ်ရင် ရှိသလောက် ပို့ပြီး ကျန်တာကို Warehouse ဆီ Stock Request auto တင်ပေးပါမည်",
+    saleOrder_shortageWarning: "လက်ကျန်မလုံလောက်၍ Stock Request တင်ထားပါသည်",
 
-export default function SaleOrderPage() {
-  const { storeId, stores } = useStore();
-  const { profile } = useAuth();
-  const { t } = useLanguage();
-  const router = useRouter();
+    products_title: "ကုန်ပစ္စည်းများ",
+    products_addNew: "+ ကုန်ပစ္စည်း အသစ်ထည့်မည်",
+    products_name: "အမည်",
+    products_sku: "SKU",
+    products_price: "ဈေးနှုန်း",
+    products_avgCost: "ပျမ်းမျှ ကုန်ကျစရိတ်",
+    products_stock: "လက်ကျန်",
+    products_edit: "ပြင်ရန်",
+    products_view: "ကြည့်ရန်",
+    products_previousAvgCost: "ယခင် ပျမ်းမျှ ကုန်ကျစရိတ်",
+    products_delete: "ဖျက်ရန်",
+    products_empty: "ကုန်ပစ္စည်း မရှိသေးပါ",
+    products_modalEditTitle: "ကုန်ပစ္စည်း ပြင်မည်",
+    products_modalNewTitle: "ကုန်ပစ္စည်း အသစ်",
+    products_productName: "ကုန်ပစ္စည်းအမည်",
+    products_skuOptional: "SKU/Barcode (မဖြစ်မနေ)",
+    products_skuRequired: "SKU/Barcode လိုအပ်ပါသည်",
+    products_skuAutoHint: "⚡ Auto-generate လုပ်ထားပါသည် — ကိုယ်ပိုင် barcode ရှိရင် ပြင်ရေးလို့ရပါတယ်",
+    products_skuRegenerate: "အသစ် ပြန်ထုတ်ရန်",
+    products_priceMmk: "ဈေးနှုန်း (MMK)",
+    products_stockQty: "လက်ကျန် အရေအတွက်",
+    products_avgCostMmk: "ပျမ်းမျှ ကုန်ကျစရိတ် (MMK)",
+    products_avgCostWarning: "⚠️ Stock-In ကနေ auto တွက်ပေးတာပါ — manual ပြင်ရင် COGS accuracy ကို ထိခိုက်နိုင်ပါတယ်",
+    products_cancel: "မလုပ်တော့ပါ",
+    products_save: "သိမ်းမည်",
+    products_saving: "သိမ်းနေသည်...",
+    products_deleteConfirm: "ဒီကုန်ပစ္စည်းကို ဖျက်မှာ သေချာပါသလား?",
+    products_nameRequired: "ကုန်ပစ္စည်းအမည် လိုအပ်ပါသည်",
+    products_priceInvalid: "ဈေးနှုန်း မှားနေပါသည်",
+    products_stockInvalid: "လက်ကျန် အရေအတွက် မှားနေပါသည်",
+    products_avgCostInvalid: "ပျမ်းမျှ ကုန်ကျစရိတ် မှားနေပါသည်",
+    products_updateSuccess: "✅ ကုန်ပစ္စည်း ပြင်ပြီးပါပြီ",
+    products_createSuccess: "✅ ကုန်ပစ္စည်း အသစ် ထည့်ပြီးပါပြီ",
+    products_deleteSuccess: "🗑️ ကုန်ပစ္စည်း ဖျက်ပြီးပါပြီ",
 
-  useEffect(() => {
-    if (profile && !hasPermission(profile, "sale-order")) router.replace("/");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile]);
+    stockIn_title: "ကုန်သွင်း (Purchase Receiving)",
+    stockIn_product: "ကုန်ပစ္စည်း",
+    stockIn_selectPlaceholder: "-- ရွေးပါ --",
+    stockIn_supplier: "ပေးသွင်းသူ (ရှိလျှင်)",
+    stockIn_qty: "ဝယ်ယူသည့် အရေအတွက်",
+    stockIn_unitCost: "တစ်ခုချင်း ဈေးနှုန်း (MMK)",
+    stockIn_currentStock: "လက်ရှိ လက်ကျန်/ပျမ်းမျှစရိတ်",
+    stockIn_newPurchase: "ဝယ်မည့် အရေအတွက်/စရိတ်",
+    stockIn_newAvgCost: "ပျမ်းမျှစရိတ် အသစ်",
+    stockIn_submit: "ကုန်သွင်းမည်",
+    stockIn_processing: "လုပ်ဆောင်နေသည်...",
+    stockIn_selectProduct: "ကုန်ပစ္စည်း ရွေးပါ",
+    stockIn_qtyInvalid: "အရေအတွက် ၀ ထက်ကြီးရပါမည်",
+    stockIn_costInvalid: "ဈေးနှုန်း မှားနေပါသည်",
+    stockIn_success: "✅ ကုန်သွင်း အောင်မြင်ပါသည်! ပျမ်းမျှစရိတ်အသစ်:",
+    stockIn_historyTitle: "ကုန်သွင်း မှတ်တမ်း",
+    stockIn_historyEmpty: "ကုန်သွင်း မှတ်တမ်း မရှိသေးပါ",
+    stockRequest_new: "ကုန်တောင်းခံမှု အသစ်",
+    stockRequest_requestedQty: "တောင်းခံအရေအတွက်",
+    stockRequest_receivedQty: "ရရှိအရေအတွက်",
+    stockRequest_receive: "လက်ခံမည်",
+    stockRequest_approve: "အတည်ပြုမည်",
+    stockRequest_created: "✅ ကုန်တောင်းခံမှု ဖန်တီးပြီးပါပြီ",
+    stockRequest_qtyInvalid: "အရေအတွက် မှားနေပါသည်",
+    stockRequest_receivedMatched: "✅ ကိုက်ညီပါသည်! Stock ထည့်ပြီးပါပြီ",
+    stockRequest_receivedMismatch: "⚠️ အရေအတွက် မကိုက်ညီပါ — Manager approval လိုအပ်ပါသည်",
+    stockRequest_approved: "✅ Manager အတည်ပြုပြီးပါပြီ",
+    stockRequest_receiveHint: "ရရှိလာသည့် အရေအတွက်/ဈေးနှုန်းကို ထည့်ပါ",
+    stockRequest_status_pending: "စောင့်ဆိုင်းဆဲ",
+    stockRequest_status_received: "ရရှိပြီး",
+    stockRequest_status_mismatch: "မကိုက်ညီ",
+    stockRequest_status_approved: "အတည်ပြုပြီး",
+    stockRequest_status_rejected: "ငြင်းပယ်",
+    damage_qty: "ပျက်စီးအရေအတွက်",
+    damage_reason: "အကြောင်းရင်း",
+    damage_reasonPlaceholder: "ဥပမာ - ပျက်နေ, သက်တမ်းကုန်, ကျိုးနေ...",
+    damage_submit: "ပျက်စီးမှု မှတ်တမ်းတင်မည်",
+    damage_recorded: "✅ ပျက်စီးမှု မှတ်တမ်းတင်ပြီးပါပြီ",
+    damage_notEnoughStock: "လက်ကျန် မလုံလောက်ပါ",
+    damage_history: "ပျက်စီးမှု မှတ်တမ်း",
+    stockIn_addNew: "+ ကုန်သွင်း အသစ်",
+    stockIn_searchPlaceholder: "ကုန်ပစ္စည်း ရှာပါ...",
+    stockIn_qtyColumn: "အရေအတွက်",
+    stockIn_actions: "",
+    stockIn_edit: "ပြင်ရန်",
+    stockIn_delete: "ဖျက်ရန်",
+    stockIn_deleteConfirm: "ဒီ stock-in ကို ဖျက်မှာ သေချာလား? Cost/stock ကို ပြန်ပြင်ပေးပါမယ်",
+    stockIn_passwordTitle: "စကားဝှက် အတည်ပြုပါ",
+    stockIn_passwordSubtitle: "Cost/stock ပြင်ဆင်ခြင်း အတွက် password ထပ်ထည့်ပါ",
+    stockIn_passwordPlaceholder: "Password",
+    stockIn_passwordConfirm: "အတည်ပြုမည်",
+    stockIn_passwordCancel: "မလုပ်တော့ပါ",
+    stockIn_passwordWrong: "❌ Password မှားနေပါတယ်",
+    stockIn_onlyLatestEditable: "⚠️ နောက်ဆုံး stock-in ကိုပဲ ပြင်/ဖျက်လို့ ရပါတယ် (cost history ကို စောင့်ရှောက်ဖို့ပါ)",
+    stockIn_editTitle: "Stock-In ပြင်မည်",
+    stockIn_expiryDate: "သက်တမ်းကုန်ရက်",
+    stockIn_remaining: "လက်ကျန်",
+    barcode_title: "Barcode / SKU ရှာဖွေမှု",
+    barcode_placeholder: "Barcode/SKU ရိုက်ထည့် (သို့) scan ပါ...",
+    barcode_notFound: "ဒီ SKU အတွက် ကုန်ပစ္စည်း မတွေ့ပါ",
+    barcode_soldQty: "ရောင်းပြီးအရေအတွက်",
+    barcode_balanceStock: "လက်ကျန်",
+    barcode_lastAvgCost: "နောက်ဆုံး ဝယ်စရိတ်",
+    barcode_avgCost: "ပျမ်းမျှ ကုန်ကျစရိတ်",
+    barcode_totalSale: "စုစုပေါင်း ရောင်းအား",
+    barcode_totalMargin: "စုစုပေါင်း အမြတ်",
+    barcode_batchTitle: "Batch/Expiry အသေးစိတ်",
+    barcode_batchQty: "လက်ကျန် Qty",
+    barcode_batchExpiry: "သက်တမ်းကုန်ရက်",
+    barcode_batchCost: "ဝယ်စရိတ်",
+    barcode_noBatch: "Batch record မရှိသေးပါ",
+    barcode_expired: "သက်တမ်းကုန်ပြီး",
+    barcode_expiringSoon: "ရက် ၃၀ အတွင်း ကုန်တော့မည်",
+    ledger_title: "Stock Ledger",
+    ledger_selectProduct: "ကုန်ပစ္စည်း ရွေးပါ",
+    ledger_date: "ရက်စွဲ",
+    ledger_type: "အမျိုးအစား",
+    ledger_in: "ဝင်",
+    ledger_out: "ထွက်",
+    ledger_qty: "အရေအတွက်",
+    ledger_balance: "လက်ကျန်",
+    ledger_reference: "အညွှန်း",
+    ledger_empty: "Movement history မရှိသေးပါ",
+    nav_barcode: "Barcode ရှာမည်",
+    nav_ledger: "Stock Ledger",
+    nav_warehouse: "Warehouse",
+    warehouse_title: "Warehouse / Inventory Level",
+    warehouse_subtitle: "ဆိုင်အလိုက် stock balance, sellable stock, minimum-level alert ကို track ပါ",
+    warehouse_allStores: "ဆိုင်အားလုံး",
+    warehouse_allStock: "Stock အားလုံး",
+    warehouse_searchPlaceholder: "Barcode, ကုန်ပစ္စည်း, ဆိုင် ရှာပါ...",
+    warehouse_products: "ကုန်ပစ္စည်း",
+    warehouse_soldQty: "ရောင်းပြီး",
+    warehouse_availableQty: "လက်ကျန်",
+    warehouse_targetQty: "Target (50%)",
+    warehouse_stockPercent: "Stock %",
+    warehouse_healthy: "ကောင်းမွန်",
+    warehouse_warning: "သတိပေး",
+    warehouse_urgent: "အရေးပေါ်",
+    warehouse_outOfStock: "ကုန်နေပြီ",
+    warehouse_expiringSoon: "သက်တမ်းကုန်တော့မည်",
+    warehouse_expired: "သက်တမ်းကုန်ပြီး",
+    warehouse_stockValue: "Stock တန်ဖိုး",
+    warehouse_colStore: "ဆိုင်",
+    warehouse_colProduct: "ကုန်ပစ္စည်း",
+    warehouse_colBarcode: "Barcode",
+    warehouse_colSold: "ရောင်းပြီး",
+    warehouse_colAvailable: "လက်ကျန်",
+    warehouse_colAvgCost: "ပျမ်းမျှ ကုန်ကျစရိတ်",
+    warehouse_colTarget: "Target",
+    warehouse_colStockPercent: "Stock %",
+    warehouse_colStatus: "Status",
+    warehouse_colExpiry: "သက်တမ်းကုန်ရက်",
+    warehouse_empty: "Data မရှိပါ",
 
-  const [fulfillStoreId, setFulfillStoreId] = useState("");
-  const [storeProducts, setStoreProducts] = useState<Product[]>([]);
-  const [productSearch, setProductSearch] = useState("");
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
+    admin_users_title: "အသုံးပြုသူများ စီမံခန့်ခွဲမှု",
+    admin_createUser: "+ User အသစ်",
+    admin_email: "Email",
+    admin_password: "Password",
+    admin_role: "Role",
+    admin_store: "ဆိုင်",
+    admin_permissions: "Page Access",
+    admin_save: "သိမ်းမည်",
+    admin_cancel: "မလုပ်တော့ပါ",
+    admin_edit: "ပြင်ရန်",
+    admin_creating: "ဖန်တီးနေသည်...",
+    admin_userCreated: "✅ User အသစ် ဖန်တီးပြီးပါပြီ",
+    admin_userUpdated: "✅ User permissions update ပြီးပါပြီ",
+    admin_role_cashier: "ငွေကောင်တာ",
+    admin_role_manager: "မန်နေဂျာ",
+    admin_role_admin: "အက်ဒမင်",
+    admin_role_owner: "ပိုင်ရှင်",
+    admin_role_sale_manager: "အရောင်း မန်နေဂျာ",
+    admin_role_online_sale: "အွန်လိုင်း အရောင်း",
+    admin_role_wholesale: "လက်ကား",
+    admin_settings_title: "ပြေစာ ဆက်တင်",
+    admin_businessName: "စီးပွားရေးလုပ်ငန်းအမည်",
+    admin_phone: "ဖုန်းနံပါတ်",
+    admin_address: "လိပ်စာ",
+    admin_receiptFooter: "ပြေစာအောက်ခြေ စာသား",
+    admin_logoText: "Logo စာသား (သင်္ကေတ)",
+    admin_settingsSaved: "✅ Settings သိမ်းပြီးပါပြီ",
+    admin_paymentMethods_title: "ငွေပေးချေမှု ပုံစံများ",
+    admin_addMethod: "+ ပုံစံ အသစ်",
+    admin_methodName: "နာမည်",
+    admin_methodCode: "Code",
+    admin_isCash: "ငွေသား ပုံစံ (Amount Received/Change ပြရန်)",
+    admin_isCod: "COD ပုံစံ (Advance/Balance Due ပြရန်)",
+    admin_active: "Active",
+    admin_delete: "ဖျက်ရန်",
+    admin_deleteUserConfirm: "ဒီ user ကို ဖျက်မှာ သေချာလား",
+    admin_userDeleted: "🗑️ User ဖျက်ပြီးပါပြီ",
+    admin_deleteMethodConfirm: "ဒီငွေပေးချေမှုပုံစံကို ဖျက်မှာ သေချာလား",
+    products_notFound: "ကုန်ပစ္စည်း မတွေ့ပါ",
+    admin_stores_title: "ဆိုင်များ",
+    admin_addStore: "+ ဆိုင် အသစ်",
+    admin_storeId: "Store ID",
+    admin_storeIdHint: "ဥပမာ - SR-YGN (space/special character မထည့်ပါနဲ့)",
+    admin_storeName: "ဆိုင်အမည်",
+    admin_storeCreated: "ဆိုင် အသစ် ဖန်တီးပြီးပါပြီ",
+    admin_storeDeleteConfirm: "ဒီဆိုင်ကို ဖျက်မှာ သေချာလား? (ဆိုင်ထဲက product/sale data တွေ ထိခိုက်နိုင်ပါတယ်)",
+  },
+  en: {
+    appName: "POS MVP",
+    nav_pos: "POS",
+    nav_history: "Sale History",
+    nav_products: "Products",
+    nav_stockIn: "Stock-In",
+    nav_stockRequest: "Stock Request",
+    nav_damage: "Damage",
+    nav_dashboard: "Dashboard",
+    nav_mySales: "My Sales",
+    nav_saleOrder: "Sale Order",
+    nav_admin: "Admin",
+    nav_group_sale: "Sale",
+    nav_group_inventory: "Inventory",
+    nav_group_reports: "Reports",
+    logout: "Logout",
 
-  const [lines, setLines] = useState<OrderLine[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState("");
+    login_title: "🛒 POS Login",
+    login_subtitle: "Login with your cashier/manager account",
+    login_email: "Email",
+    login_password: "Password",
+    login_button: "Login",
+    login_loading: "Logging in...",
+    login_error: "Login failed — please check email/password",
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [deliveryAddress, setDeliveryAddress] = useState("");
+    pos_search: "Search product...",
+    pos_noProduct: "No products found",
+    pos_cart: "Cart",
+    pos_emptyCart: "Select an item",
+    pos_total: "Total",
+    pos_checkout: "Checkout / Sale",
+    pos_processing: "Processing...",
+    pos_stock: "Stock",
+    pos_outOfStock: "Out of stock",
+    pos_notEnoughStock: "Not enough stock",
+    pos_saleSuccess: "✅ Sale success! Total:",
+    pos_subtotal: "Subtotal",
+    pos_discount: "Discount",
+    pos_discountPercent: "%",
+    pos_discountFlat: "MMK",
+    pos_vat: "VAT %",
+    pos_grandTotal: "Grand Total",
+    pos_paymentMethod: "Payment Method",
+    pos_cash: "Cash",
+    pos_card: "Card",
+    pos_bankTransfer: "Bank Transfer",
+    pos_cod: "COD",
+    pos_amountReceived: "Amount Received",
+    pos_change: "Change",
+    pos_advancePayment: "Advance Payment",
+    pos_balanceDue: "Balance Due",
+    pos_note: "Note",
+    pos_notePlaceholder: "Add a note (optional)...",
+    pos_amountInsufficient: "Amount received is not enough",
+    pos_printReceipt: "Print Receipt",
+    pos_vatToggle: "Apply VAT",
+    pos_customer: "Customer",
+    pos_customerSearchPlaceholder: "Search customer name/phone...",
+    pos_customerWalkIn: "Walk-in Customer",
+    pos_customerAddNew: '+ Add "{name}" as new customer',
+    pos_customerPhone: "Phone (optional)",
+    pos_cashier: "Cashier",
 
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [orderStatus, setOrderStatus] = useState<OrderStatus>("pending");
-  const [note, setNote] = useState("");
+    history_time: "Time",
+    history_store: "Store",
+    history_items: "Items",
+    history_total: "Total",
+    history_empty: "No sale history yet",
 
-  const [myOrders, setMyOrders] = useState<MyOrderRow[]>([]);
+    dashboard_todaySale: "Today's Sale",
+    dashboard_todayOrder: "Today's Orders",
+    dashboard_todayCogs: "Today's COGS",
+    dashboard_gp: "Gross Profit",
+    dashboard_gpMargin: "GP Margin",
+    dashboard_lowStock: "Low Stock Items",
+    mySales_title: "My Today's Sales",
+    mySales_todayTotal: "Today's Total",
+    mySales_todayCount: "Today's Orders",
+    mySales_time: "Time",
+    mySales_amount: "Amount",
+    saleOrder_newOrder: "New Order",
+    saleOrder_myOrders: "My Orders",
+    saleOrder_customerRequired: "Customer info required",
+    saleOrder_deliveryAddress: "Delivery Address",
+    saleOrder_status: "Order Status",
+    saleOrder_pending: "Pending",
+    saleOrder_processing: "Processing",
+    saleOrder_delivered: "Delivered",
+    saleOrder_cancelled: "Cancelled",
+    saleOrder_submit: "Submit Order",
+    saleOrder_created: "✅ Order created! Total:",
+    saleOrder_fulfillingStore: "Fulfilling Store",
+    saleOrder_readiness: "Stock Status",
+    saleOrder_ready: "Ready",
+    saleOrder_notReady: "Short",
+    saleOrder_noLines: "Add a product",
+    saleOrder_shortageNotice: "Some items don't have enough stock — submitting will ship what's available and auto-request the rest from the warehouse",
+    saleOrder_shortageWarning: "Stock request submitted for shortage",
 
-  useEffect(() => {
-    if (storeId && !fulfillStoreId) setFulfillStoreId(storeId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
+    products_title: "Products",
+    products_addNew: "+ Add Product",
+    products_name: "Name",
+    products_sku: "SKU",
+    products_price: "Price",
+    products_avgCost: "Avg Cost",
+    products_stock: "Stock",
+    products_edit: "Edit",
+    products_view: "View",
+    products_previousAvgCost: "Previous Avg Cost",
+    products_delete: "Delete",
+    products_empty: "No products yet",
+    products_modalEditTitle: "Edit Product",
+    products_modalNewTitle: "New Product",
+    products_productName: "Product Name",
+    products_skuOptional: "SKU/Barcode (required)",
+    products_skuRequired: "SKU/Barcode is required",
+    products_skuAutoHint: "⚡ Auto-generated — edit if you have your own barcode",
+    products_skuRegenerate: "Regenerate",
+    products_priceMmk: "Price (MMK)",
+    products_stockQty: "Stock Quantity",
+    products_avgCostMmk: "Avg Cost (MMK)",
+    products_avgCostWarning: "⚠️ This is auto-calculated from Stock-In — manual edits may affect COGS accuracy",
+    products_cancel: "Cancel",
+    products_save: "Save",
+    products_saving: "Saving...",
+    products_deleteConfirm: "Are you sure you want to delete this product?",
+    products_nameRequired: "Product name is required",
+    products_priceInvalid: "Invalid price",
+    products_stockInvalid: "Invalid stock quantity",
+    products_avgCostInvalid: "Invalid avg cost",
+    products_updateSuccess: "✅ Product updated",
+    products_createSuccess: "✅ Product added",
+    products_deleteSuccess: "🗑️ Product deleted",
 
-  useEffect(() => {
-    if (fulfillStoreId) {
-      loadStoreProducts();
-      loadCustomers();
-      loadPaymentMethods();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fulfillStoreId]);
+    stockIn_title: "Stock-In (Purchase Receiving)",
+    stockIn_product: "Product",
+    stockIn_selectPlaceholder: "-- Select --",
+    stockIn_supplier: "Supplier (optional)",
+    stockIn_qty: "Purchase Qty",
+    stockIn_unitCost: "Unit Cost (MMK)",
+    stockIn_currentStock: "Current Stock/Avg Cost",
+    stockIn_newPurchase: "New Purchase Qty/Cost",
+    stockIn_newAvgCost: "New Avg Cost",
+    stockIn_submit: "Add Stock-In",
+    stockIn_processing: "Processing...",
+    stockIn_selectProduct: "Please select a product",
+    stockIn_qtyInvalid: "Qty must be greater than 0",
+    stockIn_costInvalid: "Invalid unit cost",
+    stockIn_success: "✅ Stock-in success! New avg cost:",
+    stockIn_historyTitle: "Stock-In History",
+    stockIn_historyEmpty: "No stock-in history yet",
+    stockRequest_new: "New Stock Request",
+    stockRequest_requestedQty: "Requested Qty",
+    stockRequest_receivedQty: "Received Qty",
+    stockRequest_receive: "Receive",
+    stockRequest_approve: "Approve",
+    stockRequest_created: "✅ Stock request created",
+    stockRequest_qtyInvalid: "Invalid quantity",
+    stockRequest_receivedMatched: "✅ Matched! Stock added",
+    stockRequest_receivedMismatch: "⚠️ Quantity mismatch — manager approval required",
+    stockRequest_approved: "✅ Approved by manager",
+    stockRequest_receiveHint: "Enter the actual quantity/cost received",
+    stockRequest_status_pending: "Pending",
+    stockRequest_status_received: "Received",
+    stockRequest_status_mismatch: "Mismatch",
+    stockRequest_status_approved: "Approved",
+    stockRequest_status_rejected: "Rejected",
+    damage_qty: "Damaged Qty",
+    damage_reason: "Reason",
+    damage_reasonPlaceholder: "e.g. broken, expired, cracked...",
+    damage_submit: "Record Damage",
+    damage_recorded: "✅ Damage recorded",
+    damage_notEnoughStock: "Not enough stock",
+    damage_history: "Damage History",
+    stockIn_addNew: "+ New Stock-In",
+    stockIn_searchPlaceholder: "Search product...",
+    stockIn_qtyColumn: "Qty",
+    stockIn_actions: "",
+    stockIn_edit: "Edit",
+    stockIn_delete: "Delete",
+    stockIn_deleteConfirm: "Delete this stock-in? Cost/stock will be reverted.",
+    stockIn_passwordTitle: "Confirm Password",
+    stockIn_passwordSubtitle: "Password required to edit/delete cost & stock records",
+    stockIn_passwordPlaceholder: "Password",
+    stockIn_passwordConfirm: "Confirm",
+    stockIn_passwordCancel: "Cancel",
+    stockIn_passwordWrong: "❌ Incorrect password",
+    stockIn_onlyLatestEditable: "⚠️ Only the most recent stock-in can be edited/deleted (to protect cost history)",
+    stockIn_editTitle: "Edit Stock-In",
+    stockIn_expiryDate: "Expiry Date",
+    stockIn_remaining: "Remaining",
+    barcode_title: "Barcode / SKU Lookup",
+    barcode_placeholder: "Enter or scan barcode/SKU...",
+    barcode_notFound: "No product found for this SKU",
+    barcode_soldQty: "Sold Qty",
+    barcode_balanceStock: "Balance Stock",
+    barcode_lastAvgCost: "Last Purchase Cost",
+    barcode_avgCost: "Avg Cost",
+    barcode_totalSale: "Total Sale",
+    barcode_totalMargin: "Total Margin",
+    barcode_batchTitle: "Batch / Expiry Detail",
+    barcode_batchQty: "Remaining Qty",
+    barcode_batchExpiry: "Expiry Date",
+    barcode_batchCost: "Unit Cost",
+    barcode_noBatch: "No batch records yet",
+    barcode_expired: "Expired",
+    barcode_expiringSoon: "Expiring within 30 days",
+    ledger_title: "Stock Ledger",
+    ledger_selectProduct: "Select a product",
+    ledger_date: "Date",
+    ledger_type: "Type",
+    ledger_in: "IN",
+    ledger_out: "OUT",
+    ledger_qty: "Qty",
+    ledger_balance: "Balance",
+    ledger_reference: "Reference",
+    ledger_empty: "No movement history yet",
+    nav_barcode: "Barcode Lookup",
+    nav_ledger: "Stock Ledger",
+    nav_warehouse: "Warehouse",
+    warehouse_title: "Warehouse / Inventory Level",
+    warehouse_subtitle: "Track remaining stock, sellable stock and minimum-level alerts by store",
+    warehouse_allStores: "All Stores",
+    warehouse_allStock: "All Stock",
+    warehouse_searchPlaceholder: "Search barcode, product, or store...",
+    warehouse_products: "Products",
+    warehouse_soldQty: "Sold Qty",
+    warehouse_availableQty: "Available Qty",
+    warehouse_targetQty: "Target (50%)",
+    warehouse_stockPercent: "Stock %",
+    warehouse_healthy: "Healthy",
+    warehouse_warning: "Warning",
+    warehouse_urgent: "Urgent",
+    warehouse_outOfStock: "Out of Stock",
+    warehouse_expiringSoon: "Expiring Soon",
+    warehouse_expired: "Expired",
+    warehouse_stockValue: "Stock Value",
+    warehouse_colStore: "Store",
+    warehouse_colProduct: "Product",
+    warehouse_colBarcode: "Barcode",
+    warehouse_colSold: "Sold",
+    warehouse_colAvailable: "Available",
+    warehouse_colAvgCost: "Avg Cost",
+    warehouse_colTarget: "Target",
+    warehouse_colStockPercent: "Stock %",
+    warehouse_colStatus: "Status",
+    warehouse_colExpiry: "Expiry",
+    warehouse_empty: "No data",
 
-  useEffect(() => {
-    loadMyOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId, profile]);
+    admin_users_title: "User Management",
+    admin_createUser: "+ New User",
+    admin_email: "Email",
+    admin_password: "Password",
+    admin_role: "Role",
+    admin_store: "Store",
+    admin_permissions: "Page Access",
+    admin_save: "Save",
+    admin_cancel: "Cancel",
+    admin_edit: "Edit",
+    admin_creating: "Creating...",
+    admin_userCreated: "✅ User created",
+    admin_userUpdated: "✅ Permissions updated",
+    admin_role_cashier: "Cashier",
+    admin_role_manager: "Manager",
+    admin_role_admin: "Admin",
+    admin_role_owner: "Owner",
+    admin_role_sale_manager: "Sale Manager",
+    admin_role_online_sale: "Online Sale",
+    admin_role_wholesale: "Wholesale",
+    admin_settings_title: "Receipt Settings",
+    admin_businessName: "Business Name",
+    admin_phone: "Phone",
+    admin_address: "Address",
+    admin_receiptFooter: "Receipt Footer Text",
+    admin_logoText: "Logo Text (symbol)",
+    admin_settingsSaved: "✅ Settings saved",
+    admin_paymentMethods_title: "Payment Methods",
+    admin_addMethod: "+ New Method",
+    admin_methodName: "Name",
+    admin_methodCode: "Code",
+    admin_isCash: "Cash-type (show Amount Received/Change)",
+    admin_isCod: "COD-type (show Advance/Balance Due)",
+    admin_active: "Active",
+    admin_delete: "Delete",
+    admin_deleteUserConfirm: "Are you sure you want to delete this user",
+    admin_userDeleted: "🗑️ User deleted",
+    admin_deleteMethodConfirm: "Delete this payment method?",
+    products_notFound: "Product not found",
+    admin_stores_title: "Stores",
+    admin_addStore: "+ New Store",
+    admin_storeId: "Store ID",
+    admin_storeIdHint: "e.g. SR-YGN (no spaces or special characters)",
+    admin_storeName: "Store Name",
+    admin_storeCreated: "Store created",
+    admin_storeDeleteConfirm: "Delete this store? (may affect existing product/sale data)",
+  },
+} as const;
 
-  async function loadStoreProducts() {
-    const { data } = await supabase.from("products").select("*").eq("store_id", fulfillStoreId).order("name");
-    setStoreProducts(data || []);
-  }
-
-  async function loadCustomers() {
-    const { data } = await supabase.from("customers").select("*").eq("store_id", fulfillStoreId).order("name");
-    setCustomers(data || []);
-  }
-
-  async function loadPaymentMethods() {
-    const { data } = await supabase
-      .from("payment_methods")
-      .select("*")
-      .eq("store_id", fulfillStoreId)
-      .eq("is_active", true)
-      .order("sort_order");
-    setPaymentMethods(data || []);
-    if (data && data.length > 0) setPaymentMethod(data[0].code);
-  }
-
-  async function loadMyOrders() {
-    if (!profile) return;
-    const { data } = await supabase
-      .from("sales")
-      .select("id, created_at, total, order_status, customer_name, delivery_address, store_id, note")
-      .eq("cashier_email", profile.email)
-      .neq("order_type", "walk_in")
-      .order("created_at", { ascending: false })
-      .limit(30);
-    setMyOrders((data as MyOrderRow[]) || []);
-  }
-
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3500);
-  }
-
-  function resetOrder() {
-    setLines([]);
-    setSelectedCustomer(null);
-    setCustomerSearch("");
-    setCustomerPhone("");
-    setDeliveryAddress("");
-    setOrderStatus("pending");
-    setNote("");
-  }
-
-  const filteredProducts = storeProducts.filter(
-    (p) =>
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.sku || "").toLowerCase().includes(productSearch.toLowerCase())
-  );
-
-  function addLine(p: Product) {
-    setLines((prev) => {
-      const existing = prev.find((l) => l.product_id === p.id);
-      if (existing) {
-        return prev.map((l) => (l.product_id === p.id ? { ...l, qty: l.qty + 1 } : l));
-      }
-      return [
-        ...prev,
-        {
-          tempId: crypto.randomUUID(),
-          product_id: p.id,
-          name: p.name,
-          qty: 1,
-          unit_price: p.price,
-          avg_cost: p.avg_cost,
-          available_stock: p.stock_qty,
-        },
-      ];
-    });
-    setProductSearch("");
-    setShowProductDropdown(false);
-  }
-
-  function updateLine(tempId: string, field: "qty" | "unit_price", value: number) {
-    setLines((prev) => prev.map((l) => (l.tempId === tempId ? { ...l, [field]: value } : l)));
-  }
-
-  function removeLine(tempId: string) {
-    setLines((prev) => prev.filter((l) => l.tempId !== tempId));
-  }
-
-  const filteredCustomers = customers.filter(
-    (c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || (c.phone || "").includes(customerSearch)
-  );
-  const exactCustomerMatch = customers.some((c) => c.name.toLowerCase() === customerSearch.trim().toLowerCase());
-
-  async function quickAddCustomer() {
-    const name = customerSearch.trim();
-    if (!name) return;
-    const { data, error } = await supabase
-      .from("customers")
-      .insert({ name, phone: customerPhone.trim() || null, store_id: fulfillStoreId })
-      .select()
-      .single();
-    if (error) {
-      showToast("❌ " + error.message);
-      return;
-    }
-    setCustomers((prev) => [...prev, data]);
-    setSelectedCustomer(data);
-    setCustomerSearch(data.name);
-    setShowCustomerDropdown(false);
-  }
-
-  const total = lines.reduce((sum, l) => sum + l.qty * l.unit_price, 0);
-  const orderTypeValue = profile?.role === "wholesale" ? "wholesale" : "online";
-  const hasShortage = lines.some((l) => l.qty > l.available_stock);
-
-  async function submitOrder() {
-    if (lines.length === 0) return;
-    if (!selectedCustomer && !customerSearch.trim()) return showToast(t("saleOrder_customerRequired"));
-
-    setLoading(true);
-    try {
-      const shortageNotes: string[] = [];
-
-      const { data: sale, error: saleErr } = await supabase
-        .from("sales")
-        .insert({
-          store_id: fulfillStoreId,
-          total,
-          subtotal: total,
-          cashier_email: profile?.email || null,
-          payment_method: paymentMethod,
-          order_type: orderTypeValue,
-          order_status: orderStatus,
-          customer_id: selectedCustomer?.id || null,
-          customer_name: selectedCustomer?.name || customerSearch.trim(),
-          delivery_address: deliveryAddress.trim() || null,
-          note: note.trim() || null,
-        })
-        .select()
-        .single();
-      if (saleErr) throw saleErr;
-
-      const items = lines.map((l) => ({
-        sale_id: sale.id,
-        product_id: l.product_id,
-        product_name: l.name,
-        qty: l.qty,
-        unit_price: l.unit_price,
-        line_total: l.qty * l.unit_price,
-        unit_cost: l.avg_cost,
-        line_cogs: l.avg_cost * l.qty,
-      }));
-      const { error: itemsErr } = await supabase.from("sale_items").insert(items);
-      if (itemsErr) throw itemsErr;
-
-      for (const l of lines) {
-        const deductQty = Math.min(l.qty, l.available_stock);
-        const shortageQty = l.qty - deductQty;
-
-        const newStock = l.available_stock - deductQty;
-        await supabase
-          .from("products")
-          .update({ stock_qty: newStock, updated_at: new Date().toISOString() })
-          .eq("id", l.product_id);
-
-        if (deductQty > 0) {
-          const { data: batches } = await supabase
-            .from("stock_purchases")
-            .select("id, remaining_qty")
-            .eq("product_id", l.product_id)
-            .gt("remaining_qty", 0)
-            .order("expiry_date", { ascending: true, nullsFirst: false })
-            .order("created_at", { ascending: true });
-
-          let remainingToDeduct = deductQty;
-          for (const batch of batches || []) {
-            if (remainingToDeduct <= 0) break;
-            const d = Math.min(batch.remaining_qty, remainingToDeduct);
-            await supabase.from("stock_purchases").update({ remaining_qty: batch.remaining_qty - d }).eq("id", batch.id);
-            remainingToDeduct -= d;
-          }
-        }
-
-        if (shortageQty > 0) {
-          await supabase.from("stock_requests").insert({
-            store_id: fulfillStoreId,
-            product_id: l.product_id,
-            requested_qty: shortageQty,
-            note: `Auto-requested: Sale Order #${sale.id.slice(0, 8).toUpperCase()} (${l.name})`,
-            requested_by: profile?.email || null,
-          });
-          shortageNotes.push(`${l.name} (-${shortageQty})`);
-        }
-      }
-
-      if (shortageNotes.length > 0) {
-        showToast(`⚠️ ${t("saleOrder_created")} ${fmt(total)} — ${t("saleOrder_shortageWarning")}: ${shortageNotes.join(", ")}`);
-      } else {
-        showToast(`✅ ${t("saleOrder_created")} ${fmt(total)}`);
-      }
-      resetOrder();
-      await loadStoreProducts();
-      await loadMyOrders();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      showToast("❌ " + message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function updateOrderStatus(orderId: string, status: OrderStatus) {
-    await supabase.from("sales").update({ order_status: status }).eq("id", orderId);
-    await loadMyOrders();
-  }
-
-  const statusColor: Record<OrderStatus, string> = {
-    pending: "bg-yellow-100 text-yellow-700",
-    processing: "bg-blue-100 text-blue-700",
-    delivered: "bg-green-100 text-green-700",
-    cancelled: "bg-red-100 text-red-700",
-  };
-
-  if (!profile || !hasPermission(profile, "sale-order")) return null;
-
-  return (
-    <div className="pt-4">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
-        {/* Order builder */}
-        <div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
-            <h3 className="font-semibold mb-3">{t("saleOrder_newOrder")}</h3>
-
-            {/* Fulfilling store */}
-            <label className="text-xs text-slate-500">{t("saleOrder_fulfillingStore")}</label>
-            <select
-              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-3"
-              value={fulfillStoreId}
-              onChange={(e) => {
-                setFulfillStoreId(e.target.value);
-                setLines([]);
-              }}
-            >
-              {stores.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Add product */}
-            <label className="text-xs text-slate-500">{t("stockIn_product")}</label>
-            <div className="relative mt-1 mb-3">
-              <input
-                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
-                placeholder={t("stockIn_searchPlaceholder")}
-                value={productSearch}
-                onChange={(e) => {
-                  setProductSearch(e.target.value);
-                  setShowProductDropdown(true);
-                }}
-                onFocus={() => setShowProductDropdown(true)}
-                onBlur={() => setTimeout(() => setShowProductDropdown(false), 150)}
-              />
-              {showProductDropdown && filteredProducts.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {filteredProducts.map((p) => (
-                    <button
-                      type="button"
-                      key={p.id}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => addLine(p)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex justify-between"
-                    >
-                      <span>{p.name}</span>
-                      <span className={`text-xs ${p.stock_qty <= 5 ? "text-red-500" : "text-slate-400"}`}>
-                        {t("pos_stock")}: {p.stock_qty}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Order lines table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[560px]">
-                <thead className="bg-slate-50 text-slate-500">
-                  <tr>
-                    <th className="text-left px-2 py-2">{t("stockIn_product")}</th>
-                    <th className="text-left px-2 py-2">{t("stockIn_qtyColumn")}</th>
-                    <th className="text-left px-2 py-2">{t("products_price")}</th>
-                    <th className="text-left px-2 py-2">{t("pos_total")}</th>
-                    <th className="text-left px-2 py-2">{t("saleOrder_readiness")}</th>
-                    <th className="text-left px-2 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l) => {
-                    const ready = l.qty <= l.available_stock;
-                    return (
-                      <tr key={l.tempId} className="border-t border-slate-100">
-                        <td className="px-2 py-2">{l.name}</td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            className="w-16 border border-slate-200 rounded px-2 py-1 text-sm"
-                            value={l.qty}
-                            min={1}
-                            onChange={(e) => updateLine(l.tempId, "qty", Number(e.target.value) || 1)}
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            className="w-24 border border-slate-200 rounded px-2 py-1 text-sm"
-                            value={l.unit_price}
-                            onChange={(e) => updateLine(l.tempId, "unit_price", Number(e.target.value) || 0)}
-                          />
-                        </td>
-                        <td className="px-2 py-2 font-medium">{fmt(l.qty * l.unit_price)}</td>
-                        <td className="px-2 py-2">
-                          {ready ? (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                              {t("saleOrder_ready")}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                              {t("saleOrder_notReady")} ({l.available_stock}/{l.qty})
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2">
-                          <button onClick={() => removeLine(l.tempId)} className="text-red-500 text-xs">
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {lines.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="text-center text-slate-400 py-6">
-                        {t("saleOrder_noLines")}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {hasShortage && (
-              <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs text-orange-700">
-                ⚠️ {t("saleOrder_shortageNotice")}
-              </div>
-            )}
-          </div>
-
-          {/* My Orders list */}
-          <h3 className="font-semibold mb-2">{t("saleOrder_myOrders")}</h3>
-          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-            <table className="w-full text-sm min-w-[650px]">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
-                  <th className="text-left px-3 py-2">{t("history_time")}</th>
-                  <th className="text-left px-3 py-2">{t("admin_store")}</th>
-                  <th className="text-left px-3 py-2">{t("pos_customer")}</th>
-                  <th className="text-left px-3 py-2">{t("mySales_amount")}</th>
-                  <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {myOrders.map((o) => (
-                  <tr key={o.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2">{new Date(o.created_at).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-slate-400">{o.store_id}</td>
-                    <td className="px-3 py-2">{o.customer_name || "-"}</td>
-                    <td className="px-3 py-2 font-medium">{fmt(o.total)}</td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={o.order_status}
-                        onChange={(e) => updateOrderStatus(o.id, e.target.value as OrderStatus)}
-                        className={`text-xs font-medium rounded px-2 py-1 border-0 ${statusColor[o.order_status]}`}
-                      >
-                        <option value="pending">{t("saleOrder_pending")}</option>
-                        <option value="processing">{t("saleOrder_processing")}</option>
-                        <option value="delivered">{t("saleOrder_delivered")}</option>
-                        <option value="cancelled">{t("saleOrder_cancelled")}</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-                {myOrders.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="text-center text-slate-400 py-6">
-                      -
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Side panel: customer + delivery + payment */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 h-fit sticky top-24">
-          <div className="flex justify-between font-bold text-lg border-b border-slate-100 pb-3 mb-3">
-            <span>{t("pos_total")}</span>
-            <span>{fmt(total)}</span>
-          </div>
-
-          <label className="text-xs text-slate-500">{t("pos_customer")}</label>
-          <div className="relative mt-1 mb-2">
-            <input
-              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
-              placeholder={t("pos_customerSearchPlaceholder")}
-              value={customerSearch}
-              onChange={(e) => {
-                setCustomerSearch(e.target.value);
-                setSelectedCustomer(null);
-                setShowCustomerDropdown(true);
-              }}
-              onFocus={() => setShowCustomerDropdown(true)}
-              onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
-            />
-            {showCustomerDropdown && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                {filteredCustomers.map((c) => (
-                  <button
-                    type="button"
-                    key={c.id}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setSelectedCustomer(c);
-                      setCustomerSearch(c.name);
-                      setShowCustomerDropdown(false);
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                  >
-                    {c.name} {c.phone && <span className="text-slate-400">({c.phone})</span>}
-                  </button>
-                ))}
-                {customerSearch.trim() !== "" && !exactCustomerMatch && (
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={quickAddCustomer}
-                    className="w-full text-left px-3 py-2 text-sm text-blue-600 font-medium hover:bg-blue-50"
-                  >
-                    {t("pos_customerAddNew").replace("{name}", customerSearch.trim())}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          {customerSearch.trim() !== "" && !exactCustomerMatch && !selectedCustomer && (
-            <input
-              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mb-2"
-              placeholder={t("pos_customerPhone")}
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-            />
-          )}
-
-          <label className="text-xs text-slate-500">{t("saleOrder_deliveryAddress")}</label>
-          <textarea
-            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-2"
-            rows={2}
-            value={deliveryAddress}
-            onChange={(e) => setDeliveryAddress(e.target.value)}
-          />
-
-          <label className="text-xs text-slate-500">{t("pos_paymentMethod")}</label>
-          <select
-            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-2"
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value)}
-          >
-            {paymentMethods.map((m) => (
-              <option key={m.id} value={m.code}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-
-          <label className="text-xs text-slate-500">{t("saleOrder_status")}</label>
-          <select
-            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-2"
-            value={orderStatus}
-            onChange={(e) => setOrderStatus(e.target.value as OrderStatus)}
-          >
-            <option value="pending">{t("saleOrder_pending")}</option>
-            <option value="processing">{t("saleOrder_processing")}</option>
-            <option value="delivered">{t("saleOrder_delivered")}</option>
-          </select>
-
-          <label className="text-xs text-slate-500">{t("pos_note")}</label>
-          <textarea
-            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-3"
-            rows={2}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-
-          <button
-            onClick={submitOrder}
-            disabled={lines.length === 0 || loading}
-            className="w-full py-3 bg-green-600 disabled:bg-slate-300 text-white rounded-lg font-semibold"
-          >
-            {loading ? t("pos_processing") : t("saleOrder_submit")}
-          </button>
-        </div>
-      </div>
-
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50 max-w-md text-center">
-          {toast}
-        </div>
-      )}
-    </div>
-  );
-}
+export type TranslationKey = keyof typeof translations.my;
