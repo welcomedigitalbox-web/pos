@@ -14,6 +14,7 @@ export type PageKey =
   | "warehouse"
   | "dashboard"
   | "sales-report"
+  | "my-pin"
   | "admin";
 
 export type UserRole =
@@ -43,6 +44,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "inventory" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
+  { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "reports" },
 ];
 
 export const GROUP_LABELS: Record<PageGroup, string> = {
@@ -74,6 +76,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "warehouse",
     "dashboard",
     "sales-report",
+    "my-pin",
   ],
   manager: [
     "pos",
