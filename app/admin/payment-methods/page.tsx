@@ -3,13 +3,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
-import { useStore } from "../../store-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../../language-context";
 
 type PaymentMethod = {
   id: string;
-  store_id: string;
+  store_id: string | null;
   name: string;
   code: string;
   is_cash: boolean;
@@ -21,10 +20,8 @@ type PaymentMethod = {
 export default function AdminPaymentMethodsPage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
-  const { stores } = useStore();
   const router = useRouter();
 
-  const [storeId, setStoreId] = useState("");
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [toast, setToast] = useState("");
 
@@ -41,23 +38,14 @@ export default function AdminPaymentMethodsPage() {
   }, [profile]);
 
   useEffect(() => {
-    if (stores.length > 0 && !storeId) setStoreId(stores[0].id);
+    loadMethods();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stores]);
-
-  useEffect(() => {
-    if (storeId) loadMethods();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
+  }, []);
 
   if (!profile || profile.role !== "admin") return null;
 
   async function loadMethods() {
-    const { data } = await supabase
-      .from("payment_methods")
-      .select("*")
-      .eq("store_id", storeId)
-      .order("sort_order");
+    const { data } = await supabase.from("payment_methods").select("*").order("sort_order");
     setMethods(data || []);
   }
 
@@ -100,7 +88,6 @@ export default function AdminPaymentMethodsPage() {
       }
     } else {
       const { error } = await supabase.from("payment_methods").insert({
-        store_id: storeId,
         name: name.trim(),
         code: finalCode,
         is_cash: isCash,
@@ -122,31 +109,20 @@ export default function AdminPaymentMethodsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this payment method?")) return;
+    if (!confirm(t("admin_deleteMethodConfirm"))) return;
     await supabase.from("payment_methods").delete().eq("id", id);
     await loadMethods();
   }
 
   return (
     <div className="pt-4 max-w-2xl">
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex justify-between items-center mb-1">
         <h2 className="font-semibold text-lg">{t("admin_paymentMethods_title")}</h2>
         <button onClick={openNew} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
           {t("admin_addMethod")}
         </button>
       </div>
-
-      <select
-        className="w-full sm:w-60 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
-        value={storeId}
-        onChange={(e) => setStoreId(e.target.value)}
-      >
-        {stores.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </select>
+      <p className="text-xs text-slate-400 mb-4">{t("admin_paymentMethods_globalNote")}</p>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[550px]">
@@ -180,6 +156,13 @@ export default function AdminPaymentMethodsPage() {
                 </td>
               </tr>
             ))}
+            {methods.length === 0 && (
+              <tr>
+                <td colSpan={6} className="text-center text-slate-400 py-8">
+                  -
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
