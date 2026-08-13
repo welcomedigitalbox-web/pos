@@ -4,6 +4,7 @@ export type PageKey =
   | "history"
   | "my-sales"
   | "customers"
+  | "sales-reps"
   | "loyalty-tiers"
   | "products"
   | "stock-in"
@@ -38,6 +39,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "history", href: "/history", labelKey: "nav_history", group: "sale" },
   { key: "my-sales", href: "/my-sales", labelKey: "nav_mySales", group: "sale" },
   { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
+  { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "sale" },
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
@@ -80,6 +82,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "history",
     "my-sales",
     "customers",
+    "sales-reps",
     "loyalty-tiers",
     "products",
     "stock-in",
@@ -99,6 +102,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "pos",
     "history",
     "customers",
+    "sales-reps",
     "products",
     "stock-in",
     "stock-request",
