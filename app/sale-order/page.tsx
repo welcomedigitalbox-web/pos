@@ -114,7 +114,6 @@ export default function SaleOrderPage() {
     const { data } = await supabase
       .from("payment_methods")
       .select("*")
-      .eq("store_id", fulfillStoreId)
       .eq("is_active", true)
       .order("sort_order");
     setPaymentMethods(data || []);
