@@ -13,6 +13,7 @@ type Status = "healthy" | "warning" | "urgent" | "out";
 type Row = {
   storeId: string;
   productId: string;
+  variantId: string | null;
   name: string;
   sku: string | null;
   avgCost: number;
@@ -82,17 +83,17 @@ export default function WarehousePage() {
     // Per-store stock/cost, joined with the global product catalog
     const { data: inventory } = await supabase
       .from("store_inventory")
-      .select("*, products(name, sku)");
+      .select("*, products(name, sku), product_variants(variant_name, sku)");
 
     // Per-store sold qty (sale_items -> parent sale's store_id)
     const { data: saleItems } = await supabase
       .from("sale_items")
-      .select("product_id, qty, sales(store_id)");
+      .select("product_id, variant_id, qty, sales(store_id)");
 
     // Per-store nearest expiry from remaining batches
     const { data: batches } = await supabase
       .from("stock_purchases")
-      .select("product_id, store_id, expiry_date, remaining_qty")
+      .select("product_id, variant_id, store_id, expiry_date, remaining_qty")
       .gt("remaining_qty", 0)
       .not("expiry_date", "is", null)
       .order("expiry_date", { ascending: true });
@@ -101,13 +102,13 @@ export default function WarehousePage() {
     for (const item of (saleItems as any[]) || []) {
       const sId = item.sales?.store_id;
       if (!sId) continue;
-      const key = `${sId}:${item.product_id}`;
+      const key = `${sId}:${item.product_id}:${item.variant_id || "base"}`;
       soldMap.set(key, (soldMap.get(key) || 0) + Number(item.qty));
     }
 
     const expiryMap = new Map<string, string>();
     for (const b of batches || []) {
-      const key = `${b.store_id}:${b.product_id}`;
+      const key = `${b.store_id}:${b.product_id}:${b.variant_id || "base"}`;
       if (!expiryMap.has(key)) expiryMap.set(key, b.expiry_date as string);
     }
 
@@ -117,7 +118,7 @@ export default function WarehousePage() {
     const built: Row[] = ((inventory as any[]) || [])
       .filter((inv) => inv.products) // skip orphaned rows (deleted product)
       .map((inv) => {
-        const key = `${inv.store_id}:${inv.product_id}`;
+        const key = `${inv.store_id}:${inv.product_id}:${inv.variant_id || "base"}`;
         const sold = soldMap.get(key) || 0;
         const available = Number(inv.stock_qty);
         const target = Math.round(sold * 0.5);
@@ -137,8 +138,11 @@ export default function WarehousePage() {
         return {
           storeId: inv.store_id,
           productId: inv.product_id,
-          name: inv.products.name,
-          sku: inv.products.sku,
+          variantId: inv.variant_id ?? null,
+          name: inv.product_variants?.variant_name
+            ? `${inv.products.name} (${inv.product_variants.variant_name})`
+            : inv.products.name,
+          sku: inv.product_variants?.sku || inv.products.sku,
           avgCost: Number(inv.avg_cost),
           sold,
           available,
@@ -177,26 +181,30 @@ export default function WarehousePage() {
     setTransferring(true);
     try {
       // Deduct from central warehouse
-      await upsertStoreInventory(CENTRAL_WAREHOUSE_ID, transferRow.productId, {
+      await upsertStoreInventory(CENTRAL_WAREHOUSE_ID, transferRow.productId, transferRow.variantId, {
         stock_qty: transferRow.available - qty,
       });
 
       // Add to destination store (moving-average cost carried over as-is)
-      const { data: existing } = await supabase
+      let existQuery = supabase
         .from("store_inventory")
         .select("*")
         .eq("store_id", transferToStore)
-        .eq("product_id", transferRow.productId)
-        .maybeSingle();
+        .eq("product_id", transferRow.productId);
+      existQuery = transferRow.variantId
+        ? existQuery.eq("variant_id", transferRow.variantId)
+        : existQuery.is("variant_id", null);
+      const { data: existing } = await existQuery.maybeSingle();
 
       const newQty = (existing?.stock_qty || 0) + qty;
-      await upsertStoreInventory(transferToStore, transferRow.productId, {
+      await upsertStoreInventory(transferToStore, transferRow.productId, transferRow.variantId, {
         stock_qty: newQty,
         avg_cost: transferRow.avgCost,
       });
 
       await supabase.from("stock_transfers").insert({
         product_id: transferRow.productId,
+        variant_id: transferRow.variantId,
         to_store_id: transferToStore,
         qty,
         transferred_by: profile?.email || null,
@@ -369,7 +377,7 @@ export default function WarehousePage() {
               filtered.map((r) => {
                 const info = statusInfo(r.status, t);
                 return (
-                  <tr key={`${r.storeId}:${r.productId}`} className="border-t border-slate-100">
+                  <tr key={`${r.storeId}:${r.productId}:${r.variantId || "base"}`} className="border-t border-slate-100">
                     <td className="px-3 py-2">
                       {r.storeId === CENTRAL_WAREHOUSE_ID ? `🏭 ${r.storeId}` : r.storeId}
                     </td>
