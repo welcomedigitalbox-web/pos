@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, LoyaltyTier, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, SellableItem, Customer, PaymentMethodRow, LoyaltyTier, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useLanguage } from "../language-context";
@@ -10,6 +10,7 @@ import { hasPermission } from "../permissions";
 import { tierDiscountPercent } from "../loyalty";
 
 type OrderLine = {
+  variant_id: string | null;
   tempId: string;
   product_id: string;
   name: string;
@@ -49,7 +50,7 @@ export default function SaleOrderPage() {
 
   const [fulfillStoreId, setFulfillStoreId] = useState("");
   const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
-  const [storeProducts, setStoreProducts] = useState<Product[]>([]);
+  const [storeProducts, setStoreProducts] = useState<SellableItem[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [showProductDropdown, setShowProductDropdown] = useState(false);
 
@@ -93,7 +94,7 @@ export default function SaleOrderPage() {
   }, [storeId, profile]);
 
   async function loadStoreProducts() {
-    const data = await fetchProductsWithStock(fulfillStoreId);
+    const data = await fetchSellableItems(fulfillStoreId);
     setStoreProducts(data);
   }
 
@@ -149,22 +150,23 @@ export default function SaleOrderPage() {
 
   const filteredProducts = storeProducts.filter(
     (p) =>
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      p.display_name.toLowerCase().includes(productSearch.toLowerCase()) ||
       (p.sku || "").toLowerCase().includes(productSearch.toLowerCase())
   );
 
-  function addLine(p: Product) {
+  function addLine(p: SellableItem) {
     setLines((prev) => {
-      const existing = prev.find((l) => l.product_id === p.id);
+      const existing = prev.find((l) => l.product_id === p.product_id && l.variant_id === p.variant_id);
       if (existing) {
-        return prev.map((l) => (l.product_id === p.id ? { ...l, qty: l.qty + 1 } : l));
+        return prev.map((l) => (l.tempId === existing.tempId ? { ...l, qty: l.qty + 1 } : l));
       }
       return [
         ...prev,
         {
           tempId: crypto.randomUUID(),
-          product_id: p.id,
-          name: p.name,
+          product_id: p.product_id,
+          variant_id: p.variant_id,
+          name: p.display_name,
           qty: 1,
           unit_price: p.price,
           avg_cost: p.avg_cost,
@@ -263,15 +265,19 @@ export default function SaleOrderPage() {
         const shortageQty = l.qty - deductQty;
 
         const newStock = l.available_stock - deductQty;
-        await upsertStoreInventory(fulfillStoreId, l.product_id, { stock_qty: newStock });
+        await upsertStoreInventory(fulfillStoreId, l.product_id, l.variant_id, { stock_qty: newStock });
 
         if (deductQty > 0) {
-          const { data: batches } = await supabase
+          let batchQuery = supabase
             .from("stock_purchases")
             .select("id, remaining_qty")
             .eq("product_id", l.product_id)
             .eq("store_id", fulfillStoreId)
-            .gt("remaining_qty", 0)
+            .gt("remaining_qty", 0);
+          batchQuery = l.variant_id
+            ? batchQuery.eq("variant_id", l.variant_id)
+            : batchQuery.is("variant_id", null);
+          const { data: batches } = await batchQuery
             .order("expiry_date", { ascending: true, nullsFirst: false })
             .order("created_at", { ascending: true });
 
@@ -288,6 +294,7 @@ export default function SaleOrderPage() {
           await supabase.from("stock_requests").insert({
             store_id: fulfillStoreId,
             product_id: l.product_id,
+            variant_id: l.variant_id,
             requested_qty: shortageQty,
             note: `Auto-requested: Sale Order #${sale.id.slice(0, 8).toUpperCase()} (${l.name})`,
             requested_by: profile?.email || null,
@@ -370,12 +377,12 @@ export default function SaleOrderPage() {
                   {filteredProducts.map((p) => (
                     <button
                       type="button"
-                      key={p.id}
+                      key={p.key}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => addLine(p)}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex justify-between"
                     >
-                      <span>{p.name}</span>
+                      <span>{p.display_name}</span>
                       <span className={`text-xs ${p.stock_qty <= 5 ? "text-red-500" : "text-slate-400"}`}>
                         {t("pos_stock")}: {p.stock_qty}
                       </span>
