@@ -112,7 +112,6 @@ export default function POSPage() {
     const { data } = await supabase
       .from("customers")
       .select("*")
-      .eq("store_id", storeId)
       .order("name");
     setCustomers(data || []);
   }
@@ -121,7 +120,6 @@ export default function POSPage() {
     const { data } = await supabase
       .from("loyalty_tiers")
       .select("*")
-      .eq("store_id", storeId)
       .order("sort_order");
     setLoyaltyTiers(data || []);
   }
