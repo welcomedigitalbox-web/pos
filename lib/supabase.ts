@@ -23,6 +23,11 @@ export type Customer = {
   id: string;
   name: string;
   phone: string | null;
+  email: string | null;
+  date_of_birth: string | null;
+  delivery_address: string | null;
+  facebook: string | null;
+  tiktok: string | null;
   store_id: string;
   created_at: string;
 };
