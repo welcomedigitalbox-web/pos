@@ -98,7 +98,7 @@ export default function SaleOrderPage() {
   }
 
   async function loadCustomers() {
-    const { data } = await supabase.from("customers").select("*").eq("store_id", fulfillStoreId).order("name");
+    const { data } = await supabase.from("customers").select("*").order("name");
     setCustomers(data || []);
   }
 
@@ -106,7 +106,6 @@ export default function SaleOrderPage() {
     const { data } = await supabase
       .from("loyalty_tiers")
       .select("*")
-      .eq("store_id", fulfillStoreId)
       .order("sort_order");
     setLoyaltyTiers(data || []);
   }
