@@ -67,6 +67,7 @@ export default function SaleOrderPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([]);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("pending");
+  const [channel, setChannel] = useState("facebook");
   const [note, setNote] = useState("");
 
   const [myOrders, setMyOrders] = useState<MyOrderRow[]>([]);
@@ -235,6 +236,7 @@ export default function SaleOrderPage() {
           cashier_email: profile?.email || null,
           payment_method: paymentMethod,
           order_type: orderTypeValue,
+          channel: orderTypeValue === "online" ? channel : null,
           order_status: orderStatus,
           customer_id: selectedCustomer?.id || null,
           customer_name: selectedCustomer?.name || customerSearch.trim(),
@@ -612,6 +614,22 @@ export default function SaleOrderPage() {
             <option value="processing">{t("saleOrder_processing")}</option>
             <option value="delivered">{t("saleOrder_delivered")}</option>
           </select>
+
+          {orderTypeValue === "online" && (
+            <>
+              <label className="text-xs text-slate-500">{t("saleOrder_channel")}</label>
+              <select
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-2"
+                value={channel}
+                onChange={(e) => setChannel(e.target.value)}
+              >
+                <option value="facebook">Facebook</option>
+                <option value="tiktok">TikTok</option>
+                <option value="viber">Viber</option>
+                <option value="other">{t("saleOrder_channelOther")}</option>
+              </select>
+            </>
+          )}
 
           <label className="text-xs text-slate-500">{t("pos_note")}</label>
           <textarea
