@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
@@ -116,12 +116,8 @@ export default function POSPage() {
   }
 
   async function loadProducts() {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("store_id", storeId)
-      .order("name");
-    if (!error) setProducts(data || []);
+    const data = await fetchProductsWithStock(storeId);
+    setProducts(data);
   }
 
   async function loadCustomers() {
@@ -364,16 +360,14 @@ export default function POSPage() {
 
       for (const c of cart) {
         const newStock = c.stock_qty - c.qty;
-        await supabase
-          .from("products")
-          .update({ stock_qty: newStock, updated_at: new Date().toISOString() })
-          .eq("id", c.product_id);
+        await upsertStoreInventory(storeId, c.product_id, { stock_qty: newStock });
 
         // FEFO: deduct from batches with the earliest expiry first (no-expiry batches last)
         const { data: batches } = await supabase
           .from("stock_purchases")
           .select("id, remaining_qty, expiry_date, created_at")
           .eq("product_id", c.product_id)
+          .eq("store_id", storeId)
           .gt("remaining_qty", 0)
           .order("expiry_date", { ascending: true, nullsFirst: false })
           .order("created_at", { ascending: true });
