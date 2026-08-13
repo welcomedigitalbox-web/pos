@@ -88,6 +88,7 @@ export const translations = {
     customers_itemsBought: "ဝယ်ယူထားသည့် ပစ္စည်းများ",
     customers_orderHistory: "အော်ဒါ မှတ်တမ်း",
     customers_noOrders: "အော်ဒါ မရှိသေးပါ",
+    customers_loyaltyRestricted: "⚠️ Sale Manager/Admin/Owner ကပဲ ပြောင်းလို့ရပါတယ်",
 
     history_time: "အချိန်",
     history_store: "ဆိုင်",
@@ -409,6 +410,7 @@ export const translations = {
     customers_itemsBought: "Items Bought",
     customers_orderHistory: "Order History",
     customers_noOrders: "No orders yet",
+    customers_loyaltyRestricted: "⚠️ Only Sale Manager/Admin/Owner can change this",
 
     history_time: "Time",
     history_store: "Store",
