@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, StockBatch } from "@/lib/supabase";
+import { supabase, Product, StockBatch, fetchProductWithStock } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -38,13 +38,18 @@ export default function BarcodePage() {
     const query = code.trim();
     if (!query) return;
 
-    const { data: prod } = await supabase
+    const { data: prodRow } = await supabase
       .from("products")
       .select("*")
-      .eq("store_id", storeId)
       .ilike("sku", query)
       .maybeSingle();
 
+    if (!prodRow) {
+      setProduct(null);
+      setNotFound(true);
+      return;
+    }
+    const prod = await fetchProductWithStock(prodRow.id, storeId);
     if (!prod) {
       setProduct(null);
       setNotFound(true);
@@ -69,6 +74,7 @@ export default function BarcodePage() {
       .from("stock_purchases")
       .select("*")
       .eq("product_id", prod.id)
+      .eq("store_id", storeId)
       .gt("remaining_qty", 0)
       .order("expiry_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
