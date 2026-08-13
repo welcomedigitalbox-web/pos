@@ -123,7 +123,7 @@ export default function DamagePage() {
   }
 
   return (
-    <div className="pt-4 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
+    <div className="pt-4 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-4">
       <div className="bg-white border border-slate-200 rounded-xl p-4 h-fit">
         <h2 className="font-semibold mb-3">{t("nav_damage")}</h2>
         <form onSubmit={submitDamage}>
