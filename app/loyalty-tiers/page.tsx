@@ -38,7 +38,6 @@ export default function LoyaltyTiersPage() {
     const { data } = await supabase
       .from("loyalty_tiers")
       .select("*")
-      .eq("store_id", storeId)
       .order("sort_order");
     setTiers(data || []);
   }
