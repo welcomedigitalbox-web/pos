@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase, Customer } from "@/lib/supabase";
+import { supabase, Customer, LoyaltyTier } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 import { hasPermission } from "../permissions";
-import { LOYALTY_TIER_LABEL } from "../loyalty";
+import { findTier } from "../loyalty";
 
 type FormState = {
   id: string | null;
@@ -19,7 +19,7 @@ type FormState = {
   delivery_address: string;
   facebook: string;
   tiktok: string;
-  loyalty_tier: "none" | "silver" | "gold";
+  loyalty_tier_id: string;
 };
 
 const emptyForm: FormState = {
@@ -31,19 +31,20 @@ const emptyForm: FormState = {
   delivery_address: "",
   facebook: "",
   tiktok: "",
-  loyalty_tier: "none",
+  loyalty_tier_id: "",
 };
 
 export default function CustomersPage() {
   const { storeId } = useStore();
   const { profile } = useAuth();
-  const { t, lang } = useLanguage();
+  const { t } = useLanguage();
   const router = useRouter();
 
   const canEditLoyalty =
     profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tiers, setTiers] = useState<LoyaltyTier[]>([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [showForm, setShowForm] = useState(false);
@@ -57,6 +58,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     load();
+    loadTiers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
@@ -65,6 +67,15 @@ export default function CustomersPage() {
   async function load() {
     const { data } = await supabase.from("customers").select("*").eq("store_id", storeId).order("name");
     setCustomers(data || []);
+  }
+
+  async function loadTiers() {
+    const { data } = await supabase
+      .from("loyalty_tiers")
+      .select("*")
+      .eq("store_id", storeId)
+      .order("sort_order");
+    setTiers(data || []);
   }
 
   function showToast(msg: string) {
@@ -87,7 +98,7 @@ export default function CustomersPage() {
       delivery_address: c.delivery_address || "",
       facebook: c.facebook || "",
       tiktok: c.tiktok || "",
-      loyalty_tier: c.loyalty_tier || "none",
+      loyalty_tier_id: c.loyalty_tier_id || "",
     });
     setShowForm(true);
   }
@@ -107,7 +118,7 @@ export default function CustomersPage() {
       store_id: storeId,
     };
     if (canEditLoyalty) {
-      payload.loyalty_tier = form.loyalty_tier;
+      payload.loyalty_tier_id = form.loyalty_tier_id || null;
     }
 
     setSaving(true);
@@ -179,31 +190,38 @@ export default function CustomersPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr key={c.id} className="border-t border-slate-100">
-                <td className="px-4 py-2 font-medium">{c.name}</td>
-                <td className="px-4 py-2 text-slate-400">{c.phone || "-"}</td>
-                <td className="px-4 py-2 text-slate-400">{c.email || "-"}</td>
-                <td className="px-4 py-2 text-slate-400">{c.date_of_birth || "-"}</td>
-                <td className="px-4 py-2 text-slate-400 max-w-[180px] truncate">{c.delivery_address || "-"}</td>
-                <td className="px-4 py-2">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${LOYALTY_TIER_LABEL[c.loyalty_tier || "none"].color}`}>
-                    {LOYALTY_TIER_LABEL[c.loyalty_tier || "none"][lang]}
-                  </span>
-                </td>
-                <td className="px-4 py-2 text-right space-x-2">
-                  <Link href={`/customers/${c.id}`} className="text-slate-500 text-xs font-medium">
-                    {t("products_view")}
-                  </Link>
-                  <button onClick={() => openEdit(c)} className="text-blue-600 text-xs font-medium">
-                    {t("products_edit")}
-                  </button>
-                  <button onClick={() => handleDelete(c.id)} className="text-red-600 text-xs font-medium">
-                    {t("products_delete")}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((c) => {
+              const tier = findTier(tiers, c.loyalty_tier_id);
+              return (
+                <tr key={c.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 font-medium">{c.name}</td>
+                  <td className="px-4 py-2 text-slate-400">{c.phone || "-"}</td>
+                  <td className="px-4 py-2 text-slate-400">{c.email || "-"}</td>
+                  <td className="px-4 py-2 text-slate-400">{c.date_of_birth || "-"}</td>
+                  <td className="px-4 py-2 text-slate-400 max-w-[180px] truncate">{c.delivery_address || "-"}</td>
+                  <td className="px-4 py-2">
+                    {tier ? (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">
+                        {tier.name} ({tier.discount_percent}%)
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-300">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right space-x-2">
+                    <Link href={`/customers/${c.id}`} className="text-slate-500 text-xs font-medium">
+                      {t("products_view")}
+                    </Link>
+                    <button onClick={() => openEdit(c)} className="text-blue-600 text-xs font-medium">
+                      {t("products_edit")}
+                    </button>
+                    <button onClick={() => handleDelete(c.id)} className="text-red-600 text-xs font-medium">
+                      {t("products_delete")}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={7} className="text-center text-slate-400 py-8">
@@ -281,17 +299,20 @@ export default function CustomersPage() {
             {canEditLoyalty ? (
               <select
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
-                value={form.loyalty_tier}
-                onChange={(e) => setForm({ ...form, loyalty_tier: e.target.value as "none" | "silver" | "gold" })}
+                value={form.loyalty_tier_id}
+                onChange={(e) => setForm({ ...form, loyalty_tier_id: e.target.value })}
               >
-                <option value="none">{t("customers_tierNone")}</option>
-                <option value="silver">{t("customers_tierSilver")}</option>
-                <option value="gold">{t("customers_tierGold")}</option>
+                <option value="">{t("customers_tierNone")}</option>
+                {tiers.map((tr) => (
+                  <option key={tr.id} value={tr.id}>
+                    {tr.name} ({tr.discount_percent}%)
+                  </option>
+                ))}
               </select>
             ) : (
               <div className="mb-4">
                 <div className="w-full border border-slate-100 bg-slate-50 rounded-lg px-3 py-2 text-sm mt-1 text-slate-500">
-                  {t(`customers_tier${form.loyalty_tier.charAt(0).toUpperCase()}${form.loyalty_tier.slice(1)}` as any)}
+                  {findTier(tiers, form.loyalty_tier_id)?.name || t("customers_tierNone")}
                 </div>
                 <p className="text-xs text-slate-400 mt-1">{t("customers_loyaltyRestricted")}</p>
               </div>
