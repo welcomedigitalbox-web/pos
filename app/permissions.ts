@@ -3,6 +3,7 @@ export type PageKey =
   | "sale-order"
   | "history"
   | "my-sales"
+  | "customers"
   | "products"
   | "stock-in"
   | "stock-request"
@@ -29,6 +30,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "sale-order", href: "/sale-order", labelKey: "nav_saleOrder", group: "sale" },
   { key: "history", href: "/history", labelKey: "nav_history", group: "sale" },
   { key: "my-sales", href: "/my-sales", labelKey: "nav_mySales", group: "sale" },
+  { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
@@ -49,14 +51,15 @@ const ALL_KEYS_EXCEPT_ADMIN: PageKey[] = PAGE_OPTIONS.map((p) => p.key);
 const ALL_KEYS: PageKey[] = [...ALL_KEYS_EXCEPT_ADMIN, "admin"];
 
 export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> = {
-  cashier: ["pos", "history", "my-sales"],
-  online_sale: ["sale-order", "history", "my-sales"],
-  wholesale: ["sale-order", "history", "my-sales"],
+  cashier: ["pos", "history", "my-sales", "customers"],
+  online_sale: ["sale-order", "history", "my-sales", "customers"],
+  wholesale: ["sale-order", "history", "my-sales", "customers"],
   sale_manager: [
     "pos",
     "sale-order",
     "history",
     "my-sales",
+    "customers",
     "products",
     "stock-in",
     "stock-request",
@@ -69,6 +72,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
   manager: [
     "pos",
     "history",
+    "customers",
     "products",
     "stock-in",
     "stock-request",
