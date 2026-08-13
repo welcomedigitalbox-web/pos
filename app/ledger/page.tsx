@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product } from "@/lib/supabase";
+import { supabase, Product, fetchProductsWithStock } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -39,13 +39,13 @@ export default function LedgerPage() {
     if (productId) loadLedger(productId);
     else setRows([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
+  }, [productId, storeId]);
 
   if (!profile || !hasPermission(profile, "ledger")) return null;
 
   async function loadProducts() {
-    const { data } = await supabase.from("products").select("*").eq("store_id", storeId).order("name");
-    setProducts(data || []);
+    const data = await fetchProductsWithStock(storeId);
+    setProducts(data);
   }
 
   async function loadLedger(pid: string) {
@@ -53,12 +53,14 @@ export default function LedgerPage() {
       .from("stock_purchases")
       .select("qty, created_at, supplier")
       .eq("product_id", pid)
+      .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
     const { data: items } = await supabase
       .from("sale_items")
-      .select("qty, created_at, sale_id")
+      .select("qty, created_at, sale_id, sales!inner(store_id)")
       .eq("product_id", pid)
+      .eq("sales.store_id", storeId)
       .order("created_at", { ascending: true });
 
     const combined: LedgerRow[] = [
