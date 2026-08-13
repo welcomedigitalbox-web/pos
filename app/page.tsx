@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, ProductVariant, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
@@ -11,8 +11,10 @@ import { tierDiscountPercent } from "./loyalty";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
+  line_id: string;
   product_id: string;
   name: string;
+  variant_name: string | null;
   price: number;
   qty: number;
   stock_qty: number;
@@ -69,6 +71,10 @@ export default function POSPage() {
   const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
   const [salesReps, setSalesReps] = useState<SalesRep[]>([]);
   const [saleRepId, setSaleRepId] = useState("");
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [allVariants, setAllVariants] = useState<ProductVariant[]>([]);
+  const [variantPickerProduct, setVariantPickerProduct] = useState<Product | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -97,6 +103,7 @@ export default function POSPage() {
     loadCustomers();
     loadLoyaltyTiers();
     loadSalesReps();
+    loadCategoriesAndVariants();
     loadPaymentMethods();
     loadStoreSettings();
     resetOrder();
@@ -147,6 +154,13 @@ export default function POSPage() {
       .eq("is_active", true)
       .order("name");
     setSalesReps(data || []);
+  }
+
+  async function loadCategoriesAndVariants() {
+    const { data: cats } = await supabase.from("product_categories").select("*").order("sort_order");
+    setCategories(cats || []);
+    const { data: vars } = await supabase.from("product_variants").select("*").order("created_at");
+    setAllVariants(vars || []);
   }
 
   function showToast(msg: string) {
@@ -220,47 +234,75 @@ export default function POSPage() {
     }
   }
 
-  function addToCart(p: Product) {
+  function variantsOf(productId: string) {
+    return allVariants.filter((v) => v.product_id === productId);
+  }
+
+  // Total qty already in the cart for a product, across all its variant lines
+  function cartQtyForProduct(productId: string) {
+    return cart.filter((c) => c.product_id === productId).reduce((s, c) => s + c.qty, 0);
+  }
+
+  function handleProductClick(p: Product) {
     if (p.stock_qty <= 0) return showToast(t("pos_outOfStock"));
+    const variants = variantsOf(p.id);
+    if (variants.length > 0) {
+      setVariantPickerProduct(p);
+      return;
+    }
+    addToCart(p, null);
+  }
+
+  function addToCart(p: Product, variant: ProductVariant | null) {
+    if (p.stock_qty <= 0) return showToast(t("pos_outOfStock"));
+    if (cartQtyForProduct(p.id) >= p.stock_qty) return showToast(t("pos_notEnoughStock"));
+
+    const variantName = variant?.variant_name || null;
+    const unitPrice = variant?.price_override ?? p.price;
+
     setCart((prev) => {
-      const existing = prev.find((c) => c.product_id === p.id);
+      const existing = prev.find((c) => c.product_id === p.id && c.variant_name === variantName);
       if (existing) {
-        if (existing.qty >= p.stock_qty) {
-          showToast(t("pos_notEnoughStock"));
-          return prev;
-        }
-        return prev.map((c) =>
-          c.product_id === p.id ? { ...c, qty: c.qty + 1 } : c
-        );
+        return prev.map((c) => (c.line_id === existing.line_id ? { ...c, qty: c.qty + 1 } : c));
       }
       return [
         ...prev,
-        { product_id: p.id, name: p.name, price: p.price, qty: 1, stock_qty: p.stock_qty, avg_cost: p.avg_cost },
+        {
+          line_id: crypto.randomUUID(),
+          product_id: p.id,
+          name: p.name,
+          variant_name: variantName,
+          price: unitPrice,
+          qty: 1,
+          stock_qty: p.stock_qty,
+          avg_cost: p.avg_cost,
+        },
       ];
     });
+    setVariantPickerProduct(null);
   }
 
-  function changeQty(productId: string, delta: number) {
+  function changeQty(lineId: string, delta: number) {
     setCart((prev) => {
+      const line = prev.find((c) => c.line_id === lineId);
+      if (!line) return prev;
+      if (delta > 0 && cartQtyForProduct(line.product_id) >= line.stock_qty) {
+        showToast(t("pos_notEnoughStock"));
+        return prev;
+      }
       return prev
-        .map((c) => {
-          if (c.product_id !== productId) return c;
-          const newQty = c.qty + delta;
-          if (newQty > c.stock_qty) {
-            showToast(t("pos_notEnoughStock"));
-            return c;
-          }
-          return { ...c, qty: newQty };
-        })
+        .map((c) => (c.line_id === lineId ? { ...c, qty: c.qty + delta } : c))
         .filter((c) => c.qty > 0);
     });
   }
 
-  const filtered = products.filter(
-    (p) =>
+  const filtered = products.filter((p) => {
+    if (categoryFilter !== "all" && p.category_id !== categoryFilter) return false;
+    return (
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       (p.sku || "").toLowerCase().includes(search.toLowerCase())
-  );
+    );
+  });
 
   const filteredCustomers = customers.filter(
     (c) =>
@@ -363,7 +405,7 @@ export default function POSPage() {
       const items = cart.map((c) => ({
         sale_id: sale.id,
         product_id: c.product_id,
-        product_name: c.name,
+        product_name: c.variant_name ? `${c.name} (${c.variant_name})` : c.name,
         qty: c.qty,
         unit_price: c.price,
         line_total: c.price * c.qty,
@@ -373,21 +415,32 @@ export default function POSPage() {
       const { error: itemsErr } = await supabase.from("sale_items").insert(items);
       if (itemsErr) throw itemsErr;
 
+      // Group cart lines by product — variants of the same product share one stock pool,
+      // so their quantities must be summed before deducting.
+      const deductions = new Map<string, { qty: number; stock_qty: number }>();
       for (const c of cart) {
-        const newStock = c.stock_qty - c.qty;
-        await upsertStoreInventory(storeId, c.product_id, { stock_qty: newStock });
+        const prev = deductions.get(c.product_id);
+        deductions.set(c.product_id, {
+          qty: (prev?.qty || 0) + c.qty,
+          stock_qty: c.stock_qty,
+        });
+      }
+
+      for (const [productId, d] of deductions) {
+        const newStock = d.stock_qty - d.qty;
+        await upsertStoreInventory(storeId, productId, { stock_qty: newStock });
 
         // FEFO: deduct from batches with the earliest expiry first (no-expiry batches last)
         const { data: batches } = await supabase
           .from("stock_purchases")
           .select("id, remaining_qty, expiry_date, created_at")
-          .eq("product_id", c.product_id)
+          .eq("product_id", productId)
           .eq("store_id", storeId)
           .gt("remaining_qty", 0)
           .order("expiry_date", { ascending: true, nullsFirst: false })
           .order("created_at", { ascending: true });
 
-        let remainingToDeduct = c.qty;
+        let remainingToDeduct = d.qty;
         for (const batch of batches || []) {
           if (remainingToDeduct <= 0) break;
           const deductFromBatch = Math.min(batch.remaining_qty, remainingToDeduct);
@@ -408,7 +461,12 @@ export default function POSPage() {
         logoText: storeSettings?.logo_text || null,
         saleRef: sale.id.slice(0, 8).toUpperCase(),
         createdAt: sale.created_at,
-        items: cart.map((c) => ({ name: c.name, qty: c.qty, price: c.price, lineTotal: c.price * c.qty })),
+        items: cart.map((c) => ({
+          name: c.variant_name ? `${c.name} (${c.variant_name})` : c.name,
+          qty: c.qty,
+          price: c.price,
+          lineTotal: c.price * c.qty,
+        })),
         subtotal,
         discountLabel: discountType === "percent" ? `${discountValueNum}%` : fmt(discountAmount),
         discountAmount,
@@ -455,31 +513,64 @@ export default function POSPage() {
               (p) => (p.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
             );
             if (exactSkuMatch) {
-              addToCart(exactSkuMatch);
+              handleProductClick(exactSkuMatch);
               setSearch("");
             }
           }}
         />
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {filtered.map((p) => (
+
+        {categories.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
             <button
-              key={p.id}
-              onClick={() => addToCart(p)}
-              className={`text-left bg-white border border-slate-200 rounded-xl p-3 hover:shadow-md hover:-translate-y-0.5 transition ${
-                p.stock_qty <= 5 ? "border-red-300" : ""
+              onClick={() => setCategoryFilter("all")}
+              className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
+                categoryFilter === "all" ? "bg-blue-600 text-white" : "bg-white border border-slate-200 text-slate-600"
               }`}
             >
-              <div className="font-semibold text-sm">{p.name}</div>
-              <div className="text-blue-600 font-bold text-sm">{fmt(p.price)}</div>
-              <div
-                className={`text-xs mt-1 ${
-                  p.stock_qty <= 5 ? "text-red-600" : "text-slate-500"
+              {t("pos_allCategories")}
+            </button>
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCategoryFilter(c.id)}
+                className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
+                  categoryFilter === c.id ? "bg-blue-600 text-white" : "bg-white border border-slate-200 text-slate-600"
                 }`}
               >
-                {t("pos_stock")}: {p.stock_qty}
-              </div>
-            </button>
-          ))}
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {filtered.map((p) => {
+            const vCount = variantsOf(p.id).length;
+            return (
+              <button
+                key={p.id}
+                onClick={() => handleProductClick(p)}
+                className={`text-left bg-white border border-slate-200 rounded-xl p-3 hover:shadow-md hover:-translate-y-0.5 transition ${
+                  p.stock_qty <= 5 ? "border-red-300" : ""
+                }`}
+              >
+                <div className="font-semibold text-sm">
+                  {p.name}
+                  {vCount > 0 && (
+                    <span className="ml-1 text-[10px] text-blue-600 font-medium">({vCount})</span>
+                  )}
+                </div>
+                <div className="text-blue-600 font-bold text-sm">{fmt(p.price)}</div>
+                <div
+                  className={`text-xs mt-1 ${
+                    p.stock_qty <= 5 ? "text-red-600" : "text-slate-500"
+                  }`}
+                >
+                  {t("pos_stock")}: {p.stock_qty}
+                </div>
+              </button>
+            );
+          })}
           {filtered.length === 0 && (
             <div className="col-span-full text-center text-slate-400 py-8">
               {t("pos_noProduct")}
@@ -496,24 +587,29 @@ export default function POSPage() {
           <div className="space-y-2 mb-3">
             {cart.map((c) => (
               <div
-                key={c.product_id}
+                key={c.line_id}
                 className="flex justify-between items-center border-b border-slate-100 pb-2 text-sm"
               >
                 <div>
-                  <div>{c.name}</div>
+                  <div>
+                    {c.name}
+                    {c.variant_name && (
+                      <span className="ml-1 text-xs text-blue-600 font-medium">({c.variant_name})</span>
+                    )}
+                  </div>
                   <div className="text-slate-400">{fmt(c.price)}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     className="w-6 h-6 border border-slate-200 rounded"
-                    onClick={() => changeQty(c.product_id, -1)}
+                    onClick={() => changeQty(c.line_id, -1)}
                   >
                     -
                   </button>
                   <span>{c.qty}</span>
                   <button
                     className="w-6 h-6 border border-slate-200 rounded"
-                    onClick={() => changeQty(c.product_id, 1)}
+                    onClick={() => changeQty(c.line_id, 1)}
                   >
                     +
                   </button>
@@ -783,6 +879,40 @@ export default function POSPage() {
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
           {toast}
+        </div>
+      )}
+
+      {variantPickerProduct && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4"
+          onClick={() => setVariantPickerProduct(null)}
+        >
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-lg mb-1">{variantPickerProduct.name}</h3>
+            <p className="text-sm text-slate-500 mb-4">{t("pos_chooseVariant")}</p>
+
+            <div className="space-y-2">
+              {variantsOf(variantPickerProduct.id).map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => addToCart(variantPickerProduct, v)}
+                  className="w-full flex justify-between items-center border border-slate-200 rounded-lg px-4 py-3 text-sm hover:bg-slate-50"
+                >
+                  <span className="font-medium">{v.variant_name}</span>
+                  <span className="text-blue-600 font-bold">
+                    {fmt(v.price_override ?? variantPickerProduct.price)}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setVariantPickerProduct(null)}
+              className="w-full mt-4 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
+            >
+              {t("products_cancel")}
+            </button>
+          </div>
         </div>
       )}
 
