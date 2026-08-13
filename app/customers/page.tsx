@@ -7,6 +7,7 @@ import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 import { hasPermission } from "../permissions";
+import { LOYALTY_TIER_LABEL } from "../loyalty";
 
 type FormState = {
   id: string | null;
@@ -17,6 +18,7 @@ type FormState = {
   delivery_address: string;
   facebook: string;
   tiktok: string;
+  loyalty_tier: "none" | "silver" | "gold";
 };
 
 const emptyForm: FormState = {
@@ -28,12 +30,13 @@ const emptyForm: FormState = {
   delivery_address: "",
   facebook: "",
   tiktok: "",
+  loyalty_tier: "none",
 };
 
 export default function CustomersPage() {
   const { storeId } = useStore();
   const { profile } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const router = useRouter();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -80,6 +83,7 @@ export default function CustomersPage() {
       delivery_address: c.delivery_address || "",
       facebook: c.facebook || "",
       tiktok: c.tiktok || "",
+      loyalty_tier: c.loyalty_tier || "none",
     });
     setShowForm(true);
   }
@@ -96,6 +100,7 @@ export default function CustomersPage() {
       delivery_address: form.delivery_address.trim() || null,
       facebook: form.facebook.trim() || null,
       tiktok: form.tiktok.trim() || null,
+      loyalty_tier: form.loyalty_tier,
       store_id: storeId,
     };
 
@@ -163,6 +168,7 @@ export default function CustomersPage() {
               <th className="text-left px-4 py-2">{t("customers_email")}</th>
               <th className="text-left px-4 py-2">{t("customers_dob")}</th>
               <th className="text-left px-4 py-2">{t("saleOrder_deliveryAddress")}</th>
+              <th className="text-left px-4 py-2">{t("customers_loyalty")}</th>
               <th className="text-left px-4 py-2"></th>
             </tr>
           </thead>
@@ -174,6 +180,11 @@ export default function CustomersPage() {
                 <td className="px-4 py-2 text-slate-400">{c.email || "-"}</td>
                 <td className="px-4 py-2 text-slate-400">{c.date_of_birth || "-"}</td>
                 <td className="px-4 py-2 text-slate-400 max-w-[180px] truncate">{c.delivery_address || "-"}</td>
+                <td className="px-4 py-2">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${LOYALTY_TIER_LABEL[c.loyalty_tier || "none"].color}`}>
+                    {LOYALTY_TIER_LABEL[c.loyalty_tier || "none"][lang]}
+                  </span>
+                </td>
                 <td className="px-4 py-2 text-right space-x-2">
                   <button onClick={() => openEdit(c)} className="text-blue-600 text-xs font-medium">
                     {t("products_edit")}
@@ -186,7 +197,7 @@ export default function CustomersPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center text-slate-400 py-8">
+                <td colSpan={7} className="text-center text-slate-400 py-8">
                   -
                 </td>
               </tr>
@@ -251,11 +262,22 @@ export default function CustomersPage() {
 
             <label className="text-sm text-slate-600">{t("customers_tiktok")}</label>
             <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={form.tiktok}
               onChange={(e) => setForm({ ...form, tiktok: e.target.value })}
               placeholder="@username"
             />
+
+            <label className="text-sm text-slate-600">{t("customers_loyalty")}</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={form.loyalty_tier}
+              onChange={(e) => setForm({ ...form, loyalty_tier: e.target.value as "none" | "silver" | "gold" })}
+            >
+              <option value="none">{t("customers_tierNone")}</option>
+              <option value="silver">{t("customers_tierSilver")}</option>
+              <option value="gold">{t("customers_tierGold")}</option>
+            </select>
 
             <div className="flex gap-2">
               <button
