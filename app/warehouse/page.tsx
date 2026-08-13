@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, CENTRAL_WAREHOUSE_ID, upsertStoreInventory, Product } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useStore } from "../store-context";
 import { hasPermission } from "../permissions";
@@ -48,6 +48,7 @@ export default function WarehousePage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
   const { stores } = useStore();
+  const retailStores = stores.filter((s) => !s.is_warehouse);
   const router = useRouter();
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -56,6 +57,12 @@ export default function WarehousePage() {
   const [storeFilter, setStoreFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
+
+  const [transferRow, setTransferRow] = useState<Row | null>(null);
+  const [transferQty, setTransferQty] = useState("");
+  const [transferToStore, setTransferToStore] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "warehouse")) router.replace("/");
@@ -147,6 +154,63 @@ export default function WarehousePage() {
 
     setRows(built);
     setLoading(false);
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  function openTransfer(row: Row) {
+    setTransferRow(row);
+    setTransferQty("");
+    setTransferToStore(retailStores[0]?.id || "");
+  }
+
+  async function submitTransfer() {
+    if (!transferRow) return;
+    const qty = Number(transferQty);
+    if (!qty || qty <= 0) return showToast(t("stockRequest_qtyInvalid"));
+    if (qty > transferRow.available) return showToast(t("warehouseTransfer_notEnough"));
+    if (!transferToStore) return;
+
+    setTransferring(true);
+    try {
+      // Deduct from central warehouse
+      await upsertStoreInventory(CENTRAL_WAREHOUSE_ID, transferRow.productId, {
+        stock_qty: transferRow.available - qty,
+      });
+
+      // Add to destination store (moving-average cost carried over as-is)
+      const { data: existing } = await supabase
+        .from("store_inventory")
+        .select("*")
+        .eq("store_id", transferToStore)
+        .eq("product_id", transferRow.productId)
+        .maybeSingle();
+
+      const newQty = (existing?.stock_qty || 0) + qty;
+      await upsertStoreInventory(transferToStore, transferRow.productId, {
+        stock_qty: newQty,
+        avg_cost: transferRow.avgCost,
+      });
+
+      await supabase.from("stock_transfers").insert({
+        product_id: transferRow.productId,
+        to_store_id: transferToStore,
+        qty,
+        transferred_by: profile?.email || null,
+      });
+
+      showToast(t("warehouseTransfer_success"));
+      setTransferRow(null);
+      await loadData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast("❌ " + message);
+    } finally {
+      setTransferring(false);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -277,7 +341,7 @@ export default function WarehousePage() {
 
       {/* Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[1000px]">
+        <table className="w-full text-sm min-w-[1080px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-3 py-2">{t("warehouse_colStore")}</th>
@@ -290,12 +354,13 @@ export default function WarehousePage() {
               <th className="text-left px-3 py-2">{t("warehouse_colStockPercent")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colStatus")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colExpiry")}</th>
+              <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={10} className="text-center text-slate-400 py-8">
+                <td colSpan={11} className="text-center text-slate-400 py-8">
                   ...
                 </td>
               </tr>
@@ -305,7 +370,9 @@ export default function WarehousePage() {
                 const info = statusInfo(r.status, t);
                 return (
                   <tr key={`${r.storeId}:${r.productId}`} className="border-t border-slate-100">
-                    <td className="px-3 py-2">{r.storeId}</td>
+                    <td className="px-3 py-2">
+                      {r.storeId === CENTRAL_WAREHOUSE_ID ? `🏭 ${r.storeId}` : r.storeId}
+                    </td>
                     <td className="px-3 py-2">{r.name}</td>
                     <td className="px-3 py-2 text-slate-400">{r.sku || "-"}</td>
                     <td className="px-3 py-2">{r.sold.toLocaleString()}</td>
@@ -325,12 +392,22 @@ export default function WarehousePage() {
                       {r.isExpired && " ⚠️"}
                       {r.isExpiringSoon && " ⏰"}
                     </td>
+                    <td className="px-3 py-2">
+                      {r.storeId === CENTRAL_WAREHOUSE_ID && r.available > 0 && (
+                        <button
+                          onClick={() => openTransfer(r)}
+                          className="text-blue-600 text-xs font-medium whitespace-nowrap"
+                        >
+                          {t("warehouseTransfer_button")}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center text-slate-400 py-8">
+                <td colSpan={11} className="text-center text-slate-400 py-8">
                   {t("warehouse_empty")}
                 </td>
               </tr>
@@ -338,6 +415,62 @@ export default function WarehousePage() {
           </tbody>
         </table>
       </div>
+
+      {transferRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("warehouseTransfer_title")}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {transferRow.name} — {t("warehouseTransfer_available")}: {transferRow.available}
+            </p>
+
+            <label className="text-sm text-slate-600">{t("warehouseTransfer_toStore")}</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={transferToStore}
+              onChange={(e) => setTransferToStore(e.target.value)}
+            >
+              {retailStores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+
+            <label className="text-sm text-slate-600">{t("warehouseTransfer_qty")}</label>
+            <input
+              type="number"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={transferQty}
+              onChange={(e) => setTransferQty(e.target.value)}
+              max={transferRow.available}
+              required
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setTransferRow(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
+              >
+                {t("products_cancel")}
+              </button>
+              <button
+                onClick={submitTransfer}
+                disabled={transferring}
+                className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
+              >
+                {transferring ? "..." : t("warehouseTransfer_button")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
