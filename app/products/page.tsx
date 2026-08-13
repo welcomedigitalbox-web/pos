@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase, Product, ProductCategory, ProductVariant, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, Product, SellableItem, ProductCategory, ProductVariant, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -30,7 +30,8 @@ export default function ProductsPage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<SellableItem[]>([]);
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [editingVariants, setEditingVariants] = useState<ProductVariant[]>([]);
   const [newVariantName, setNewVariantName] = useState("");
@@ -57,8 +58,10 @@ export default function ProductsPage() {
   if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
-    const data = await fetchProductsWithStock(storeId, true);
-    setProducts(data);
+    const { data: raw } = await supabase.from("products").select("*").order("name");
+    setRawProducts((raw as Product[]) || []);
+    const data = await fetchSellableItems(storeId, true);
+    setItems(data);
   }
 
   async function loadCategories() {
@@ -93,17 +96,20 @@ export default function ProductsPage() {
     setShowForm(true);
   }
 
-  async function openEdit(p: Product) {
+  async function openEdit(row: SellableItem) {
+    const parent = rawProducts.find((p) => p.id === row.product_id);
+    if (!parent) return;
     setForm({
-      id: p.id,
-      name: p.name,
-      sku: p.sku || "",
-      price: String(p.price),
-      stock_qty: String(p.stock_qty),
-      avg_cost: String(p.avg_cost),
-      category_id: p.category_id || "",
+      id: parent.id,
+      name: parent.name,
+      sku: parent.sku || "",
+      price: String(parent.price),
+      // Stock/cost only apply to products with no variants; variant stock lives per-variant
+      stock_qty: row.variant_id ? "" : String(row.stock_qty),
+      avg_cost: row.variant_id ? "" : String(row.avg_cost),
+      category_id: parent.category_id || "",
     });
-    await loadVariants(p.id);
+    await loadVariants(parent.id);
     setShowForm(true);
   }
 
@@ -112,11 +118,12 @@ export default function ProductsPage() {
     if (!form.name.trim()) return showToast(t("products_nameRequired"));
     if (!form.sku.trim()) return showToast(t("products_skuRequired"));
     const price = Number(form.price);
-    const stock_qty = Number(form.stock_qty);
+    const hasVariants = editingVariants.length > 0;
+    const stock_qty = form.stock_qty === "" ? 0 : Number(form.stock_qty);
     const avg_cost = form.avg_cost === "" ? 0 : Number(form.avg_cost);
     if (isNaN(price) || price < 0) return showToast(t("products_priceInvalid"));
-    if (isNaN(stock_qty) || stock_qty < 0) return showToast(t("products_stockInvalid"));
-    if (isNaN(avg_cost) || avg_cost < 0) return showToast(t("products_avgCostInvalid"));
+    if (!hasVariants && (isNaN(stock_qty) || stock_qty < 0)) return showToast(t("products_stockInvalid"));
+    if (!hasVariants && (isNaN(avg_cost) || avg_cost < 0)) return showToast(t("products_avgCostInvalid"));
 
     setSaving(true);
     try {
@@ -132,7 +139,7 @@ export default function ProductsPage() {
           })
           .eq("id", form.id);
         if (error) throw error;
-        await upsertStoreInventory(storeId, form.id, { stock_qty, avg_cost });
+        if (!hasVariants) await upsertStoreInventory(storeId, form.id, null, { stock_qty, avg_cost });
         showToast(t("products_updateSuccess"));
       } else {
         const { data: created, error } = await supabase
@@ -147,7 +154,7 @@ export default function ProductsPage() {
           .select()
           .single();
         if (error) throw error;
-        await upsertStoreInventory(storeId, created.id, { stock_qty, avg_cost });
+        await upsertStoreInventory(storeId, created.id, null, { stock_qty, avg_cost });
         showToast(t("products_createSuccess"));
       }
       setShowForm(false);
@@ -204,9 +211,11 @@ export default function ProductsPage() {
     if (form.id) await loadVariants(form.id);
   }
 
-  async function handleToggleActive(p: Product) {
-    await supabase.from("products").update({ is_active: !p.is_active }).eq("id", p.id);
-    showToast(p.is_active ? t("products_archived") : t("products_restored"));
+  async function handleToggleActive(productId: string) {
+    const parent = rawProducts.find((p) => p.id === productId);
+    if (!parent) return;
+    await supabase.from("products").update({ is_active: !parent.is_active }).eq("id", productId);
+    showToast(parent.is_active ? t("products_archived") : t("products_restored"));
     await load();
   }
 
@@ -235,52 +244,52 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => (
-              <tr key={p.id} className={`border-t border-slate-100 ${!p.is_active ? "opacity-50 bg-slate-50" : ""}`}>
+            {items.map((row) => (
+              <tr key={row.key} className={`border-t border-slate-100 ${!row.is_active ? "opacity-50 bg-slate-50" : ""}`}>
                 <td className="px-4 py-2">
-                  {p.name}
-                  {!p.is_active && (
+                  {row.product_name}
+                  {row.variant_name && (
+                    <span className="ml-1 text-xs text-blue-600 font-medium">({row.variant_name})</span>
+                  )}
+                  {!row.is_active && (
                     <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-200 text-slate-600 font-medium">
                       {t("products_archivedBadge")}
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2 text-slate-400">{p.sku || "-"}</td>
-                <td className="px-4 py-2">{fmt(p.price)}</td>
+                <td className="px-4 py-2 text-slate-400">{row.sku || "-"}</td>
+                <td className="px-4 py-2">{fmt(row.price)}</td>
                 <td className="px-4 py-2 text-slate-500">
-                  {p.previous_avg_cost > 0 && p.previous_avg_cost !== p.avg_cost ? (
+                  {row.previous_avg_cost > 0 && row.previous_avg_cost !== row.avg_cost ? (
                     <span>
-                      <span className="line-through text-slate-300">{fmt(p.previous_avg_cost)}</span>
+                      <span className="line-through text-slate-300">{fmt(row.previous_avg_cost)}</span>
                       {" → "}
-                      <span className="font-medium text-slate-700">{fmt(p.avg_cost)}</span>
+                      <span className="font-medium text-slate-700">{fmt(row.avg_cost)}</span>
                     </span>
                   ) : (
-                    fmt(p.avg_cost)
+                    fmt(row.avg_cost)
                   )}
                 </td>
-                <td className={`px-4 py-2 ${p.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
-                  {p.stock_qty}
+                <td className={`px-4 py-2 ${row.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
+                  {row.stock_qty}
                 </td>
                 <td className="px-4 py-2 text-right space-x-2">
-                  <Link href={`/products/${p.id}`} className="text-slate-500 text-xs font-medium">
+                  <Link href={`/products/${row.product_id}`} className="text-slate-500 text-xs font-medium">
                     {t("products_view")}
                   </Link>
-                  <button
-                    onClick={() => openEdit(p)}
-                    className="text-blue-600 text-xs font-medium"
-                  >
+                  <button onClick={() => openEdit(row)} className="text-blue-600 text-xs font-medium">
                     {t("products_edit")}
                   </button>
-                  {p.is_active ? (
+                  {row.is_active ? (
                     <button
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => handleDelete(row.product_id)}
                       className="text-red-600 text-xs font-medium"
                     >
                       {t("products_delete")}
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleToggleActive(p)}
+                      onClick={() => handleToggleActive(row.product_id)}
                       className="text-green-600 text-xs font-medium"
                     >
                       {t("products_restore")}
@@ -289,7 +298,7 @@ export default function ProductsPage() {
                 </td>
               </tr>
             ))}
-            {products.length === 0 && (
+            {items.length === 0 && (
               <tr>
                 <td colSpan={6} className="text-center text-slate-400 py-8">
                   {t("products_empty")}
@@ -364,24 +373,32 @@ export default function ProductsPage() {
               ))}
             </select>
 
-            <label className="text-sm text-slate-600">{t("products_stockQty")}</label>
-            <input
-              type="number"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.stock_qty}
-              onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
-              required
-            />
+            {editingVariants.length === 0 ? (
+              <>
+                <label className="text-sm text-slate-600">{t("products_stockQty")}</label>
+                <input
+                  type="number"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+                  value={form.stock_qty}
+                  onChange={(e) => setForm({ ...form, stock_qty: e.target.value })}
+                  required
+                />
 
-            <label className="text-sm text-slate-600">{t("products_avgCostMmk")}</label>
-            <input
-              type="number"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
-              value={form.avg_cost}
-              onChange={(e) => setForm({ ...form, avg_cost: e.target.value })}
-              placeholder="0"
-            />
-            <p className="text-xs text-slate-400 -mt-3 mb-4">{t("products_avgCostWarning")}</p>
+                <label className="text-sm text-slate-600">{t("products_avgCostMmk")}</label>
+                <input
+                  type="number"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+                  value={form.avg_cost}
+                  onChange={(e) => setForm({ ...form, avg_cost: e.target.value })}
+                  placeholder="0"
+                />
+                <p className="text-xs text-slate-400 -mt-3 mb-4">{t("products_avgCostWarning")}</p>
+              </>
+            ) : (
+              <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">
+                <p className="text-xs text-blue-700">{t("products_variantStockNote")}</p>
+              </div>
+            )}
 
             {form.id && (
               <div className="mb-4 border-t border-slate-100 pt-3">
