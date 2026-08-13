@@ -40,6 +40,9 @@ export default function CustomersPage() {
   const { t, lang } = useLanguage();
   const router = useRouter();
 
+  const canEditLoyalty =
+    profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -93,7 +96,7 @@ export default function CustomersPage() {
     e.preventDefault();
     if (!form.name.trim()) return showToast(t("customers_nameRequired"));
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: form.name.trim(),
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
@@ -101,9 +104,11 @@ export default function CustomersPage() {
       delivery_address: form.delivery_address.trim() || null,
       facebook: form.facebook.trim() || null,
       tiktok: form.tiktok.trim() || null,
-      loyalty_tier: form.loyalty_tier,
       store_id: storeId,
     };
+    if (canEditLoyalty) {
+      payload.loyalty_tier = form.loyalty_tier;
+    }
 
     setSaving(true);
     try {
@@ -273,15 +278,24 @@ export default function CustomersPage() {
             />
 
             <label className="text-sm text-slate-600">{t("customers_loyalty")}</label>
-            <select
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
-              value={form.loyalty_tier}
-              onChange={(e) => setForm({ ...form, loyalty_tier: e.target.value as "none" | "silver" | "gold" })}
-            >
-              <option value="none">{t("customers_tierNone")}</option>
-              <option value="silver">{t("customers_tierSilver")}</option>
-              <option value="gold">{t("customers_tierGold")}</option>
-            </select>
+            {canEditLoyalty ? (
+              <select
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+                value={form.loyalty_tier}
+                onChange={(e) => setForm({ ...form, loyalty_tier: e.target.value as "none" | "silver" | "gold" })}
+              >
+                <option value="none">{t("customers_tierNone")}</option>
+                <option value="silver">{t("customers_tierSilver")}</option>
+                <option value="gold">{t("customers_tierGold")}</option>
+              </select>
+            ) : (
+              <div className="mb-4">
+                <div className="w-full border border-slate-100 bg-slate-50 rounded-lg px-3 py-2 text-sm mt-1 text-slate-500">
+                  {t(`customers_tier${form.loyalty_tier.charAt(0).toUpperCase()}${form.loyalty_tier.slice(1)}` as any)}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">{t("customers_loyaltyRestricted")}</p>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button
