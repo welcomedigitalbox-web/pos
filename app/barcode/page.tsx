@@ -25,6 +25,7 @@ export default function BarcodePage() {
   const [totalSale, setTotalSale] = useState(0);
   const [totalMargin, setTotalMargin] = useState(0);
   const [batches, setBatches] = useState<StockBatch[]>([]);
+  const [storeBreakdown, setStoreBreakdown] = useState<{ storeId: string; storeName: string; stockQty: number; avgCost: number }[]>([]);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "barcode")) router.replace("/");
@@ -79,6 +80,21 @@ export default function BarcodePage() {
       .order("expiry_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
     setBatches(batchData || []);
+
+    // Stock breakdown across ALL stores (not just the current one)
+    const { data: inventoryRows } = await supabase
+      .from("store_inventory")
+      .select("store_id, stock_qty, avg_cost, stores(name)")
+      .eq("product_id", prod.id);
+    const breakdown = ((inventoryRows as any[]) || [])
+      .map((row) => ({
+        storeId: row.store_id,
+        storeName: row.stores?.name || row.store_id,
+        stockQty: Number(row.stock_qty),
+        avgCost: Number(row.avg_cost),
+      }))
+      .sort((a, b) => b.stockQty - a.stockQty);
+    setStoreBreakdown(breakdown);
   }
 
   const now = Date.now();
@@ -138,6 +154,44 @@ export default function BarcodePage() {
                 <div className="font-bold text-green-700">{fmt(totalMargin)}</div>
               </div>
             </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+            <div className="px-4 py-2 font-semibold text-sm border-b border-slate-100">
+              {t("barcode_storeBreakdownTitle")}
+            </div>
+            <table className="w-full text-sm min-w-[350px]">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left px-3 py-2">{t("admin_store")}</th>
+                  <th className="text-left px-3 py-2">{t("barcode_balanceStock")}</th>
+                  <th className="text-left px-3 py-2">{t("barcode_avgCost")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storeBreakdown.map((row) => (
+                  <tr key={row.storeId} className={`border-t border-slate-100 ${row.storeId === storeId ? "bg-blue-50" : ""}`}>
+                    <td className="px-3 py-2">
+                      {row.storeName}
+                      {row.storeId === storeId && (
+                        <span className="ml-1 text-xs text-blue-600">({t("barcode_currentStore")})</span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2 font-medium ${row.stockQty <= 5 ? "text-red-600" : ""}`}>
+                      {row.stockQty}
+                    </td>
+                    <td className="px-3 py-2 text-slate-500">{fmt(row.avgCost)}</td>
+                  </tr>
+                ))}
+                {storeBreakdown.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="text-center text-slate-400 py-6">
+                      -
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
