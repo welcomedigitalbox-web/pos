@@ -106,8 +106,11 @@ export type StoreSettings = {
 export type StoreRow = {
   id: string;
   name: string;
+  is_warehouse: boolean;
   created_at: string;
 };
+
+export const CENTRAL_WAREHOUSE_ID = "CENTRAL-WH";
 
 export type LoyaltyTier = {
   id: string;
@@ -211,5 +214,23 @@ export type ProductVariant = {
   variant_name: string;
   sku: string | null;
   price_override: number | null;
+  created_at: string;
+};
+
+export type SalesRep = {
+  id: string;
+  store_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type StockTransfer = {
+  id: string;
+  product_id: string;
+  to_store_id: string;
+  qty: number;
+  transferred_by: string | null;
+  note: string | null;
   created_at: string;
 };
