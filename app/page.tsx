@@ -44,6 +44,15 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
 
+  // Discount approval workflow (cashier-tier roles need Sale Manager/Owner/Admin sign-off)
+  const [discountApproved, setDiscountApproved] = useState(false);
+  const [discountApprovedBy, setDiscountApprovedBy] = useState<string | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approverEmail, setApproverEmail] = useState("");
+  const [approverPassword, setApproverPassword] = useState("");
+  const [approverError, setApproverError] = useState("");
+  const [approving, setApproving] = useState(false);
+
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
@@ -72,6 +81,12 @@ export default function POSPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCustomer, loyaltyTiers]);
+
+  // Any change to the discount invalidates a prior approval — must re-approve
+  useEffect(() => {
+    setDiscountApproved(false);
+    setDiscountApprovedBy(null);
+  }, [discountValue, discountType]);
 
   useEffect(() => {
     loadProducts();
@@ -141,6 +156,38 @@ export default function POSPage() {
     setSelectedCustomer(null);
     setCustomerSearch("");
     setCustomerPhone("");
+    setDiscountApproved(false);
+    setDiscountApprovedBy(null);
+  }
+
+  async function submitDiscountApproval() {
+    if (!approverEmail || !approverPassword) return;
+    setApproving(true);
+    setApproverError("");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
+        body: { email: approverEmail, password: approverPassword },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        setApproverError(data.error);
+        return;
+      }
+      setDiscountApproved(true);
+      setDiscountApprovedBy(data.approver_email);
+      setShowApprovalModal(false);
+      setApproverEmail("");
+      setApproverPassword("");
+      showToast(`✅ ${t("pos_discountApprovedBy")} ${data.approver_email}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setApproverError(message);
+    } finally {
+      setApproving(false);
+    }
   }
 
   function addToCart(p: Product) {
@@ -222,10 +269,9 @@ export default function POSPage() {
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
   const grandTotal = afterDiscount + vatAmount;
 
-  const canOverrideDiscount =
+  const canApproveDiscount =
     profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
-  const isDiscountLocked =
-    tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && !canOverrideDiscount;
+  const requiresDiscountApproval = discountAmount > 0 && !canApproveDiscount;
 
   const selectedMethod = paymentMethods.find((m) => m.code === paymentMethod);
   const isCashMethod = selectedMethod?.is_cash ?? false;
@@ -241,12 +287,16 @@ export default function POSPage() {
 
   const canCheckout =
     cart.length > 0 &&
-    (!isCashMethod || amountReceivedNum >= grandTotal);
+    (!isCashMethod || amountReceivedNum >= grandTotal) &&
+    (!requiresDiscountApproval || discountApproved);
 
   async function checkout() {
     if (cart.length === 0) return;
     if (isCashMethod && amountReceivedNum < grandTotal) {
       return showToast(t("pos_amountInsufficient"));
+    }
+    if (requiresDiscountApproval && !discountApproved) {
+      return showToast(t("pos_discountApprovalRequired"));
     }
     setLoading(true);
     try {
@@ -261,6 +311,8 @@ export default function POSPage() {
           discount_type: discountType,
           discount_value: discountValueNum,
           discount_amount: discountAmount,
+          discount_approved_by: discountApprovedBy,
+          discount_approved_at: discountApproved ? new Date().toISOString() : null,
           vat_percent: vatPercentNum,
           vat_amount: vatAmount,
           amount_received: isCashMethod ? amountReceivedNum : grandTotal,
@@ -517,28 +569,41 @@ export default function POSPage() {
               {tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && (
                 <p className="text-xs text-green-600 font-medium mt-0.5">
                   🎖️ {t("customers_loyaltyApplied")} ({tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id)}%)
-                  {!canOverrideDiscount && ` — ${t("pos_discountLocked")}`}
                 </p>
               )}
               <div className="flex gap-1 mt-1">
                 <input
                   type="number"
-                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
                   value={discountValue}
                   onChange={(e) => setDiscountValue(e.target.value)}
                   placeholder="0"
-                  disabled={isDiscountLocked}
                 />
                 <select
-                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
                   value={discountType}
                   onChange={(e) => setDiscountType(e.target.value as DiscountType)}
-                  disabled={isDiscountLocked}
                 >
                   <option value="flat">{t("pos_discountFlat")}</option>
                   <option value="percent">{t("pos_discountPercent")}</option>
                 </select>
               </div>
+
+              {requiresDiscountApproval && (
+                discountApproved ? (
+                  <p className="text-xs text-green-600 font-medium mt-1">
+                    ✅ {t("pos_discountApprovedBy")} {discountApprovedBy}
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowApprovalModal(true)}
+                    className="mt-2 w-full py-1.5 bg-orange-500 text-white rounded-lg text-xs font-semibold"
+                  >
+                    🔒 {t("pos_getApproval")}
+                  </button>
+                )
+              )}
             </div>
 
             {/* VAT */}
@@ -670,6 +735,53 @@ export default function POSPage() {
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
           {toast}
+        </div>
+      )}
+
+      {showApprovalModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("pos_approvalTitle")}</h3>
+            <p className="text-sm text-slate-500 mb-4">{t("pos_approvalSubtitle")}</p>
+
+            <label className="text-sm text-slate-600">{t("admin_email")}</label>
+            <input
+              type="email"
+              autoFocus
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={approverEmail}
+              onChange={(e) => setApproverEmail(e.target.value)}
+            />
+
+            <label className="text-sm text-slate-600">{t("admin_password")}</label>
+            <input
+              type="password"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-2"
+              value={approverPassword}
+              onChange={(e) => setApproverPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitDiscountApproval()}
+            />
+            {approverError && <p className="text-red-600 text-xs mb-2">{approverError}</p>}
+
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => {
+                  setShowApprovalModal(false);
+                  setApproverError("");
+                }}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
+              >
+                {t("products_cancel")}
+              </button>
+              <button
+                onClick={submitDiscountApproval}
+                disabled={approving || !approverEmail || !approverPassword}
+                className="flex-1 py-2.5 bg-orange-500 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
+              >
+                {approving ? "..." : t("pos_approve")}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
