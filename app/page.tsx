@@ -48,6 +48,8 @@ export default function POSPage() {
   const [discountApproved, setDiscountApproved] = useState(false);
   const [discountApprovedBy, setDiscountApprovedBy] = useState<string | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<"pin" | "password">("pin");
+  const [approverPin, setApproverPin] = useState("");
   const [approverEmail, setApproverEmail] = useState("");
   const [approverPassword, setApproverPassword] = useState("");
   const [approverError, setApproverError] = useState("");
@@ -161,26 +163,46 @@ export default function POSPage() {
   }
 
   async function submitDiscountApproval() {
-    if (!approverEmail || !approverPassword) return;
+    const usingPin = approvalMode === "pin";
+    if (usingPin && approverPin.length < 4) return;
+    if (!usingPin && (!approverEmail || !approverPassword)) return;
+
     setApproving(true);
     setApproverError("");
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
-        body: { email: approverEmail, password: approverPassword },
+        body: usingPin ? { pin: approverPin } : { email: approverEmail, password: approverPassword },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (error) throw error;
+
+      if (error) {
+        // supabase-js throws a generic error for non-2xx responses — pull the
+        // actual message out of the function's JSON response body if possible.
+        let message = error.message || String(error);
+        try {
+          if (error.context && typeof error.context.json === "function") {
+            const body = await error.context.json();
+            if (body?.error) message = body.error;
+          }
+        } catch {
+          // ignore parse failure, fall back to generic message
+        }
+        setApproverError(message);
+        return;
+      }
       if (data?.error) {
         setApproverError(data.error);
         return;
       }
+
       setDiscountApproved(true);
       setDiscountApprovedBy(data.approver_email);
       setShowApprovalModal(false);
       setApproverEmail("");
       setApproverPassword("");
+      setApproverPin("");
       showToast(`✅ ${t("pos_discountApprovedBy")} ${data.approver_email}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -742,25 +764,67 @@ export default function POSPage() {
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
             <h3 className="font-semibold text-lg mb-1">{t("pos_approvalTitle")}</h3>
-            <p className="text-sm text-slate-500 mb-4">{t("pos_approvalSubtitle")}</p>
+            <p className="text-sm text-slate-500 mb-3">{t("pos_approvalSubtitle")}</p>
 
-            <label className="text-sm text-slate-600">{t("admin_email")}</label>
-            <input
-              type="email"
-              autoFocus
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={approverEmail}
-              onChange={(e) => setApproverEmail(e.target.value)}
-            />
+            <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs mb-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setApprovalMode("pin");
+                  setApproverError("");
+                }}
+                className={`flex-1 py-2 ${approvalMode === "pin" ? "bg-blue-600 text-white" : "bg-white text-slate-500"}`}
+              >
+                {t("pos_pinMethod")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setApprovalMode("password");
+                  setApproverError("");
+                }}
+                className={`flex-1 py-2 ${approvalMode === "password" ? "bg-blue-600 text-white" : "bg-white text-slate-500"}`}
+              >
+                {t("pos_passwordMethod")}
+              </button>
+            </div>
 
-            <label className="text-sm text-slate-600">{t("admin_password")}</label>
-            <input
-              type="password"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-2"
-              value={approverPassword}
-              onChange={(e) => setApproverPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submitDiscountApproval()}
-            />
+            {approvalMode === "pin" ? (
+              <>
+                <label className="text-sm text-slate-600">{t("myPin_title")}</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  maxLength={6}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-lg tracking-widest text-center mt-1 mb-2"
+                  value={approverPin}
+                  onChange={(e) => setApproverPin(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={(e) => e.key === "Enter" && submitDiscountApproval()}
+                  placeholder="••••"
+                />
+              </>
+            ) : (
+              <>
+                <label className="text-sm text-slate-600">{t("admin_email")}</label>
+                <input
+                  type="email"
+                  autoFocus
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+                  value={approverEmail}
+                  onChange={(e) => setApproverEmail(e.target.value)}
+                />
+
+                <label className="text-sm text-slate-600">{t("admin_password")}</label>
+                <input
+                  type="password"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-2"
+                  value={approverPassword}
+                  onChange={(e) => setApproverPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitDiscountApproval()}
+                />
+              </>
+            )}
             {approverError && <p className="text-red-600 text-xs mb-2">{approverError}</p>}
 
             <div className="flex gap-2 mt-3">
@@ -775,7 +839,10 @@ export default function POSPage() {
               </button>
               <button
                 onClick={submitDiscountApproval}
-                disabled={approving || !approverEmail || !approverPassword}
+                disabled={
+                  approving ||
+                  (approvalMode === "pin" ? approverPin.length < 4 : !approverEmail || !approverPassword)
+                }
                 className="flex-1 py-2.5 bg-orange-500 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
               >
                 {approving ? "..." : t("pos_approve")}
