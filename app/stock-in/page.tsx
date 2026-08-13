@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, Product, CENTRAL_WAREHOUSE_ID, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -27,7 +27,8 @@ type PurchaseRow = {
 };
 
 export default function StockInPage() {
-  const { storeId } = useStore();
+  const { storeId: navStoreId } = useStore();
+  const storeId = CENTRAL_WAREHOUSE_ID; // Stock-In always goes to the central warehouse pool
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
