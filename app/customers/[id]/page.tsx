@@ -66,7 +66,6 @@ export default function CustomerDetailPage() {
     const { data: tierData } = await supabase
       .from("loyalty_tiers")
       .select("*")
-      .eq("store_id", cust.store_id)
       .order("sort_order");
     setTiers(tierData || []);
 
