@@ -15,6 +15,7 @@ export type Product = {
   avg_cost: number;
   previous_avg_cost: number;
   last_purchase_cost: number;
+  category_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -193,3 +194,19 @@ export async function upsertStoreInventory(
     await supabase.from("store_inventory").insert(merged);
   }
 }
+
+export type ProductCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type ProductVariant = {
+  id: string;
+  product_id: string;
+  variant_name: string;
+  sku: string | null;
+  price_override: number | null;
+  created_at: string;
+};
