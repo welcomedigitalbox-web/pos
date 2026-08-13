@@ -1,45 +1,55 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase, Customer } from "@/lib/supabase";
-import { useAuth } from "../../auth-context";
-import { useLanguage } from "../../language-context";
-import { hasPermission } from "../../permissions";
-import { LOYALTY_TIER_LABEL } from "../../loyalty";
+import { supabase, Customer, LoyaltyTier } from "@/lib/supabase";
+import { useStore } from "../store-context";
+import { useAuth } from "../auth-context";
+import { useRouter } from "next/navigation";
+import { useLanguage } from "../language-context";
+import { hasPermission } from "../permissions";
+import { findTier } from "../loyalty";
 
-function fmt(n: number) {
-  return n.toLocaleString() + " MMK";
-}
-
-type OrderRow = {
-  id: string;
-  created_at: string;
-  store_id: string;
-  total: number;
-  order_status: string;
-  order_type: string;
-  items: string;
-};
-
-type ItemStat = {
+type FormState = {
+  id: string | null;
   name: string;
-  qty: number;
-  spent: number;
+  phone: string;
+  email: string;
+  date_of_birth: string;
+  delivery_address: string;
+  facebook: string;
+  tiktok: string;
+  loyalty_tier_id: string;
 };
 
-export default function CustomerDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  const router = useRouter();
-  const { profile } = useAuth();
-  const { t, lang } = useLanguage();
+const emptyForm: FormState = {
+  id: null,
+  name: "",
+  phone: "",
+  email: "",
+  date_of_birth: "",
+  delivery_address: "",
+  facebook: "",
+  tiktok: "",
+  loyalty_tier_id: "",
+};
 
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [itemStats, setItemStats] = useState<ItemStat[]>([]);
+export default function CustomersPage() {
+  const { storeId } = useStore();
+  const { profile } = useAuth();
+  const { t } = useLanguage();
+  const router = useRouter();
+
+  const canEditLoyalty =
+    profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
+
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tiers, setTiers] = useState<LoyaltyTier[]>([]);
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "customers")) router.replace("/");
@@ -47,156 +57,174 @@ export default function CustomerDetailPage() {
   }, [profile]);
 
   useEffect(() => {
-    if (id) load();
+    load();
+    loadTiers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [storeId]);
 
   if (!profile || !hasPermission(profile, "customers")) return null;
 
   async function load() {
-    const { data: cust } = await supabase.from("customers").select("*").eq("id", id).maybeSingle();
-    if (!cust) {
-      setNotFound(true);
+    const { data } = await supabase.from("customers").select("*").eq("store_id", storeId).order("name");
+    setCustomers(data || []);
+  }
+
+  async function loadTiers() {
+    const { data } = await supabase
+      .from("loyalty_tiers")
+      .select("*")
+      .eq("store_id", storeId)
+      .order("sort_order");
+    setTiers(data || []);
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  function openNew() {
+    setForm(emptyForm);
+    setShowForm(true);
+  }
+
+  function openEdit(c: Customer) {
+    setForm({
+      id: c.id,
+      name: c.name,
+      phone: c.phone || "",
+      email: c.email || "",
+      date_of_birth: c.date_of_birth || "",
+      delivery_address: c.delivery_address || "",
+      facebook: c.facebook || "",
+      tiktok: c.tiktok || "",
+      loyalty_tier_id: c.loyalty_tier_id || "",
+    });
+    setShowForm(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) return showToast(t("customers_nameRequired"));
+
+    const payload: Record<string, unknown> = {
+      name: form.name.trim(),
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      date_of_birth: form.date_of_birth || null,
+      delivery_address: form.delivery_address.trim() || null,
+      facebook: form.facebook.trim() || null,
+      tiktok: form.tiktok.trim() || null,
+      store_id: storeId,
+    };
+    if (canEditLoyalty) {
+      payload.loyalty_tier_id = form.loyalty_tier_id || null;
+    }
+
+    setSaving(true);
+    try {
+      if (form.id) {
+        const { error } = await supabase.from("customers").update(payload).eq("id", form.id);
+        if (error) throw error;
+        showToast(t("customers_updated"));
+      } else {
+        const { error } = await supabase.from("customers").insert(payload);
+        if (error) throw error;
+        showToast(t("customers_created"));
+      }
+      setShowForm(false);
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast("❌ " + message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm(t("customers_deleteConfirm"))) return;
+    const { error } = await supabase.from("customers").delete().eq("id", id);
+    if (error) {
+      showToast("❌ " + error.message);
       return;
     }
-    setCustomer(cust);
-
-    const { data: sales } = await supabase
-      .from("sales")
-      .select("id, created_at, store_id, total, order_status, order_type")
-      .eq("customer_id", id)
-      .order("created_at", { ascending: false });
-
-    if (!sales || sales.length === 0) {
-      setOrders([]);
-      setItemStats([]);
-      return;
-    }
-
-    const saleIds = sales.map((s) => s.id);
-    const { data: items } = await supabase
-      .from("sale_items")
-      .select("sale_id, product_name, qty, line_total")
-      .in("sale_id", saleIds);
-
-    const itemsBySale = new Map<string, string[]>();
-    const productAgg = new Map<string, { qty: number; spent: number }>();
-
-    for (const item of items || []) {
-      const list = itemsBySale.get(item.sale_id) || [];
-      list.push(`${item.product_name} x${item.qty}`);
-      itemsBySale.set(item.sale_id, list);
-
-      const agg = productAgg.get(item.product_name) || { qty: 0, spent: 0 };
-      agg.qty += Number(item.qty);
-      agg.spent += Number(item.line_total);
-      productAgg.set(item.product_name, agg);
-    }
-
-    const orderRows: OrderRow[] = sales.map((s) => ({
-      id: s.id,
-      created_at: s.created_at,
-      store_id: s.store_id,
-      total: Number(s.total),
-      order_status: s.order_status,
-      order_type: s.order_type,
-      items: (itemsBySale.get(s.id) || []).join(", "),
-    }));
-    setOrders(orderRows);
-
-    const stats: ItemStat[] = Array.from(productAgg.entries())
-      .map(([name, v]) => ({ name, qty: v.qty, spent: v.spent }))
-      .sort((a, b) => b.qty - a.qty);
-    setItemStats(stats);
+    showToast(t("customers_deleted"));
+    await load();
   }
 
-  if (notFound) {
-    return <div className="pt-8 text-center text-slate-400">{t("customers_notFound")}</div>;
-  }
-  if (!customer) {
-    return <div className="pt-8 text-center text-slate-400">...</div>;
-  }
-
-  const totalSpent = orders.reduce((s, o) => s + o.total, 0);
-  const totalOrders = orders.length;
-  const topItem = itemStats[0];
-  const tier = customer.loyalty_tier || "none";
+  const filtered = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone || "").includes(search) ||
+      (c.email || "").toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="pt-4 max-w-4xl">
-      <Link href="/customers" className="text-sm text-blue-600 mb-2 inline-block">
-        ← {t("nav_customers")}
-      </Link>
-
-      <div className="flex items-center gap-3 mb-1">
-        <span className="text-2xl">👤</span>
-        <h1 className="text-xl font-bold">{customer.name}</h1>
-        <span className={`px-2 py-0.5 rounded text-xs font-medium ${LOYALTY_TIER_LABEL[tier].color}`}>
-          {LOYALTY_TIER_LABEL[tier][lang]}
-        </span>
-      </div>
-      <div className="text-slate-400 text-sm mb-4">
-        {customer.phone || "-"} {customer.email && `· ${customer.email}`}
+    <div className="pt-4">
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="font-semibold text-lg">{t("nav_customers")}</h2>
+        <button onClick={openNew} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
+          {t("customers_addNew")}
+        </button>
       </div>
 
-      {/* Contact info */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 mb-3 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-        <div>
-          <div className="text-xs text-slate-400 uppercase">{t("customers_dob")}</div>
-          <div className="mt-1">{customer.date_of_birth || "-"}</div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-400 uppercase">{t("customers_facebook")}</div>
-          <div className="mt-1">{customer.facebook || "-"}</div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-400 uppercase">{t("customers_tiktok")}</div>
-          <div className="mt-1">{customer.tiktok || "-"}</div>
-        </div>
-        <div className="sm:col-span-3">
-          <div className="text-xs text-slate-400 uppercase">{t("saleOrder_deliveryAddress")}</div>
-          <div className="mt-1">{customer.delivery_address || "-"}</div>
-        </div>
-      </div>
+      <input
+        className="w-full sm:w-80 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+        placeholder={t("pos_customerSearchPlaceholder")}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500">{t("customers_totalSpent")}</div>
-          <div className="text-lg font-bold mt-1 text-green-700">{fmt(totalSpent)}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500">{t("customers_totalOrders")}</div>
-          <div className="text-lg font-bold mt-1">{totalOrders}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500">{t("customers_topItem")}</div>
-          <div className="text-sm font-bold mt-1">{topItem ? `${topItem.name} (x${topItem.qty})` : "-"}</div>
-        </div>
-      </div>
-
-      {/* Item breakdown */}
-      <h3 className="font-semibold mb-2">{t("customers_itemsBought")}</h3>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-4">
-        <table className="w-full text-sm min-w-[400px]">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <table className="w-full text-sm min-w-[750px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
-              <th className="text-left px-3 py-2">{t("stockIn_qtyColumn")}</th>
-              <th className="text-left px-3 py-2">{t("barcode_totalSale")}</th>
+              <th className="text-left px-4 py-2">{t("customers_name")}</th>
+              <th className="text-left px-4 py-2">{t("pos_customerPhone")}</th>
+              <th className="text-left px-4 py-2">{t("customers_email")}</th>
+              <th className="text-left px-4 py-2">{t("customers_dob")}</th>
+              <th className="text-left px-4 py-2">{t("saleOrder_deliveryAddress")}</th>
+              <th className="text-left px-4 py-2">{t("customers_loyalty")}</th>
+              <th className="text-left px-4 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {itemStats.map((it) => (
-              <tr key={it.name} className="border-t border-slate-100">
-                <td className="px-3 py-2">{it.name}</td>
-                <td className="px-3 py-2">{it.qty}</td>
-                <td className="px-3 py-2 font-medium">{fmt(it.spent)}</td>
-              </tr>
-            ))}
-            {itemStats.length === 0 && (
+            {filtered.map((c) => {
+              const tier = findTier(tiers, c.loyalty_tier_id);
+              return (
+                <tr key={c.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 font-medium">{c.name}</td>
+                  <td className="px-4 py-2 text-slate-400">{c.phone || "-"}</td>
+                  <td className="px-4 py-2 text-slate-400">{c.email || "-"}</td>
+                  <td className="px-4 py-2 text-slate-400">{c.date_of_birth || "-"}</td>
+                  <td className="px-4 py-2 text-slate-400 max-w-[180px] truncate">{c.delivery_address || "-"}</td>
+                  <td className="px-4 py-2">
+                    {tier ? (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">
+                        {tier.name} ({tier.discount_percent}%)
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-300">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right space-x-2">
+                    <Link href={`/customers/${c.id}`} className="text-slate-500 text-xs font-medium">
+                      {t("products_view")}
+                    </Link>
+                    <button onClick={() => openEdit(c)} className="text-blue-600 text-xs font-medium">
+                      {t("products_edit")}
+                    </button>
+                    <button onClick={() => handleDelete(c.id)} className="text-red-600 text-xs font-medium">
+                      {t("products_delete")}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
               <tr>
-                <td colSpan={3} className="text-center text-slate-400 py-6">
+                <td colSpan={7} className="text-center text-slate-400 py-8">
                   -
                 </td>
               </tr>
@@ -205,39 +233,116 @@ export default function CustomerDetailPage() {
         </table>
       </div>
 
-      {/* Order history */}
-      <h3 className="font-semibold mb-2">{t("customers_orderHistory")}</h3>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[650px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="text-left px-3 py-2">{t("history_time")}</th>
-              <th className="text-left px-3 py-2">{t("admin_store")}</th>
-              <th className="text-left px-3 py-2">{t("history_items")}</th>
-              <th className="text-left px-3 py-2">{t("mySales_amount")}</th>
-              <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.id} className="border-t border-slate-100">
-                <td className="px-3 py-2">{new Date(o.created_at).toLocaleString()}</td>
-                <td className="px-3 py-2 text-slate-500">{o.store_id}</td>
-                <td className="px-3 py-2 text-slate-400 max-w-[220px] truncate">{o.items || "-"}</td>
-                <td className="px-3 py-2 font-medium">{fmt(o.total)}</td>
-                <td className="px-3 py-2 text-xs">{o.order_status}</td>
-              </tr>
-            ))}
-            {orders.length === 0 && (
-              <tr>
-                <td colSpan={5} className="text-center text-slate-400 py-8">
-                  {t("customers_noOrders")}
-                </td>
-              </tr>
+      {showForm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-lg my-8">
+            <h3 className="font-semibold text-lg mb-4">
+              {form.id ? t("customers_editTitle") : t("customers_addNew")}
+            </h3>
+
+            <label className="text-sm text-slate-600">{t("customers_name")} *</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+            />
+
+            <label className="text-sm text-slate-600">{t("pos_customerPhone")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
+
+            <label className="text-sm text-slate-600">{t("customers_email")}</label>
+            <input
+              type="email"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+
+            <label className="text-sm text-slate-600">{t("customers_dob")}</label>
+            <input
+              type="date"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.date_of_birth}
+              onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+            />
+
+            <label className="text-sm text-slate-600">{t("saleOrder_deliveryAddress")}</label>
+            <textarea
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              rows={2}
+              value={form.delivery_address}
+              onChange={(e) => setForm({ ...form, delivery_address: e.target.value })}
+            />
+
+            <label className="text-sm text-slate-600">{t("customers_facebook")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.facebook}
+              onChange={(e) => setForm({ ...form, facebook: e.target.value })}
+              placeholder="facebook.com/..."
+            />
+
+            <label className="text-sm text-slate-600">{t("customers_tiktok")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={form.tiktok}
+              onChange={(e) => setForm({ ...form, tiktok: e.target.value })}
+              placeholder="@username"
+            />
+
+            <label className="text-sm text-slate-600">{t("customers_loyalty")}</label>
+            {canEditLoyalty ? (
+              <select
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+                value={form.loyalty_tier_id}
+                onChange={(e) => setForm({ ...form, loyalty_tier_id: e.target.value })}
+              >
+                <option value="">{t("customers_tierNone")}</option>
+                {tiers.map((tr) => (
+                  <option key={tr.id} value={tr.id}>
+                    {tr.name} ({tr.discount_percent}%)
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="mb-4">
+                <div className="w-full border border-slate-100 bg-slate-50 rounded-lg px-3 py-2 text-sm mt-1 text-slate-500">
+                  {findTier(tiers, form.loyalty_tier_id)?.name || t("customers_tierNone")}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">{t("customers_loyaltyRestricted")}</p>
+              </div>
             )}
-          </tbody>
-        </table>
-      </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
+              >
+                {t("products_cancel")}
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
+              >
+                {saving ? t("products_saving") : t("products_save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
