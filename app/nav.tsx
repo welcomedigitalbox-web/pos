@@ -52,7 +52,7 @@ export default function Nav() {
       ? PAGE_OPTIONS.filter((p) => p.group === activeDept && hasPermission(profile, p.key))
       : [];
 
-  const showStoreSelector = activeDept === "sale" || activeDept === "inventory" || activeDept === "merchandising";
+  const showStoreSelector = pathname === "/";
 
   return (
     <>
@@ -103,7 +103,7 @@ export default function Nav() {
                     value={storeId}
                     onChange={(e) => setStoreId(e.target.value)}
                   >
-                    {stores.map((s) => (
+                    {stores.filter((s) => !s.is_warehouse).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
