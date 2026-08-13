@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase, Product, StockBatch, fetchProductWithStock } from "@/lib/supabase";
+import { supabase, Product, SellableItem, StockBatch, fetchSellableItems } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
 import { useLanguage } from "../../language-context";
@@ -31,6 +31,7 @@ export default function ProductDetailPage() {
   const { t } = useLanguage();
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [variantRows, setVariantRows] = useState<SellableItem[]>([]);
   const [notFound, setNotFound] = useState(false);
 
   const [primaryOpen, setPrimaryOpen] = useState(true);
@@ -57,12 +58,16 @@ export default function ProductDetailPage() {
   if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
-    const prod = await fetchProductWithStock(id, storeId);
+    const { data: prod } = await supabase.from("products").select("*").eq("id", id).maybeSingle();
     if (!prod) {
       setNotFound(true);
       return;
     }
-    setProduct(prod);
+    setProduct(prod as Product);
+
+    // All sellable units belonging to this product (one row if it has no variants)
+    const allItems = await fetchSellableItems(storeId, true);
+    setVariantRows(allItems.filter((i) => i.product_id === id));
 
     const { data: items } = await supabase
       .from("sale_items")
@@ -143,7 +148,13 @@ export default function ProductDetailPage() {
     return <div className="pt-8 text-center text-slate-400">...</div>;
   }
 
-  const stockValue = product.stock_qty * product.avg_cost;
+  // Aggregate across all variants of this product (one row if it has none)
+  const totalStock = variantRows.reduce((sum, r) => sum + r.stock_qty, 0);
+  const stockValue = variantRows.reduce((sum, r) => sum + r.stock_qty * r.avg_cost, 0);
+  const weightedAvgCost = totalStock > 0 ? stockValue / totalStock : 0;
+  const lastPurchaseCost = variantRows.reduce((m, r) => Math.max(m, r.last_purchase_cost), 0);
+  const prevAvgCost = variantRows[0]?.previous_avg_cost ?? 0;
+  const hasVariants = variantRows.some((r) => r.variant_id);
   const now = Date.now();
   const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
@@ -187,8 +198,8 @@ export default function ProductDetailPage() {
             </div>
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("stockIn_currentStock")}</div>
-              <div className={`mt-1 ${product.stock_qty <= 5 ? "text-red-600 font-semibold" : ""}`}>
-                {product.stock_qty}
+              <div className={`mt-1 ${totalStock <= 5 ? "text-red-600 font-semibold" : ""}`}>
+                {totalStock}
               </div>
             </div>
           </div>
@@ -207,15 +218,15 @@ export default function ProductDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-4 py-4 text-sm">
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("barcode_avgCost")}</div>
-              <div className="mt-1 font-semibold">{fmt(product.avg_cost)}</div>
+              <div className="mt-1 font-semibold">{fmt(weightedAvgCost)}</div>
             </div>
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("barcode_lastAvgCost")}</div>
-              <div className="mt-1">{fmt(product.last_purchase_cost)}</div>
+              <div className="mt-1">{fmt(lastPurchaseCost)}</div>
             </div>
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("products_previousAvgCost")}</div>
-              <div className="mt-1">{fmt(product.previous_avg_cost)}</div>
+              <div className="mt-1">{fmt(prevAvgCost)}</div>
             </div>
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("warehouse_stockValue")}</div>
@@ -240,6 +251,38 @@ export default function ProductDetailPage() {
           <div className="text-lg font-bold mt-1 text-green-700">{fmt(totalMargin)}</div>
         </div>
       </div>
+
+      {hasVariants && (
+        <div className="bg-white border border-slate-200 rounded-xl mb-4 overflow-x-auto">
+          <div className="px-4 py-2 font-semibold text-sm border-b border-slate-100">
+            {t("nav_productVariant")}
+          </div>
+          <table className="w-full text-sm min-w-[420px]">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="text-left px-3 py-2">{t("productVariant_variantName")}</th>
+                <th className="text-left px-3 py-2">{t("products_sku")}</th>
+                <th className="text-left px-3 py-2">{t("products_price")}</th>
+                <th className="text-left px-3 py-2">{t("barcode_balanceStock")}</th>
+                <th className="text-left px-3 py-2">{t("barcode_avgCost")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variantRows.map((r) => (
+                <tr key={r.key} className="border-t border-slate-100">
+                  <td className="px-3 py-2 font-medium">{r.variant_name || "-"}</td>
+                  <td className="px-3 py-2 text-slate-400">{r.sku || "-"}</td>
+                  <td className="px-3 py-2">{fmt(r.price)}</td>
+                  <td className={`px-3 py-2 ${r.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
+                    {r.stock_qty}
+                  </td>
+                  <td className="px-3 py-2 text-slate-500">{fmt(r.avg_cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200 mb-3 overflow-x-auto">
