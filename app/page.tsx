@@ -104,7 +104,6 @@ export default function POSPage() {
     const { data } = await supabase
       .from("payment_methods")
       .select("*")
-      .eq("store_id", storeId)
       .eq("is_active", true)
       .order("sort_order");
     setPaymentMethods(data || []);
