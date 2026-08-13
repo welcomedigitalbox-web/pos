@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
@@ -67,6 +67,8 @@ export default function POSPage() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
+  const [salesReps, setSalesReps] = useState<SalesRep[]>([]);
+  const [saleRepId, setSaleRepId] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -94,6 +96,7 @@ export default function POSPage() {
     loadProducts();
     loadCustomers();
     loadLoyaltyTiers();
+    loadSalesReps();
     loadPaymentMethods();
     loadStoreSettings();
     resetOrder();
@@ -134,6 +137,16 @@ export default function POSPage() {
       .select("*")
       .order("sort_order");
     setLoyaltyTiers(data || []);
+  }
+
+  async function loadSalesReps() {
+    const { data } = await supabase
+      .from("sales_reps")
+      .select("*")
+      .eq("store_id", storeId)
+      .eq("is_active", true)
+      .order("name");
+    setSalesReps(data || []);
   }
 
   function showToast(msg: string) {
@@ -340,6 +353,8 @@ export default function POSPage() {
           customer_id: selectedCustomer?.id || null,
           customer_name: selectedCustomer?.name || (customerSearch.trim() || null),
           cashier_email: profile?.email || null,
+          sale_rep_id: saleRepId || null,
+          sale_rep_name: salesReps.find((r) => r.id === saleRepId)?.name || null,
         })
         .select()
         .single();
@@ -510,6 +525,24 @@ export default function POSPage() {
 
         {cart.length > 0 && (
           <>
+            {salesReps.length > 0 && (
+              <div className="mb-2">
+                <label className="text-xs text-slate-500">{t("pos_salesRep")}</label>
+                <select
+                  className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                  value={saleRepId}
+                  onChange={(e) => setSaleRepId(e.target.value)}
+                >
+                  <option value="">{t("pos_salesRepNone")}</option>
+                  {salesReps.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Customer */}
             <div className="mb-2">
               <label className="text-xs text-slate-500">{t("pos_customer")}</label>
