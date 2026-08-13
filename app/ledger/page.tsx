@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, fetchProductsWithStock } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -21,8 +21,8 @@ export default function LedgerPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productId, setProductId] = useState("");
+  const [items, setItems] = useState<SellableItem[]>([]);
+  const [itemKey, setItemKey] = useState("");
   const [rows, setRows] = useState<(LedgerRow & { balance: number })[]>([]);
 
   useEffect(() => {
@@ -31,37 +31,46 @@ export default function LedgerPage() {
   }, [profile]);
 
   useEffect(() => {
-    loadProducts();
+    loadItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
   useEffect(() => {
-    if (productId) loadLedger(productId);
+    if (itemKey) loadLedger();
     else setRows([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, storeId]);
+  }, [itemKey, storeId]);
 
   if (!profile || !hasPermission(profile, "ledger")) return null;
 
-  async function loadProducts() {
-    const data = await fetchProductsWithStock(storeId);
-    setProducts(data);
+  async function loadItems() {
+    const data = await fetchSellableItems(storeId);
+    setItems(data);
   }
 
-  async function loadLedger(pid: string) {
-    const { data: purchases } = await supabase
+  async function loadLedger() {
+    const item = items.find((i) => i.key === itemKey);
+    if (!item) return;
+
+    let purchaseQuery = supabase
       .from("stock_purchases")
       .select("qty, created_at, supplier")
-      .eq("product_id", pid)
-      .eq("store_id", storeId)
-      .order("created_at", { ascending: true });
+      .eq("product_id", item.product_id)
+      .eq("store_id", storeId);
+    purchaseQuery = item.variant_id
+      ? purchaseQuery.eq("variant_id", item.variant_id)
+      : purchaseQuery.is("variant_id", null);
+    const { data: purchases } = await purchaseQuery.order("created_at", { ascending: true });
 
-    const { data: items } = await supabase
+    let saleQuery = supabase
       .from("sale_items")
       .select("qty, created_at, sale_id, sales!inner(store_id)")
-      .eq("product_id", pid)
-      .eq("sales.store_id", storeId)
-      .order("created_at", { ascending: true });
+      .eq("product_id", item.product_id)
+      .eq("sales.store_id", storeId);
+    saleQuery = item.variant_id
+      ? saleQuery.eq("variant_id", item.variant_id)
+      : saleQuery.is("variant_id", null);
+    const { data: items_ } = await saleQuery.order("created_at", { ascending: true });
 
     const combined: LedgerRow[] = [
       ...(purchases || []).map((p) => ({
@@ -70,7 +79,7 @@ export default function LedgerPage() {
         qty: Number(p.qty),
         reference: p.supplier ? `Stock-in (${p.supplier})` : "Stock-in",
       })),
-      ...(items || []).map((i) => ({
+      ...(items_ || []).map((i) => ({
         date: i.created_at,
         type: "out" as const,
         qty: Number(i.qty),
@@ -92,18 +101,18 @@ export default function LedgerPage() {
 
       <select
         className="w-full sm:w-80 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
-        value={productId}
-        onChange={(e) => setProductId(e.target.value)}
+        value={itemKey}
+        onChange={(e) => setItemKey(e.target.value)}
       >
         <option value="">{t("ledger_selectProduct")}</option>
-        {products.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
+        {items.map((i) => (
+          <option key={i.key} value={i.key}>
+            {i.display_name}
           </option>
         ))}
       </select>
 
-      {productId && (
+      {itemKey && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
           <table className="w-full text-sm min-w-[500px]">
             <thead className="bg-slate-50 text-slate-500">
