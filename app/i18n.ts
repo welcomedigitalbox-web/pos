@@ -76,6 +76,11 @@ export const translations = {
     customers_updated: "✅ ဖောက်သည် အချက်အလက် ပြင်ပြီးပါပြီ",
     customers_deleteConfirm: "ဒီဖောက်သည်ကို ဖျက်မှာ သေချာလား",
     customers_deleted: "🗑️ ဖောက်သည် ဖျက်ပြီးပါပြီ",
+    customers_loyalty: "Loyalty Tier",
+    customers_loyaltyApplied: "Loyalty auto-discount",
+    customers_tierNone: "မရှိ",
+    customers_tierSilver: "ငွေအဆင့် (3% auto-discount)",
+    customers_tierGold: "ရွှေအဆင့် (5% auto-discount)",
 
     history_time: "အချိန်",
     history_store: "ဆိုင်",
@@ -385,6 +390,11 @@ export const translations = {
     customers_updated: "✅ Customer updated",
     customers_deleteConfirm: "Delete this customer?",
     customers_deleted: "🗑️ Customer deleted",
+    customers_loyalty: "Loyalty Tier",
+    customers_loyaltyApplied: "Loyalty auto-discount",
+    customers_tierNone: "None",
+    customers_tierSilver: "Silver (3% auto-discount)",
+    customers_tierGold: "Gold (5% auto-discount)",
 
     history_time: "Time",
     history_store: "Store",
