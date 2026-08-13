@@ -7,6 +7,7 @@ import { useLanguage } from "./language-context";
 import { useAuth } from "./auth-context";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "./permissions";
+import { loyaltyDiscountPercent } from "./loyalty";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
@@ -60,6 +61,16 @@ export default function POSPage() {
   const [customerPhone, setCustomerPhone] = useState("");
 
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+
+  // Auto-apply loyalty tier discount whenever a loyalty customer is selected
+  useEffect(() => {
+    const tierPercent = loyaltyDiscountPercent(selectedCustomer?.loyalty_tier);
+    if (tierPercent > 0) {
+      setDiscountType("percent");
+      setDiscountValue(String(tierPercent));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomer]);
 
   useEffect(() => {
     loadProducts();
@@ -489,6 +500,11 @@ export default function POSPage() {
             {/* Discount */}
             <div className="mb-2">
               <label className="text-xs text-slate-500">{t("pos_discount")}</label>
+              {loyaltyDiscountPercent(selectedCustomer?.loyalty_tier) > 0 && (
+                <p className="text-xs text-green-600 font-medium mt-0.5">
+                  🎖️ {t("customers_loyaltyApplied")} ({loyaltyDiscountPercent(selectedCustomer?.loyalty_tier)}%)
+                </p>
+              )}
               <div className="flex gap-1 mt-1">
                 <input
                   type="number"
