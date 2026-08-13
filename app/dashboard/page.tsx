@@ -62,7 +62,7 @@ export default function DashboardPage() {
     }
 
     const { data: low } = await supabase
-      .from("products")
+      .from("store_inventory")
       .select("id")
       .eq("store_id", storeId)
       .lte("stock_qty", 5);
