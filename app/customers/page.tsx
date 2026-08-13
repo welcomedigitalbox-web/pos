@@ -65,7 +65,7 @@ export default function CustomersPage() {
   if (!profile || !hasPermission(profile, "customers")) return null;
 
   async function load() {
-    const { data } = await supabase.from("customers").select("*").eq("store_id", storeId).order("name");
+    const { data } = await supabase.from("customers").select("*").order("name");
     setCustomers(data || []);
   }
 
@@ -73,7 +73,6 @@ export default function CustomersPage() {
     const { data } = await supabase
       .from("loyalty_tiers")
       .select("*")
-      .eq("store_id", storeId)
       .order("sort_order");
     setTiers(data || []);
   }
