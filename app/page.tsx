@@ -224,6 +224,11 @@ export default function POSPage() {
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
   const grandTotal = afterDiscount + vatAmount;
 
+  const canOverrideDiscount =
+    profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
+  const isDiscountLocked =
+    tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && !canOverrideDiscount;
+
   const selectedMethod = paymentMethods.find((m) => m.code === paymentMethod);
   const isCashMethod = selectedMethod?.is_cash ?? false;
   const isCodMethod = selectedMethod?.is_cod ?? false;
@@ -514,20 +519,23 @@ export default function POSPage() {
               {tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && (
                 <p className="text-xs text-green-600 font-medium mt-0.5">
                   🎖️ {t("customers_loyaltyApplied")} ({tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id)}%)
+                  {!canOverrideDiscount && ` — ${t("pos_discountLocked")}`}
                 </p>
               )}
               <div className="flex gap-1 mt-1">
                 <input
                   type="number"
-                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-400"
                   value={discountValue}
                   onChange={(e) => setDiscountValue(e.target.value)}
                   placeholder="0"
+                  disabled={isDiscountLocked}
                 />
                 <select
-                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-400"
                   value={discountType}
                   onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                  disabled={isDiscountLocked}
                 >
                   <option value="flat">{t("pos_discountFlat")}</option>
                   <option value="percent">{t("pos_discountPercent")}</option>
