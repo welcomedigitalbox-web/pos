@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase, Customer } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -186,6 +187,9 @@ export default function CustomersPage() {
                   </span>
                 </td>
                 <td className="px-4 py-2 text-right space-x-2">
+                  <Link href={`/customers/${c.id}`} className="text-slate-500 text-xs font-medium">
+                    {t("products_view")}
+                  </Link>
                   <button onClick={() => openEdit(c)} className="text-blue-600 text-xs font-medium">
                     {t("products_edit")}
                   </button>
