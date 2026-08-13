@@ -202,6 +202,11 @@ export const translations = {
     products_updateSuccess: "✅ ကုန်ပစ္စည်း ပြင်ပြီးပါပြီ",
     products_createSuccess: "✅ ကုန်ပစ္စည်း အသစ် ထည့်ပြီးပါပြီ",
     products_deleteSuccess: "🗑️ ကုန်ပစ္စည်း ဖျက်ပြီးပါပြီ",
+    products_hasSalesArchiveConfirm: "ဒီ product ကို sale history ရှိနေလို့ ဖျက်လို့မရပါ — Archive (ဖျောက်ထား) လုပ်မလား",
+    products_archived: "📦 Archive ဖြစ်ပြီးပါပြီ (POS/Sale Order မှာ မပေါ်တော့ပါ)",
+    products_restored: "✅ ပြန်ဖော်ပြီးပါပြီ",
+    products_restore: "ပြန်ဖော်ရန်",
+    products_archivedBadge: "Archived",
 
     stockIn_title: "ကုန်သွင်း (Purchase Receiving)",
     stockIn_product: "ကုန်ပစ္စည်း",
@@ -590,6 +595,11 @@ export const translations = {
     products_updateSuccess: "✅ Product updated",
     products_createSuccess: "✅ Product added",
     products_deleteSuccess: "🗑️ Product deleted",
+    products_hasSalesArchiveConfirm: "This product has sale history and can't be deleted — Archive it instead?",
+    products_archived: "📦 Archived (hidden from POS/Sale Order)",
+    products_restored: "✅ Restored",
+    products_restore: "Restore",
+    products_archivedBadge: "Archived",
 
     stockIn_title: "Stock-In (Purchase Receiving)",
     stockIn_product: "Product",
