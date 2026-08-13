@@ -22,7 +22,7 @@ export default function RootLayout({
           <AuthProvider>
             <StoreProvider>
               <Nav />
-              <main className="max-w-6xl mx-auto px-4 pb-16">{children}</main>
+              <main className="sm:ml-20 max-w-6xl mx-auto px-4 pb-16">{children}</main>
             </StoreProvider>
           </AuthProvider>
         </LanguageProvider>
