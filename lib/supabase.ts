@@ -10,12 +10,9 @@ export type Product = {
   name: string;
   sku: string | null;
   price: number;
-  stock_qty: number;
   store_id: string;
-  avg_cost: number;
-  previous_avg_cost: number;
-  last_purchase_cost: number;
   category_id: string | null;
+  variation_theme: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -125,6 +122,7 @@ export type StoreInventory = {
   id: string;
   store_id: string;
   product_id: string;
+  variant_id: string | null;
   stock_qty: number;
   avg_cost: number;
   previous_avg_cost: number;
@@ -132,61 +130,134 @@ export type StoreInventory = {
   updated_at: string;
 };
 
-// Merges the global product catalog with a specific store's stock/cost data.
-// Returns the SAME shape the app always used (Product + stock_qty/avg_cost/etc),
-// so existing UI code barely has to change.
-export async function fetchProductsWithStock(storeId: string, includeInactive = false): Promise<Product[]> {
-  let query = supabase.from("products").select("*").order("name");
-  if (!includeInactive) query = query.eq("is_active", true);
-  const { data: products } = await query;
+// ============================================================
+// SellableItem — the flattened unit that is actually stocked and sold.
+// For a product with NO variants  -> one item, variant_id = null
+// For a product WITH variants     -> one item per child variant (the parent
+//                                    itself is never sellable, like Amazon)
+// Every page (POS, Stock-In, Damage, Warehouse...) works off this uniform
+// list so it never has to branch on "does this product have variants?".
+// ============================================================
+export type SellableItem = {
+  key: string; // unique per (product, variant) — safe for React keys and Maps
+  product_id: string;
+  variant_id: string | null;
+  product_name: string;
+  variant_name: string | null;
+  display_name: string; // "Baby Diaper (L)" or just "Baby Powder"
+  sku: string | null;
+  price: number;
+  category_id: string | null;
+  is_active: boolean;
+  stock_qty: number;
+  avg_cost: number;
+  previous_avg_cost: number;
+  last_purchase_cost: number;
+};
+
+export function inventoryKey(productId: string, variantId: string | null) {
+  return `${productId}:${variantId || "base"}`;
+}
+
+export async function fetchSellableItems(storeId: string, includeInactive = false): Promise<SellableItem[]> {
+  let productQuery = supabase.from("products").select("*").order("name");
+  if (!includeInactive) productQuery = productQuery.eq("is_active", true);
+  const { data: products } = await productQuery;
+
+  let variantQuery = supabase.from("product_variants").select("*").order("created_at");
+  if (!includeInactive) variantQuery = variantQuery.eq("is_active", true);
+  const { data: variants } = await variantQuery;
+
   const { data: inv } = await supabase.from("store_inventory").select("*").eq("store_id", storeId);
-  const invMap = new Map((inv || []).map((i) => [i.product_id, i]));
-  return (products || []).map((p) => {
-    const i = invMap.get(p.id);
-    return {
-      ...p,
-      stock_qty: i?.stock_qty ?? 0,
-      avg_cost: i?.avg_cost ?? 0,
-      previous_avg_cost: i?.previous_avg_cost ?? 0,
-      last_purchase_cost: i?.last_purchase_cost ?? 0,
-    } as Product;
-  });
+  const invMap = new Map(
+    (inv || []).map((i) => [inventoryKey(i.product_id, i.variant_id), i])
+  );
+
+  const variantsByProduct = new Map<string, ProductVariant[]>();
+  for (const v of (variants || []) as ProductVariant[]) {
+    const list = variantsByProduct.get(v.product_id) || [];
+    list.push(v);
+    variantsByProduct.set(v.product_id, list);
+  }
+
+  const items: SellableItem[] = [];
+  for (const p of (products || []) as Product[]) {
+    const children = variantsByProduct.get(p.id) || [];
+
+    if (children.length === 0) {
+      const i = invMap.get(inventoryKey(p.id, null));
+      items.push({
+        key: inventoryKey(p.id, null),
+        product_id: p.id,
+        variant_id: null,
+        product_name: p.name,
+        variant_name: null,
+        display_name: p.name,
+        sku: p.sku,
+        price: p.price,
+        category_id: p.category_id,
+        is_active: p.is_active,
+        stock_qty: i?.stock_qty ?? 0,
+        avg_cost: i?.avg_cost ?? 0,
+        previous_avg_cost: i?.previous_avg_cost ?? 0,
+        last_purchase_cost: i?.last_purchase_cost ?? 0,
+      });
+      continue;
+    }
+
+    // Parent with children: only the children are sellable/stockable
+    for (const v of children) {
+      const i = invMap.get(inventoryKey(p.id, v.id));
+      items.push({
+        key: inventoryKey(p.id, v.id),
+        product_id: p.id,
+        variant_id: v.id,
+        product_name: p.name,
+        variant_name: v.variant_name,
+        display_name: `${p.name} (${v.variant_name})`,
+        sku: v.sku || p.sku,
+        price: v.price_override ?? p.price,
+        category_id: p.category_id,
+        is_active: p.is_active && v.is_active,
+        stock_qty: i?.stock_qty ?? 0,
+        avg_cost: i?.avg_cost ?? 0,
+        previous_avg_cost: i?.previous_avg_cost ?? 0,
+        last_purchase_cost: i?.last_purchase_cost ?? 0,
+      });
+    }
+  }
+  return items;
 }
 
-export async function fetchProductWithStock(productId: string, storeId: string): Promise<Product | null> {
-  const { data: p } = await supabase.from("products").select("*").eq("id", productId).maybeSingle();
-  if (!p) return null;
-  const { data: i } = await supabase
-    .from("store_inventory")
-    .select("*")
-    .eq("product_id", productId)
-    .eq("store_id", storeId)
-    .maybeSingle();
-  return {
-    ...p,
-    stock_qty: i?.stock_qty ?? 0,
-    avg_cost: i?.avg_cost ?? 0,
-    previous_avg_cost: i?.previous_avg_cost ?? 0,
-    last_purchase_cost: i?.last_purchase_cost ?? 0,
-  } as Product;
+export async function fetchSellableItem(
+  productId: string,
+  variantId: string | null,
+  storeId: string
+): Promise<SellableItem | null> {
+  const items = await fetchSellableItems(storeId, true);
+  return items.find((i) => i.product_id === productId && i.variant_id === variantId) || null;
 }
 
-// Creates or updates a store's stock/cost row for a product. Any field left out keeps its current value.
+// Creates or updates a store's stock/cost row for a product+variant.
+// Any field left out keeps its current value.
 export async function upsertStoreInventory(
   storeId: string,
   productId: string,
+  variantId: string | null,
   fields: Partial<Pick<StoreInventory, "stock_qty" | "avg_cost" | "previous_avg_cost" | "last_purchase_cost">>
 ) {
-  const { data: existing } = await supabase
+  let query = supabase
     .from("store_inventory")
     .select("*")
     .eq("store_id", storeId)
-    .eq("product_id", productId)
-    .maybeSingle();
+    .eq("product_id", productId);
+  query = variantId ? query.eq("variant_id", variantId) : query.is("variant_id", null);
+  const { data: existing } = await query.maybeSingle();
 
   const merged = {
     store_id: storeId,
     product_id: productId,
+    variant_id: variantId,
     stock_qty: fields.stock_qty ?? existing?.stock_qty ?? 0,
     avg_cost: fields.avg_cost ?? existing?.avg_cost ?? 0,
     previous_avg_cost: fields.previous_avg_cost ?? existing?.previous_avg_cost ?? 0,
@@ -214,6 +285,7 @@ export type ProductVariant = {
   variant_name: string;
   sku: string | null;
   price_override: number | null;
+  is_active: boolean;
   created_at: string;
 };
 
