@@ -328,7 +328,7 @@ export default function SaleOrderPage() {
 
   return (
     <div className="pt-4">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4">
         {/* Order builder */}
         <div>
           <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
