@@ -10,7 +10,7 @@ import { PAGE_OPTIONS, GROUP_LABELS, PageGroup, hasPermission } from "./permissi
 
 export default function Nav() {
   const pathname = usePathname();
-  const { storeId, setStoreId, stores } = useStore();
+  const { storeId, setStoreId, stores, isStoreLocked } = useStore();
   const { profile, signOut } = useAuth();
   const { lang, setLang, t } = useLanguage();
   const [openGroup, setOpenGroup] = useState<PageGroup | null>(null);
@@ -47,17 +47,23 @@ export default function Nav() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-semibold text-lg">🛒 {t("appName")}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs sm:text-sm"
-            value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-          >
-            {stores.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          {isStoreLocked ? (
+            <span className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs sm:text-sm bg-slate-50 text-slate-600">
+              🔒 {stores.find((s) => s.id === storeId)?.name || storeId}
+            </span>
+          ) : (
+            <select
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs sm:text-sm"
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
+            >
+              {stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
 
           <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs">
             <button
