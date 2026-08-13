@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, Customer, PaymentMethodRow, LoyaltyTier } from "@/lib/supabase";
+import { supabase, Product, Customer, PaymentMethodRow, LoyaltyTier, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useLanguage } from "../language-context";
@@ -93,8 +93,8 @@ export default function SaleOrderPage() {
   }, [storeId, profile]);
 
   async function loadStoreProducts() {
-    const { data } = await supabase.from("products").select("*").eq("store_id", fulfillStoreId).order("name");
-    setStoreProducts(data || []);
+    const data = await fetchProductsWithStock(fulfillStoreId);
+    setStoreProducts(data);
   }
 
   async function loadCustomers() {
@@ -263,16 +263,14 @@ export default function SaleOrderPage() {
         const shortageQty = l.qty - deductQty;
 
         const newStock = l.available_stock - deductQty;
-        await supabase
-          .from("products")
-          .update({ stock_qty: newStock, updated_at: new Date().toISOString() })
-          .eq("id", l.product_id);
+        await upsertStoreInventory(fulfillStoreId, l.product_id, { stock_qty: newStock });
 
         if (deductQty > 0) {
           const { data: batches } = await supabase
             .from("stock_purchases")
             .select("id, remaining_qty")
             .eq("product_id", l.product_id)
+            .eq("store_id", fulfillStoreId)
             .gt("remaining_qty", 0)
             .order("expiry_date", { ascending: true, nullsFirst: false })
             .order("created_at", { ascending: true });
