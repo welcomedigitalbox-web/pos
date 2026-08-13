@@ -50,7 +50,7 @@ export default function ProductsPage() {
   if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
-    const data = await fetchProductsWithStock(storeId);
+    const data = await fetchProductsWithStock(storeId, true);
     setProducts(data);
   }
 
@@ -139,10 +139,25 @@ export default function ProductsPage() {
     if (!confirm(t("products_deleteConfirm"))) return;
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) {
+      if (error.message.includes("foreign key") || error.message.includes("violates")) {
+        // This product has sale history — offer to archive instead of a hard delete
+        if (confirm(t("products_hasSalesArchiveConfirm"))) {
+          await supabase.from("products").update({ is_active: false }).eq("id", id);
+          showToast(t("products_archived"));
+          await load();
+        }
+        return;
+      }
       showToast("❌ " + error.message);
       return;
     }
     showToast(t("products_deleteSuccess"));
+    await load();
+  }
+
+  async function handleToggleActive(p: Product) {
+    await supabase.from("products").update({ is_active: !p.is_active }).eq("id", p.id);
+    showToast(p.is_active ? t("products_archived") : t("products_restored"));
     await load();
   }
 
@@ -172,8 +187,15 @@ export default function ProductsPage() {
           </thead>
           <tbody>
             {products.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100">
-                <td className="px-4 py-2">{p.name}</td>
+              <tr key={p.id} className={`border-t border-slate-100 ${!p.is_active ? "opacity-50 bg-slate-50" : ""}`}>
+                <td className="px-4 py-2">
+                  {p.name}
+                  {!p.is_active && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-200 text-slate-600 font-medium">
+                      {t("products_archivedBadge")}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-slate-400">{p.sku || "-"}</td>
                 <td className="px-4 py-2">{fmt(p.price)}</td>
                 <td className="px-4 py-2 text-slate-500">
@@ -200,12 +222,21 @@ export default function ProductsPage() {
                   >
                     {t("products_edit")}
                   </button>
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="text-red-600 text-xs font-medium"
-                  >
-                    {t("products_delete")}
-                  </button>
+                  {p.is_active ? (
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      className="text-red-600 text-xs font-medium"
+                    >
+                      {t("products_delete")}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleToggleActive(p)}
+                      className="text-green-600 text-xs font-medium"
+                    >
+                      {t("products_restore")}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
