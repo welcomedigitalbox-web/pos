@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, CENTRAL_WAREHOUSE_ID, fetchProductsWithStock, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, SellableItem, CENTRAL_WAREHOUSE_ID, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -15,6 +15,7 @@ function fmt(n: number) {
 type PurchaseRow = {
   id: string;
   product_id: string;
+  variant_id: string | null;
   created_at: string;
   supplier: string | null;
   qty: number;
@@ -24,6 +25,7 @@ type PurchaseRow = {
   expiry_date: string | null;
   remaining_qty: number;
   products: { name: string } | null;
+  product_variants: { variant_name: string } | null;
 };
 
 export default function StockInPage() {
@@ -33,7 +35,7 @@ export default function StockInPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [items, setItems] = useState<SellableItem[]>([]);
   const [history, setHistory] = useState<PurchaseRow[]>([]);
 
   // form (new / edit) state
@@ -41,7 +43,7 @@ export default function StockInPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
-  const [productId, setProductId] = useState("");
+  const [itemKey, setItemKey] = useState("");
   const [supplier, setSupplier] = useState("");
   const [qty, setQty] = useState("");
   const [unitCost, setUnitCost] = useState("");
@@ -70,14 +72,14 @@ export default function StockInPage() {
   if (!profile || !hasPermission(profile, "stock-in")) return null;
 
   async function loadProducts() {
-    const data = await fetchProductsWithStock(storeId);
-    setProducts(data);
+    const data = await fetchSellableItems(storeId);
+    setItems(data);
   }
 
   async function loadHistory() {
     const { data } = await supabase
       .from("stock_purchases")
-      .select("*, products(name)")
+      .select("*, products(name), product_variants(variant_name)")
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -92,17 +94,18 @@ export default function StockInPage() {
   // latest purchase id per product (only this one is editable/deletable)
   const latestByProduct = new Map<string, string>();
   for (const h of history) {
-    if (!latestByProduct.has(h.product_id)) latestByProduct.set(h.product_id, h.id);
+    const k = `${h.product_id}:${h.variant_id || "base"}`;
+    if (!latestByProduct.has(k)) latestByProduct.set(k, h.id);
   }
 
-  const selectedProduct = products.find((p) => p.id === productId);
+  const selectedProduct = items.find((i) => i.key === itemKey);
   const qtyNum = Number(qty) || 0;
   const unitCostNum = Number(unitCost) || 0;
 
-  const filteredProducts = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.sku || "").toLowerCase().includes(productSearch.toLowerCase())
+  const filteredProducts = items.filter(
+    (i) =>
+      i.display_name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      (i.sku || "").toLowerCase().includes(productSearch.toLowerCase())
   );
 
   let previewAvgCost: number | null = null;
@@ -117,7 +120,7 @@ export default function StockInPage() {
 
   function openNew() {
     setEditId(null);
-    setProductId("");
+    setItemKey("");
     setProductSearch("");
     setSupplier("");
     setQty("");
@@ -127,10 +130,10 @@ export default function StockInPage() {
   }
 
   function openEdit(row: PurchaseRow) {
-    const p = products.find((pr) => pr.id === row.product_id);
+    const p = items.find((i) => i.product_id === row.product_id && i.variant_id === row.variant_id);
     setEditId(row.id);
-    setProductId(row.product_id);
-    setProductSearch(p?.name || "");
+    if (p) setItemKey(p.key);
+    setProductSearch(p?.display_name || "");
     setSupplier(row.supplier || "");
     setQty(String(row.qty));
     setUnitCost(String(row.unit_cost));
@@ -168,7 +171,7 @@ export default function StockInPage() {
           .eq("id", editId);
         if (purchaseErr) throw purchaseErr;
 
-        await upsertStoreInventory(storeId, selectedProduct.id, {
+        await upsertStoreInventory(storeId, selectedProduct.product_id, selectedProduct.variant_id, {
           stock_qty: newQty,
           avg_cost: newAvgCost,
           last_purchase_cost: unitCostNum,
@@ -182,7 +185,8 @@ export default function StockInPage() {
         const newAvgCost = newQty > 0 ? (existingValue + newValue) / newQty : 0;
 
         const { error: purchaseErr } = await supabase.from("stock_purchases").insert({
-          product_id: selectedProduct.id,
+          product_id: selectedProduct.product_id,
+          variant_id: selectedProduct.variant_id,
           store_id: storeId,
           supplier: supplier.trim() || null,
           qty: qtyNum,
@@ -194,7 +198,7 @@ export default function StockInPage() {
         });
         if (purchaseErr) throw purchaseErr;
 
-        await upsertStoreInventory(storeId, selectedProduct.id, {
+        await upsertStoreInventory(storeId, selectedProduct.product_id, selectedProduct.variant_id, {
           stock_qty: newQty,
           avg_cost: newAvgCost,
           previous_avg_cost: selectedProduct.avg_cost,
@@ -252,13 +256,13 @@ export default function StockInPage() {
   }
 
   async function performDelete(row: PurchaseRow) {
-    const product = products.find((p) => p.id === row.product_id);
+    const product = items.find((i) => i.product_id === row.product_id && i.variant_id === row.variant_id);
     if (!product) return;
     try {
       const revertedQty = product.stock_qty - row.qty;
       const revertedAvgCost = product.previous_avg_cost;
 
-      await upsertStoreInventory(storeId, product.id, {
+      await upsertStoreInventory(storeId, product.product_id, product.variant_id, {
         stock_qty: revertedQty,
         avg_cost: revertedAvgCost,
       });
@@ -304,7 +308,7 @@ export default function StockInPage() {
           </thead>
           <tbody>
             {history.map((h) => {
-              const isLatest = latestByProduct.get(h.product_id) === h.id;
+              const isLatest = latestByProduct.get(`${h.product_id}:${h.variant_id || "base"}`) === h.id;
               const isExpired = h.expiry_date && new Date(h.expiry_date) < new Date();
               const isExpiringSoon =
                 h.expiry_date &&
@@ -313,7 +317,12 @@ export default function StockInPage() {
               return (
                 <tr key={h.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{new Date(h.created_at).toLocaleString()}</td>
-                  <td className="px-3 py-2">{h.products?.name || "-"}</td>
+                  <td className="px-3 py-2">
+                    {h.products?.name || "-"}
+                    {h.product_variants?.variant_name && (
+                      <span className="text-blue-600 text-xs ml-1">({h.product_variants.variant_name})</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-slate-400">{h.supplier || "-"}</td>
                   <td className="px-3 py-2">{h.qty}</td>
                   <td className="px-3 py-2">{fmt(h.unit_cost)}</td>
@@ -378,17 +387,17 @@ export default function StockInPage() {
                 onChange={(e) => {
                   const value = e.target.value;
                   setProductSearch(value);
-                  setProductId("");
+                  setItemKey("");
                   setShowDropdown(true);
 
                   // Barcode scanner types the full code then usually adds nothing else —
                   // auto-select as soon as it exactly matches a product's SKU.
-                  const exactSkuMatch = products.find(
-                    (p) => (p.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
+                  const exactSkuMatch = items.find(
+                    (i) => (i.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
                   );
                   if (exactSkuMatch) {
-                    setProductId(exactSkuMatch.id);
-                    setProductSearch(exactSkuMatch.name);
+                    setItemKey(exactSkuMatch.key);
+                    setProductSearch(exactSkuMatch.display_name);
                     setShowDropdown(false);
                   }
                 }}
@@ -400,15 +409,15 @@ export default function StockInPage() {
                   {filteredProducts.map((p) => (
                     <button
                       type="button"
-                      key={p.id}
+                      key={p.key}
                       onClick={() => {
-                        setProductId(p.id);
-                        setProductSearch(p.name);
+                        setItemKey(p.key);
+                        setProductSearch(p.display_name);
                         setShowDropdown(false);
                       }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
                     >
-                      {p.name}{" "}
+                      {p.display_name}{" "}
                       <span className="text-slate-400">
                         [{p.sku}] ({p.stock_qty} @ {p.avg_cost.toLocaleString()})
                       </span>
