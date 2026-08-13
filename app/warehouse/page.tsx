@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, Product } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useStore } from "../store-context";
 import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
-
-
-type Status = "healthy" | "warning" | "urgent" | "out" ;
+type Status = "healthy" | "warning" | "urgent" | "out";
 
 type Row = {
-  product: Product;
+  storeId: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  avgCost: number;
   sold: number;
   available: number;
   target: number;
@@ -69,58 +71,79 @@ export default function WarehousePage() {
 
   async function loadData() {
     setLoading(true);
-    const { data: products } = await supabase.from("products").select("*").order("name");
-    const { data: saleItems } = await supabase.from("sale_items").select("product_id, qty");
+
+    // Per-store stock/cost, joined with the global product catalog
+    const { data: inventory } = await supabase
+      .from("store_inventory")
+      .select("*, products(name, sku)");
+
+    // Per-store sold qty (sale_items -> parent sale's store_id)
+    const { data: saleItems } = await supabase
+      .from("sale_items")
+      .select("product_id, qty, sales(store_id)");
+
+    // Per-store nearest expiry from remaining batches
     const { data: batches } = await supabase
       .from("stock_purchases")
-      .select("product_id, expiry_date, remaining_qty")
+      .select("product_id, store_id, expiry_date, remaining_qty")
       .gt("remaining_qty", 0)
       .not("expiry_date", "is", null)
       .order("expiry_date", { ascending: true });
 
     const soldMap = new Map<string, number>();
-    for (const item of saleItems || []) {
-      soldMap.set(item.product_id, (soldMap.get(item.product_id) || 0) + Number(item.qty));
+    for (const item of (saleItems as any[]) || []) {
+      const sId = item.sales?.store_id;
+      if (!sId) continue;
+      const key = `${sId}:${item.product_id}`;
+      soldMap.set(key, (soldMap.get(key) || 0) + Number(item.qty));
     }
 
     const expiryMap = new Map<string, string>();
     for (const b of batches || []) {
-      if (!expiryMap.has(b.product_id)) expiryMap.set(b.product_id, b.expiry_date as string);
+      const key = `${b.store_id}:${b.product_id}`;
+      if (!expiryMap.has(key)) expiryMap.set(key, b.expiry_date as string);
     }
 
     const now = Date.now();
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
-    const built: Row[] = (products || []).map((p) => {
-      const sold = soldMap.get(p.id) || 0;
-      const available = p.stock_qty;
-      const target = Math.round(sold * 0.5);
-      const stockPercent = sold > 0 ? (available / sold) * 100 : null;
+    const built: Row[] = ((inventory as any[]) || [])
+      .filter((inv) => inv.products) // skip orphaned rows (deleted product)
+      .map((inv) => {
+        const key = `${inv.store_id}:${inv.product_id}`;
+        const sold = soldMap.get(key) || 0;
+        const available = Number(inv.stock_qty);
+        const target = Math.round(sold * 0.5);
+        const stockPercent = sold > 0 ? (available / sold) * 100 : null;
 
-      let status: Status;
-      if (available <= 0) status = "out";
-      else if (sold === 0) status = "healthy";
-      else if (stockPercent! >= 50) status = "healthy";
-      else if (stockPercent! >= 30) status = "warning";
-      else status = "urgent";
+        let status: Status;
+        if (available <= 0) status = "out";
+        else if (sold === 0) status = "healthy";
+        else if (stockPercent! >= 50) status = "healthy";
+        else if (stockPercent! >= 30) status = "warning";
+        else status = "urgent";
 
-      const nearestExpiry = expiryMap.get(p.id) || null;
-      const isExpired = !!nearestExpiry && new Date(nearestExpiry).getTime() < now;
-      const isExpiringSoon = !!nearestExpiry && !isExpired && new Date(nearestExpiry).getTime() - now < thirtyDays;
+        const nearestExpiry = expiryMap.get(key) || null;
+        const isExpired = !!nearestExpiry && new Date(nearestExpiry).getTime() < now;
+        const isExpiringSoon = !!nearestExpiry && !isExpired && new Date(nearestExpiry).getTime() - now < thirtyDays;
 
-      return {
-        product: p,
-        sold,
-        available,
-        target,
-        stockPercent,
-        status,
-        stockValue: available * p.avg_cost,
-        nearestExpiry,
-        isExpired,
-        isExpiringSoon,
-      };
-    });
+        return {
+          storeId: inv.store_id,
+          productId: inv.product_id,
+          name: inv.products.name,
+          sku: inv.products.sku,
+          avgCost: Number(inv.avg_cost),
+          sold,
+          available,
+          target,
+          stockPercent,
+          status,
+          stockValue: available * Number(inv.avg_cost),
+          nearestExpiry,
+          isExpired,
+          isExpiringSoon,
+        };
+      });
 
     setRows(built);
     setLoading(false);
@@ -128,7 +151,7 @@ export default function WarehousePage() {
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
-      if (storeFilter !== "all" && r.product.store_id !== storeFilter) return false;
+      if (storeFilter !== "all" && r.storeId !== storeFilter) return false;
       if (statusFilter !== "all") {
         if (statusFilter === "expiring" && !r.isExpiringSoon) return false;
         if (statusFilter === "expired" && !r.isExpired) return false;
@@ -137,8 +160,7 @@ export default function WarehousePage() {
       }
       if (search.trim()) {
         const q = search.toLowerCase();
-        if (!r.product.name.toLowerCase().includes(q) && !(r.product.sku || "").toLowerCase().includes(q))
-          return false;
+        if (!r.name.toLowerCase().includes(q) && !(r.sku || "").toLowerCase().includes(q)) return false;
       }
       return true;
     });
@@ -282,13 +304,13 @@ export default function WarehousePage() {
               filtered.map((r) => {
                 const info = statusInfo(r.status, t);
                 return (
-                  <tr key={r.product.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2">{r.product.store_id}</td>
-                    <td className="px-3 py-2">{r.product.name}</td>
-                    <td className="px-3 py-2 text-slate-400">{r.product.sku || "-"}</td>
+                  <tr key={`${r.storeId}:${r.productId}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2">{r.storeId}</td>
+                    <td className="px-3 py-2">{r.name}</td>
+                    <td className="px-3 py-2 text-slate-400">{r.sku || "-"}</td>
                     <td className="px-3 py-2">{r.sold.toLocaleString()}</td>
                     <td className="px-3 py-2 font-medium">{r.available.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-slate-500">{fmt(r.product.avg_cost)}</td>
+                    <td className="px-3 py-2 text-slate-500">{fmt(r.avgCost)}</td>
                     <td className="px-3 py-2">{r.target.toLocaleString()}</td>
                     <td className="px-3 py-2">{r.stockPercent !== null ? `${r.stockPercent.toFixed(0)}%` : "-"}</td>
                     <td className="px-3 py-2">
