@@ -16,6 +16,7 @@ export type Product = {
   previous_avg_cost: number;
   last_purchase_cost: number;
   category_id: string | null;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -131,8 +132,10 @@ export type StoreInventory = {
 // Merges the global product catalog with a specific store's stock/cost data.
 // Returns the SAME shape the app always used (Product + stock_qty/avg_cost/etc),
 // so existing UI code barely has to change.
-export async function fetchProductsWithStock(storeId: string): Promise<Product[]> {
-  const { data: products } = await supabase.from("products").select("*").order("name");
+export async function fetchProductsWithStock(storeId: string, includeInactive = false): Promise<Product[]> {
+  let query = supabase.from("products").select("*").order("name");
+  if (!includeInactive) query = query.eq("is_active", true);
+  const { data: products } = await query;
   const { data: inv } = await supabase.from("store_inventory").select("*").eq("store_id", storeId);
   const invMap = new Map((inv || []).map((i) => [i.product_id, i]));
   return (products || []).map((p) => {
