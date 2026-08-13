@@ -441,7 +441,7 @@ export default function POSPage() {
   if (profile && !hasPermission(profile, "pos")) return null;
 
   return (
-    <div className="pt-4 grid grid-cols-1 md:grid-cols-[1fr_360px] gap-4">
+    <div className="pt-4 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_360px] gap-4">
       <div>
         <input
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3"
