@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   supabase, SellableItem, PurchaseOrder, PurchaseOrderItem, PoPayment, PoStatus,
-  CENTRAL_WAREHOUSE_ID, fetchSellableItems, receivePoItem,
+  CENTRAL_WAREHOUSE_ID, ActivityLog, fetchSellableItems, receivePoItem, logActivity,
 } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useLanguage } from "../../language-context";
@@ -29,6 +29,7 @@ export default function PoDetailPage() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [payments, setPayments] = useState<PoPayment[]>([]);
   const [receipts, setReceipts] = useState<any[]>([]);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [sellables, setSellables] = useState<SellableItem[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [toast, setToast] = useState("");
@@ -112,6 +113,14 @@ export default function PoDetailPage() {
       }))
     );
 
+    const { data: logData } = await supabase
+      .from("activity_log")
+      .select("*")
+      .eq("entity_type", "purchase_order")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false });
+    setLogs((logData as ActivityLog[]) || []);
+
     const { data: payData } = await supabase
       .from("po_payments")
       .select("*")
@@ -149,6 +158,13 @@ export default function PoDetailPage() {
       update_cost: updateCost,
     });
     if (error) return showToast("❌ " + error.message);
+    await logActivity({
+      entityType: "purchase_order",
+      entityId: id,
+      action: "item_added",
+      detail: `${sel.display_name} × ${qtyNum} @ ${costNum || 0}`,
+      actor: profile?.email,
+    });
     setItemKey("");
     setQty("");
     setUnitCost("");
@@ -205,6 +221,13 @@ export default function PoDetailPage() {
       );
       await refreshStatus(nextItems);
 
+      await logActivity({
+        entityType: "purchase_order",
+        entityId: id,
+        action: "received",
+        detail: `${receiveRow.display_name} × ${q} @ ${c}${receiveExpiry ? ` (exp ${receiveExpiry})` : ""}`,
+        actor: profile?.email,
+      });
       showToast(t("po_received"));
       setReceiveRow(null);
       await load();
@@ -213,6 +236,40 @@ export default function PoDetailPage() {
     } finally {
       setReceiving(false);
     }
+  }
+
+  async function cancelPo() {
+    if (!confirm(t("po_cancelConfirm"))) return;
+    const { error } = await supabase.from("purchase_orders").update({ status: "cancelled" }).eq("id", id);
+    if (error) return showToast("❌ " + error.message);
+    await logActivity({
+      entityType: "purchase_order",
+      entityId: id,
+      action: "cancelled",
+      actor: profile?.email,
+    });
+    showToast(t("po_cancelled"));
+    await load();
+  }
+
+  async function reopenPo() {
+    const { error } = await supabase.from("purchase_orders").update({ status: "ordered" }).eq("id", id);
+    if (error) return showToast("❌ " + error.message);
+    await logActivity({
+      entityType: "purchase_order",
+      entityId: id,
+      action: "reopened",
+      actor: profile?.email,
+    });
+    showToast(t("po_reopened"));
+    await load();
+  }
+
+  async function deletePo() {
+    if (!confirm(t("po_deleteConfirm"))) return;
+    const { error } = await supabase.from("purchase_orders").delete().eq("id", id);
+    if (error) return showToast("❌ " + error.message);
+    router.push("/purchase-orders");
   }
 
   async function addPayment(e: React.FormEvent) {
@@ -227,6 +284,13 @@ export default function PoDetailPage() {
       paid_by: profile?.email || null,
     });
     if (error) return showToast("❌ " + error.message);
+    await logActivity({
+      entityType: "purchase_order",
+      entityId: id,
+      action: "payment_added",
+      detail: `${amt.toLocaleString()} MMK${payMethod.trim() ? ` · ${payMethod.trim()}` : ""}`,
+      actor: profile?.email,
+    });
     showToast(t("po_paymentAdded"));
     setShowPayment(false);
     setPayAmount("");
@@ -258,9 +322,33 @@ export default function PoDetailPage() {
           {t(`po_term_${po.payment_term}` as any)}
         </span>
       </div>
-      <div className="text-slate-400 text-sm mb-4">
+      <div className="text-slate-400 text-sm mb-3">
         {supplierName} · {po.order_date}
         {po.expected_date && ` · ${t("po_expectedDate")}: ${po.expected_date}`}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        {po.status !== "cancelled" && po.status !== "received" && (
+          <button onClick={cancelPo}
+            className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium">
+            {t("po_cancel")}
+          </button>
+        )}
+        {po.status === "cancelled" && (
+          <>
+            <button onClick={reopenPo}
+              className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium">
+              {t("po_reopen")}
+            </button>
+            {receipts.length === 0 && (
+              <button onClick={deletePo}
+                className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium">
+                {t("po_delete")}
+              </button>
+            )}
+          </>
+        )}
+        <span className="text-xs text-slate-400 self-center ml-1">{t("po_autoSaveNote")}</span>
       </div>
 
       {/* Summary */}
@@ -460,6 +548,38 @@ export default function PoDetailPage() {
               </tr>
             ))}
             {payments.length === 0 && (
+              <tr><td colSpan={4} className="text-center text-slate-400 py-6">-</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Activity log */}
+      <h3 className="font-semibold mt-6 mb-2">{t("po_activityLog")}</h3>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-2">{t("ledger_date")}</th>
+              <th className="text-left px-3 py-2">{t("po_logAction")}</th>
+              <th className="text-left px-3 py-2">{t("po_logDetail")}</th>
+              <th className="text-left px-3 py-2">{t("po_logActor")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.map((l) => (
+              <tr key={l.id} className="border-t border-slate-100">
+                <td className="px-3 py-2 text-slate-500">{new Date(l.created_at).toLocaleString()}</td>
+                <td className="px-3 py-2">
+                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                    {t(`po_log_${l.action}` as any)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-slate-500">{l.detail || "-"}</td>
+                <td className="px-3 py-2 text-slate-500 text-xs">{l.actor || "-"}</td>
+              </tr>
+            ))}
+            {logs.length === 0 && (
               <tr><td colSpan={4} className="text-center text-slate-400 py-6">-</td></tr>
             )}
           </tbody>
