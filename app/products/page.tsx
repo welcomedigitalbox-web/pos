@@ -21,9 +21,11 @@ type FormState = {
   stock_qty: string;
   avg_cost: string;
   category_id: string;
+  is_consignment: boolean;
+  requires_expiry: boolean;
 };
 
-const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "", category_id: "" };
+const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "", category_id: "", is_consignment: false, requires_expiry: false };
 
 export default function ProductsPage() {
   const { storeId } = useStore();
@@ -131,6 +133,8 @@ export default function ProductsPage() {
       stock_qty: row.variant_id ? "" : String(row.stock_qty),
       avg_cost: row.variant_id ? "" : String(row.avg_cost),
       category_id: parent.category_id || "",
+      is_consignment: !!parent.is_consignment,
+      requires_expiry: !!parent.requires_expiry,
     });
     await loadVariants(parent.id);
     setShowForm(true);
@@ -158,6 +162,8 @@ export default function ProductsPage() {
             sku: form.sku.trim() || null,
             price,
             category_id: form.category_id || null,
+            is_consignment: form.is_consignment,
+            requires_expiry: form.requires_expiry,
             updated_at: new Date().toISOString(),
           })
           .eq("id", form.id);
@@ -172,6 +178,8 @@ export default function ProductsPage() {
             sku: form.sku.trim() || null,
             price,
             category_id: form.category_id || null,
+            is_consignment: form.is_consignment,
+            requires_expiry: form.requires_expiry,
             store_id: storeId,
           })
           .select()
@@ -418,6 +426,25 @@ export default function ProductsPage() {
                 </option>
               ))}
             </select>
+
+            <div className="flex flex-wrap gap-4 mb-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.is_consignment}
+                  onChange={(e) => setForm({ ...form, is_consignment: e.target.checked })}
+                />
+                {t("products_isConsignment")}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.requires_expiry}
+                  onChange={(e) => setForm({ ...form, requires_expiry: e.target.checked })}
+                />
+                {t("products_requiresExpiry")}
+              </label>
+            </div>
 
             {editingVariants.length === 0 ? (
               <>
