@@ -426,3 +426,35 @@ export async function receivePoItem(params: {
 
   return { newQty, newAvgCost };
 }
+
+export type ActivityLog = {
+  id: string;
+  entity_type: string;
+  entity_id: string | null;
+  action: string;
+  detail: string | null;
+  actor: string | null;
+  created_at: string;
+};
+
+// Append-only audit trail. Never throws — a logging failure must not roll back
+// or block the business action the user actually asked for.
+export async function logActivity(params: {
+  entityType: string;
+  entityId?: string | null;
+  action: string;
+  detail?: string | null;
+  actor?: string | null;
+}) {
+  try {
+    await supabase.from("activity_log").insert({
+      entity_type: params.entityType,
+      entity_id: params.entityId || null,
+      action: params.action,
+      detail: params.detail || null,
+      actor: params.actor || null,
+    });
+  } catch {
+    // swallow — logging is best-effort
+  }
+}
