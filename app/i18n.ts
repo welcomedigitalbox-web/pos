@@ -215,6 +215,11 @@ export const translations = {
     products_restored: "✅ ပြန်ဖော်ပြီးပါပြီ",
     products_restore: "ပြန်ဖော်ရန်",
     products_archivedBadge: "Archived",
+    products_isConsignment: "Consignment ပစ္စည်း (Avg Cost သာ သုံးမည်)",
+    products_requiresExpiry: "သက်တမ်းကုန်ရက် မဖြစ်မနေ လိုအပ်သည်",
+    po_expiryRequired: "⚠️ ဤပစ္စည်းအတွက် သက်တမ်းကုန်ရက် မဖြစ်မနေ ထည့်ရပါမည်",
+    po_receivedBy: "လက်ခံသူ",
+    po_receiptHistory: "ပစ္စည်းလက်ခံမှု မှတ်တမ်း",
     products_variantStockNote: "ℹ️ Variant ရှိသည့် product ဖြစ်၍ stock/cost ကို variant အလိုက် Stock-In ကနေ စီမံပါ",
 
     stockIn_title: "ကုန်သွင်း (Purchase Receiving)",
@@ -669,6 +674,11 @@ export const translations = {
     products_restored: "✅ Restored",
     products_restore: "Restore",
     products_archivedBadge: "Archived",
+    products_isConsignment: "Consignment item (always uses Avg Cost)",
+    products_requiresExpiry: "Expiry date is required",
+    po_expiryRequired: "⚠️ Expiry date is required for this product",
+    po_receivedBy: "Received by",
+    po_receiptHistory: "Receipt History",
     products_variantStockNote: "ℹ️ This product has variants — manage stock/cost per variant from Stock-In",
 
     stockIn_title: "Stock-In (Purchase Receiving)",
