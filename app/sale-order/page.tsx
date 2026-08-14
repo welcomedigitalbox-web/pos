@@ -556,6 +556,8 @@ export default function SaleOrderPage() {
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
                       setSelectedCustomer(c);
+                      // Pre-fill the saved address; the rep can still edit it for a one-off drop
+                      if (c.delivery_address) setDeliveryAddress(c.delivery_address);
                       setCustomerSearch(c.name);
                       setShowCustomerDropdown(false);
                     }}
@@ -586,7 +588,12 @@ export default function SaleOrderPage() {
             />
           )}
 
-          <label className="text-xs text-slate-500">{t("saleOrder_deliveryAddress")}</label>
+          <label className="text-xs text-slate-500">
+            {t("saleOrder_deliveryAddress")}
+            {selectedCustomer?.delivery_address && (
+              <span className="ml-1 text-[10px] text-green-600">{t("saleOrder_addressAutoFilled")}</span>
+            )}
+          </label>
           <textarea
             className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1 mb-2"
             rows={2}
