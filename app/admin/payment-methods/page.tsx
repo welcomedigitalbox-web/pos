@@ -115,7 +115,7 @@ export default function AdminPaymentMethodsPage() {
   }
 
   return (
-    <div className="pt-4 max-w-2xl">
+    <div className="pt-4">
       <div className="flex justify-between items-center mb-1">
         <h2 className="font-semibold text-lg">{t("admin_paymentMethods_title")}</h2>
         <button onClick={openNew} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
