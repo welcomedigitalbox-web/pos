@@ -185,32 +185,19 @@ export default function WarehousePage() {
         stock_qty: transferRow.available - qty,
       });
 
-      // Add to destination store (moving-average cost carried over as-is)
-      let existQuery = supabase
-        .from("store_inventory")
-        .select("*")
-        .eq("store_id", transferToStore)
-        .eq("product_id", transferRow.productId);
-      existQuery = transferRow.variantId
-        ? existQuery.eq("variant_id", transferRow.variantId)
-        : existQuery.is("variant_id", null);
-      const { data: existing } = await existQuery.maybeSingle();
-
-      const newQty = (existing?.stock_qty || 0) + qty;
-      await upsertStoreInventory(transferToStore, transferRow.productId, transferRow.variantId, {
-        stock_qty: newQty,
-        avg_cost: transferRow.avgCost,
-      });
-
-      await supabase.from("stock_transfers").insert({
+      // Goods are now in transit — the destination store confirms what actually
+      // arrived, so shortages in transit surface instead of vanishing.
+      const { error: transferError } = await supabase.from("stock_transfers").insert({
         product_id: transferRow.productId,
         variant_id: transferRow.variantId,
         to_store_id: transferToStore,
         qty,
+        status: "in_transit",
         transferred_by: profile?.email || null,
       });
+      if (transferError) throw transferError;
 
-      showToast(t("warehouseTransfer_success"));
+      showToast(t("warehouseTransfer_sent"));
       setTransferRow(null);
       await loadData();
     } catch (err) {
