@@ -159,7 +159,7 @@ export default function ProductDetailPage() {
   const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
   return (
-    <div className="pt-4 max-w-4xl">
+    <div className="pt-4">
       <Link href="/products" className="text-sm text-blue-600 mb-2 inline-block">
         ← {t("products_title")}
       </Link>
