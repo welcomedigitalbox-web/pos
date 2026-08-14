@@ -2,6 +2,16 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    ledger_perfSubtitle: "ဆိုင်အလိုက် ပစ္စည်းတစ်ခုချင်းစီ၏ ရောင်းအား၊ လက်ကျန်နှင့် အမြတ်",
+    ledger_unitsSold: "ရောင်းပြီး",
+    ledger_sellThrough: "ရောင်းနှုန်း %",
+    ledger_stockLevel: "လက်ကျန်အဆင့်",
+    ledger_sortSold: "ရောင်းအားအလိုက်",
+    ledger_sortGp: "အမြတ်အလိုက်",
+    ledger_sortMargin: "အမြတ်% အလိုက်",
+    ledger_sortStock: "လက်ကျန်အလိုက်",
+    ledger_showMovement: "မှတ်တမ်းကြည့်",
+    ledger_hideMovement: "ပိတ်မည်",
     nav_goodsReceived: "ကုန်ဝင်မှတ်တမ်း",
     goodsReceived_subtitle: "ကုန်သည်များထံမှ ဂိုဒေါင်သို့ ဝင်ရောက်လာသည့် ပစ္စည်းများ",
     goodsReceived_allSuppliers: "ကုန်သည် အားလုံး",
@@ -521,6 +531,16 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    ledger_perfSubtitle: "Sales, stock and profit for every product in the selected location",
+    ledger_unitsSold: "Units Sold",
+    ledger_sellThrough: "Sell-through %",
+    ledger_stockLevel: "Stock Level",
+    ledger_sortSold: "By Units Sold",
+    ledger_sortGp: "By Gross Profit",
+    ledger_sortMargin: "By GP Margin",
+    ledger_sortStock: "By Stock",
+    ledger_showMovement: "Movements",
+    ledger_hideMovement: "Hide",
     nav_goodsReceived: "Goods Received",
     goodsReceived_subtitle: "Stock received into the warehouse from suppliers",
     goodsReceived_allSuppliers: "All Suppliers",
