@@ -354,7 +354,13 @@ export default function POSPage() {
 
   const canApproveDiscount =
     profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
-  const requiresDiscountApproval = discountAmount > 0 && !canApproveDiscount;
+  // A loyalty tier already entitles the customer to a discount, so that portion
+  // needs no sign-off. Only the amount a cashier adds on top of it does.
+  const loyaltyPercent = tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id);
+  const loyaltyEntitledAmount = (subtotal * loyaltyPercent) / 100;
+  const excessDiscount = discountAmount - loyaltyEntitledAmount;
+  // Tolerance for rounding when a percent discount is re-entered as a flat amount
+  const requiresDiscountApproval = excessDiscount > 0.5 && !canApproveDiscount;
 
   const selectedMethod = paymentMethods.find((m) => m.code === paymentMethod);
   const isCashMethod = selectedMethod?.is_cash ?? false;
@@ -740,6 +746,10 @@ export default function POSPage() {
                 </select>
               </div>
 
+              {loyaltyPercent > 0 && !requiresDiscountApproval && discountAmount > 0 && (
+                <p className="text-xs text-green-600 mt-1">✅ {t("pos_loyaltyNoApproval")}</p>
+              )}
+
               {requiresDiscountApproval && (
                 discountApproved ? (
                   <p className="text-xs text-green-600 font-medium mt-1">
@@ -940,7 +950,19 @@ export default function POSPage() {
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
             <h3 className="font-semibold text-lg mb-1">{t("pos_approvalTitle")}</h3>
-            <p className="text-sm text-slate-500 mb-3">{t("pos_approvalSubtitle")}</p>
+            <p className="text-sm text-slate-500 mb-2">{t("pos_approvalSubtitle")}</p>
+            {loyaltyPercent > 0 && (
+              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 mb-3 space-y-0.5">
+                <div className="flex justify-between">
+                  <span>🎖️ {t("customers_loyaltyApplied")} ({loyaltyPercent}%)</span>
+                  <span>{fmt(loyaltyEntitledAmount)}</span>
+                </div>
+                <div className="flex justify-between font-medium text-orange-600">
+                  <span>{t("pos_excessDiscount")}</span>
+                  <span>{fmt(Math.max(excessDiscount, 0))}</span>
+                </div>
+              </div>
+            )}
 
             <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs mb-4">
               <button
