@@ -71,7 +71,7 @@ export default function AdminStoresPage() {
   }
 
   return (
-    <div className="pt-4 max-w-lg">
+    <div className="pt-4">
       <div className="flex justify-between items-center mb-3">
         <h2 className="font-semibold text-lg">{t("admin_stores_title")}</h2>
         <button onClick={openNew} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
