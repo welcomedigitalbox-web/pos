@@ -131,7 +131,7 @@ export default function CustomerDetailPage() {
   const tier = findTier(tiers, customer.loyalty_tier_id);
 
   return (
-    <div className="pt-4 max-w-4xl">
+    <div className="pt-4">
       <Link href="/customers" className="text-sm text-blue-600 mb-2 inline-block">
         ← {t("nav_customers")}
       </Link>
