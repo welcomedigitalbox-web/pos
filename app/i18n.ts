@@ -2,6 +2,10 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    ledger_allChannels: "Channel အားလုံး",
+    saleOrder_wholesale: "လက်ကား",
+    ledger_estimated: "(ခန့်မှန်း)",
+    ledger_needsRestock: "⚠️ ကုန်နေပြီ",
     pos_loyaltyLocked: "Loyalty လျှော့စျေး — အလိုအလျောက်သာ၊ ပြင်လို့မရပါ",
     nav_orderLookup: "အော်ဒါ ရှာဖွေရန်",
     orderLookup_subtitle: "အော်ဒါ ID၊ ဖောက်သည်၊ ရောင်းချသူဖြင့် ရှာပြီး အသေးစိတ် ကြည့်ရန်",
@@ -548,6 +552,10 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    ledger_allChannels: "All Channels",
+    saleOrder_wholesale: "Wholesale",
+    ledger_estimated: "(est.)",
+    ledger_needsRestock: "⚠️ Restock",
     pos_loyaltyLocked: "Loyalty discount — automatic, cannot be edited",
     nav_orderLookup: "Order Lookup",
     orderLookup_subtitle: "Search by order ID, customer or staff and view the full detail",
