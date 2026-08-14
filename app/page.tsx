@@ -347,20 +347,23 @@ export default function POSPage() {
   const discountValueNum = Number(discountValue) || 0;
   const discountAmount =
     discountType === "percent" ? (subtotal * discountValueNum) / 100 : discountValueNum;
-  const afterDiscount = Math.max(subtotal - discountAmount, 0);
+  const canApproveDiscount =
+    profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
+  // A loyalty tier sets the discount automatically. For non-manager staff the
+  // field is locked to that rate: no approval needed, but no editing either.
+  const loyaltyPercent = tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id);
+  const isLoyaltyLocked = loyaltyPercent > 0 && !canApproveDiscount;
+  // Manual discounts (no loyalty tier) still need a manager to sign off.
+  const requiresDiscountApproval = !isLoyaltyLocked && discountAmount > 0 && !canApproveDiscount;
+
+  const effectiveDiscount = isLoyaltyLocked
+    ? (subtotal * loyaltyPercent) / 100
+    : Math.min(discountAmount, subtotal);
+  const afterDiscount = Math.max(subtotal - effectiveDiscount, 0);
   const vatPercentNum = vatEnabled ? STANDARD_VAT_PERCENT : 0;
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
   const grandTotal = afterDiscount + vatAmount;
 
-  const canApproveDiscount =
-    profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
-  // A loyalty tier already entitles the customer to a discount, so that portion
-  // needs no sign-off. Only the amount a cashier adds on top of it does.
-  const loyaltyPercent = tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id);
-  const loyaltyEntitledAmount = (subtotal * loyaltyPercent) / 100;
-  const excessDiscount = discountAmount - loyaltyEntitledAmount;
-  // Tolerance for rounding when a percent discount is re-entered as a flat amount
-  const requiresDiscountApproval = excessDiscount > 0.5 && !canApproveDiscount;
 
   const selectedMethod = paymentMethods.find((m) => m.code === paymentMethod);
   const isCashMethod = selectedMethod?.is_cash ?? false;
@@ -399,7 +402,7 @@ export default function POSPage() {
           subtotal,
           discount_type: discountType,
           discount_value: discountValueNum,
-          discount_amount: discountAmount,
+          discount_amount: effectiveDiscount,
           discount_approved_by: discountApprovedBy,
           discount_approved_at: discountApproved ? new Date().toISOString() : null,
           vat_percent: vatPercentNum,
@@ -482,8 +485,12 @@ export default function POSPage() {
           lineTotal: c.price * c.qty,
         })),
         subtotal,
-        discountLabel: discountType === "percent" ? `${discountValueNum}%` : fmt(discountAmount),
-        discountAmount,
+        discountLabel: isLoyaltyLocked
+          ? `${loyaltyPercent}%`
+          : discountType === "percent"
+          ? `${discountValueNum}%`
+          : fmt(effectiveDiscount),
+        discountAmount: effectiveDiscount,
         vatPercent: vatPercentNum,
         vatAmount,
         grandTotal,
@@ -731,23 +738,25 @@ export default function POSPage() {
               <div className="flex gap-1 mt-1">
                 <input
                   type="number"
-                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
-                  value={discountValue}
+                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                  value={isLoyaltyLocked ? String(loyaltyPercent) : discountValue}
                   onChange={(e) => setDiscountValue(e.target.value)}
                   placeholder="0"
+                  disabled={isLoyaltyLocked}
                 />
                 <select
-                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
-                  value={discountType}
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                  value={isLoyaltyLocked ? "percent" : discountType}
                   onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                  disabled={isLoyaltyLocked}
                 >
                   <option value="flat">{t("pos_discountFlat")}</option>
                   <option value="percent">{t("pos_discountPercent")}</option>
                 </select>
               </div>
 
-              {loyaltyPercent > 0 && !requiresDiscountApproval && discountAmount > 0 && (
-                <p className="text-xs text-green-600 mt-1">✅ {t("pos_loyaltyNoApproval")}</p>
+              {isLoyaltyLocked && (
+                <p className="text-xs text-green-600 mt-1">🔒 {t("pos_loyaltyLocked")}</p>
               )}
 
               {requiresDiscountApproval && (
@@ -793,10 +802,10 @@ export default function POSPage() {
                 <span>{t("pos_subtotal")}</span>
                 <span>{fmt(subtotal)}</span>
               </div>
-              {discountAmount > 0 && (
+              {effectiveDiscount > 0 && (
                 <div className="flex justify-between text-slate-500">
                   <span>{t("pos_discount")}</span>
-                  <span>-{fmt(discountAmount)}</span>
+                  <span>-{fmt(effectiveDiscount)}</span>
                 </div>
               )}
               {vatAmount > 0 && (
@@ -950,19 +959,7 @@ export default function POSPage() {
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
             <h3 className="font-semibold text-lg mb-1">{t("pos_approvalTitle")}</h3>
-            <p className="text-sm text-slate-500 mb-2">{t("pos_approvalSubtitle")}</p>
-            {loyaltyPercent > 0 && (
-              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 mb-3 space-y-0.5">
-                <div className="flex justify-between">
-                  <span>🎖️ {t("customers_loyaltyApplied")} ({loyaltyPercent}%)</span>
-                  <span>{fmt(loyaltyEntitledAmount)}</span>
-                </div>
-                <div className="flex justify-between font-medium text-orange-600">
-                  <span>{t("pos_excessDiscount")}</span>
-                  <span>{fmt(Math.max(excessDiscount, 0))}</span>
-                </div>
-              </div>
-            )}
+            <p className="text-sm text-slate-500 mb-4">{t("pos_approvalSubtitle")}</p>
 
             <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs mb-4">
               <button
