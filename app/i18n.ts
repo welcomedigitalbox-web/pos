@@ -2,6 +2,8 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    pos_loyaltyNoApproval: "Loyalty လျှော့စျေးဖြစ်၍ approval မလိုပါ",
+    pos_excessDiscount: "ပိုလျှော့ထားသည့် ပမာဏ (approval လိုသည်)",
     nav_orderLookup: "အော်ဒါ ရှာဖွေရန်",
     orderLookup_subtitle: "အော်ဒါ ID၊ ဖောက်သည်၊ ရောင်းချသူဖြင့် ရှာပြီး အသေးစိတ် ကြည့်ရန်",
     orderLookup_searchPlaceholder: "အော်ဒါ ID, ဖောက်သည်အမည်, cashier, အရောင်းသမား ရှာပါ...",
@@ -547,6 +549,8 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    pos_loyaltyNoApproval: "Loyalty discount — no approval needed",
+    pos_excessDiscount: "Extra discount (needs approval)",
     nav_orderLookup: "Order Lookup",
     orderLookup_subtitle: "Search by order ID, customer or staff and view the full detail",
     orderLookup_searchPlaceholder: "Search order ID, customer, cashier, sales rep...",
