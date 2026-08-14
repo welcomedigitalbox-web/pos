@@ -70,7 +70,7 @@ export default function SalesRepsPage() {
   }
 
   return (
-    <div className="pt-4 max-w-lg">
+    <div className="pt-4">
       <div className="flex justify-between items-center mb-1">
         <h2 className="font-semibold text-lg">{t("nav_salesReps")}</h2>
         <button onClick={() => setShowForm(true)} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
