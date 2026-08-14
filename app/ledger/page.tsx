@@ -24,6 +24,7 @@ export default function LedgerPage() {
 
   const [items, setItems] = useState<SellableItem[]>([]);
   const [itemKey, setItemKey] = useState("");
+  const [search, setSearch] = useState("");
   const [rows, setRows] = useState<(LedgerRow & { balance: number })[]>([]);
 
   useEffect(() => {
@@ -43,6 +44,13 @@ export default function LedgerPage() {
   }, [itemKey, storeId]);
 
   if (!profile || !hasPermission(profile, "ledger")) return null;
+
+  const q = search.trim().toLowerCase();
+  const filteredItems = q
+    ? items.filter(
+        (i) => i.display_name.toLowerCase().includes(q) || (i.sku || "").toLowerCase().includes(q)
+      )
+    : items;
 
   async function loadItems() {
     const data = await fetchSellableItems(storeId);
@@ -156,17 +164,37 @@ export default function LedgerPage() {
         ))}
       </select>
 
+      <input
+        className="w-full sm:w-96 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2"
+        placeholder={t("ledger_searchPlaceholder")}
+        value={search}
+        onChange={(e) => {
+          const v = e.target.value;
+          setSearch(v);
+          // A scanner types the whole barcode at once — jump straight to that item
+          const exact = items.find(
+            (i) => (i.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
+          );
+          if (exact) {
+            setItemKey(exact.key);
+            setSearch("");
+          }
+        }}
+      />
+
       <select
-        className="w-full sm:w-80 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+        className="w-full sm:w-96 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
         value={itemKey}
         onChange={(e) => setItemKey(e.target.value)}
+        size={search.trim() ? Math.min(Math.max(filteredItems.length, 2), 8) : undefined}
       >
-        <option value="">{t("ledger_selectProduct")}</option>
-        {items.map((i) => (
+        {!search.trim() && <option value="">{t("ledger_selectProduct")}</option>}
+        {filteredItems.map((i) => (
           <option key={i.key} value={i.key}>
-            {i.display_name}
+            {i.display_name}{i.sku ? ` · ${i.sku}` : ""}
           </option>
         ))}
+        {filteredItems.length === 0 && <option disabled>{t("pos_noProduct")}</option>}
       </select>
 
       {itemKey && (
