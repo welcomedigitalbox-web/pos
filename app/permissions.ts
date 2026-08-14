@@ -10,6 +10,7 @@ export type PageKey =
   | "stock-in"
   | "stock-request"
   | "damage"
+  | "incoming-transfers"
   | "barcode"
   | "ledger"
   | "warehouse"
@@ -47,6 +48,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
   { key: "damage", href: "/damage", labelKey: "nav_damage", group: "inventory" },
+  { key: "incoming-transfers", href: "/incoming-transfers", labelKey: "nav_incomingTransfers", group: "inventory" },
   { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "inventory" },
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "warehouse" },
   { key: "ledger", href: "/ledger", labelKey: "nav_ledger", group: "warehouse" },
@@ -92,6 +94,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "stock-in",
     "stock-request",
     "damage",
+    "incoming-transfers",
     "barcode",
     "ledger",
     "warehouse",
@@ -113,6 +116,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "stock-in",
     "stock-request",
     "damage",
+    "incoming-transfers",
     "barcode",
     "ledger",
     "warehouse",
