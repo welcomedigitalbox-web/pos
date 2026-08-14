@@ -14,6 +14,8 @@ export type Product = {
   category_id: string | null;
   variation_theme: string | null;
   is_active: boolean;
+  is_consignment: boolean;
+  requires_expiry: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -149,6 +151,7 @@ export type SellableItem = {
   price: number;
   category_id: string | null;
   is_active: boolean;
+  requires_expiry: boolean;
   stock_qty: number;
   avg_cost: number;
   previous_avg_cost: number;
@@ -197,6 +200,7 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
         price: p.price,
         category_id: p.category_id,
         is_active: p.is_active,
+        requires_expiry: p.requires_expiry,
         stock_qty: i?.stock_qty ?? 0,
         avg_cost: i?.avg_cost ?? 0,
         previous_avg_cost: i?.previous_avg_cost ?? 0,
@@ -219,6 +223,7 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
         price: v.price_override ?? p.price,
         category_id: p.category_id,
         is_active: p.is_active && v.is_active,
+        requires_expiry: p.requires_expiry,
         stock_qty: i?.stock_qty ?? 0,
         avg_cost: i?.avg_cost ?? 0,
         previous_avg_cost: i?.previous_avg_cost ?? 0,
@@ -372,11 +377,18 @@ export async function receivePoItem(params: {
   poId?: string | null;
   supplier?: string | null;
   expiryDate?: string | null;
+  requiresExpiry?: boolean;
+  receivedBy?: string | null;
 }) {
   const {
     storeId, productId, variantId, qty, unitCost,
     updateCost, isConsignment, poId, supplier, expiryDate,
+    requiresExpiry, receivedBy,
   } = params;
+
+  if (requiresExpiry && !expiryDate) {
+    throw new Error("EXPIRY_REQUIRED");
+  }
 
   const current = await fetchSellableItem(productId, variantId, storeId);
   const existingQty = current?.stock_qty ?? 0;
@@ -399,6 +411,8 @@ export async function receivePoItem(params: {
     remaining_qty: qty,
     expiry_date: expiryDate || null,
     po_id: poId || null,
+    received_by: receivedBy || null,
+    received_at: new Date().toISOString(),
   });
   // Surface batch failures instead of silently updating stock without a ledger entry
   if (batchError) throw batchError;
