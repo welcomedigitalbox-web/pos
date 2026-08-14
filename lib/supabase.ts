@@ -306,3 +306,108 @@ export type StockTransfer = {
   note: string | null;
   created_at: string;
 };
+
+export type Supplier = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  note: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type PoStatus = "draft" | "ordered" | "partial" | "received" | "cancelled";
+export type PaymentTerm = "advance" | "cod" | "credit" | "paid";
+
+export type PurchaseOrder = {
+  id: string;
+  po_number: string;
+  supplier_id: string | null;
+  status: PoStatus;
+  payment_term: PaymentTerm;
+  order_date: string;
+  expected_date: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type PurchaseOrderItem = {
+  id: string;
+  po_id: string;
+  product_id: string;
+  variant_id: string | null;
+  qty: number;
+  unit_cost: number;
+  received_qty: number;
+  update_cost: boolean;
+  created_at: string;
+};
+
+export type PoPayment = {
+  id: string;
+  po_id: string;
+  amount: number;
+  paid_at: string;
+  method: string | null;
+  note: string | null;
+  paid_by: string | null;
+  created_at: string;
+};
+
+// Receiving goods against a PO line: adds a batch, then updates the store's
+// stock and cost. Cost rule:
+//   - consignment product      -> moving average (never overwritten)
+//   - update_cost ticked       -> avg_cost REPLACED by this receipt's unit cost
+//   - otherwise                -> moving average
+export async function receivePoItem(params: {
+  storeId: string;
+  productId: string;
+  variantId: string | null;
+  qty: number;
+  unitCost: number;
+  updateCost: boolean;
+  isConsignment: boolean;
+  poId?: string | null;
+  supplier?: string | null;
+  expiryDate?: string | null;
+}) {
+  const {
+    storeId, productId, variantId, qty, unitCost,
+    updateCost, isConsignment, poId, supplier, expiryDate,
+  } = params;
+
+  const current = await fetchSellableItem(productId, variantId, storeId);
+  const existingQty = current?.stock_qty ?? 0;
+  const existingCost = current?.avg_cost ?? 0;
+
+  const newQty = existingQty + qty;
+  const movingAvg = newQty > 0 ? (existingQty * existingCost + qty * unitCost) / newQty : 0;
+  const useLatestCost = updateCost && !isConsignment;
+  const newAvgCost = useLatestCost ? unitCost : movingAvg;
+
+  await supabase.from("stock_purchases").insert({
+    product_id: productId,
+    variant_id: variantId,
+    store_id: storeId,
+    supplier: supplier || null,
+    qty,
+    unit_cost: unitCost,
+    total_cost: qty * unitCost,
+    new_avg_cost: newAvgCost,
+    remaining_qty: qty,
+    expiry_date: expiryDate || null,
+    po_id: poId || null,
+  });
+
+  await upsertStoreInventory(storeId, productId, variantId, {
+    stock_qty: newQty,
+    avg_cost: newAvgCost,
+    previous_avg_cost: existingCost,
+    last_purchase_cost: unitCost,
+  });
+
+  return { newQty, newAvgCost };
+}
