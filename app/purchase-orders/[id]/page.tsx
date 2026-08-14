@@ -239,6 +239,11 @@ export default function PoDetailPage() {
   }
 
   async function cancelPo() {
+    // Once goods are received, stock and cost have already moved — cancelling
+    // would leave the books out of sync, so it has to be blocked.
+    if (items.some((i) => i.received_qty > 0)) {
+      return showToast(t("po_cannotCancelReceived"));
+    }
     if (!confirm(t("po_cancelConfirm"))) return;
     const { error } = await supabase.from("purchase_orders").update({ status: "cancelled" }).eq("id", id);
     if (error) return showToast("❌ " + error.message);
@@ -308,7 +313,7 @@ export default function PoDetailPage() {
   const editable = po.status !== "received" && po.status !== "cancelled";
 
   return (
-    <div className="pt-4 max-w-5xl">
+    <div className="pt-4">
       <Link href="/purchase-orders" className="text-sm text-blue-600 mb-2 inline-block">
         ← {t("nav_purchaseOrders")}
       </Link>
@@ -328,7 +333,7 @@ export default function PoDetailPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {po.status !== "cancelled" && po.status !== "received" && (
+        {po.status !== "cancelled" && po.status !== "received" && !items.some((i) => i.received_qty > 0) && (
           <button onClick={cancelPo}
             className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium">
             {t("po_cancel")}
@@ -347,6 +352,9 @@ export default function PoDetailPage() {
               </button>
             )}
           </>
+        )}
+        {items.some((i) => i.received_qty > 0) && po.status !== "cancelled" && (
+          <span className="text-xs text-slate-400 self-center">{t("po_cannotCancelReceived")}</span>
         )}
         <span className="text-xs text-slate-400 self-center ml-1">{t("po_autoSaveNote")}</span>
       </div>
