@@ -2,6 +2,13 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    nav_goodsReceived: "ကုန်ဝင်မှတ်တမ်း",
+    goodsReceived_subtitle: "ကုန်သည်များထံမှ ဂိုဒေါင်သို့ ဝင်ရောက်လာသည့် ပစ္စည်းများ",
+    goodsReceived_allSuppliers: "ကုန်သည် အားလုံး",
+    goodsReceived_searchPlaceholder: "ပစ္စည်း၊ ကုန်သည်၊ PO နံပါတ် ရှာပါ...",
+    goodsReceived_receipts: "ကုန်ဝင် အကြိမ်",
+    goodsReceived_totalValue: "စုစုပေါင်း တန်ဖိုး",
+    goodsReceived_manual: "တိုက်ရိုက်",
     appName: "POS MVP",
     nav_pos: "POS",
     nav_history: "အရောင်းမှတ်တမ်း",
@@ -514,6 +521,13 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    nav_goodsReceived: "Goods Received",
+    goodsReceived_subtitle: "Stock received into the warehouse from suppliers",
+    goodsReceived_allSuppliers: "All Suppliers",
+    goodsReceived_searchPlaceholder: "Search product, supplier, or PO number...",
+    goodsReceived_receipts: "Receipts",
+    goodsReceived_totalValue: "Total Value",
+    goodsReceived_manual: "Direct",
     appName: "POS MVP",
     nav_pos: "POS",
     nav_history: "Sale History",
