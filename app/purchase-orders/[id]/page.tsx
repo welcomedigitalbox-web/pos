@@ -15,7 +15,7 @@ function fmt(n: number) {
   return n.toLocaleString() + " MMK";
 }
 
-type ItemRow = PurchaseOrderItem & { display_name: string; is_consignment: boolean };
+type ItemRow = PurchaseOrderItem & { display_name: string; is_consignment: boolean; requires_expiry: boolean };
 
 export default function PoDetailPage() {
   const params = useParams();
@@ -28,6 +28,7 @@ export default function PoDetailPage() {
   const [supplierName, setSupplierName] = useState("");
   const [items, setItems] = useState<ItemRow[]>([]);
   const [payments, setPayments] = useState<PoPayment[]>([]);
+  const [receipts, setReceipts] = useState<any[]>([]);
   const [sellables, setSellables] = useState<SellableItem[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [toast, setToast] = useState("");
@@ -82,7 +83,7 @@ export default function PoDetailPage() {
 
     const { data: itemData } = await supabase
       .from("purchase_order_items")
-      .select("*, products(name, is_consignment), product_variants(variant_name)")
+      .select("*, products(name, is_consignment, requires_expiry), product_variants(variant_name)")
       .eq("po_id", id)
       .order("created_at");
 
@@ -93,6 +94,21 @@ export default function PoDetailPage() {
           ? `${i.products?.name} (${i.product_variants.variant_name})`
           : i.products?.name || "-",
         is_consignment: !!i.products?.is_consignment,
+        requires_expiry: !!i.products?.requires_expiry,
+      }))
+    );
+
+    const { data: receiptData } = await supabase
+      .from("stock_purchases")
+      .select("*, products(name), product_variants(variant_name)")
+      .eq("po_id", id)
+      .order("received_at", { ascending: false });
+    setReceipts(
+      ((receiptData as any[]) || []).map((r) => ({
+        ...r,
+        display_name: r.product_variants?.variant_name
+          ? `${r.products?.name} (${r.product_variants.variant_name})`
+          : r.products?.name || "-",
       }))
     );
 
@@ -158,6 +174,7 @@ export default function PoDetailPage() {
     const c = Number(receiveCost);
     if (!q || q <= 0) return showToast(t("stockRequest_qtyInvalid"));
     if (isNaN(c) || c < 0) return showToast(t("stockIn_costInvalid"));
+    if (receiveRow.requires_expiry && !receiveExpiry) return showToast(t("po_expiryRequired"));
 
     setReceiving(true);
     try {
@@ -173,6 +190,8 @@ export default function PoDetailPage() {
         poId: id,
         supplier: supplierName,
         expiryDate: receiveExpiry || null,
+        requiresExpiry: receiveRow.requires_expiry,
+        receivedBy: profile?.email || null,
       });
 
       const newReceived = receiveRow.received_qty + q;
@@ -380,6 +399,39 @@ export default function PoDetailPage() {
         </form>
       )}
 
+      {/* Receipt history */}
+      {receipts.length > 0 && (
+        <>
+          <h3 className="font-semibold mb-2">{t("po_receiptHistory")}</h3>
+          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
+            <table className="w-full text-sm min-w-[620px]">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left px-3 py-2">{t("ledger_date")}</th>
+                  <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
+                  <th className="text-left px-3 py-2">{t("po_receivedQty")}</th>
+                  <th className="text-left px-3 py-2">{t("stockIn_unitCost")}</th>
+                  <th className="text-left px-3 py-2">{t("stockIn_expiryDate")}</th>
+                  <th className="text-left px-3 py-2">{t("po_receivedBy")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receipts.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-100">
+                    <td className="px-3 py-2">{new Date(r.received_at || r.created_at).toLocaleString()}</td>
+                    <td className="px-3 py-2">{r.display_name}</td>
+                    <td className="px-3 py-2 font-medium">{r.qty}</td>
+                    <td className="px-3 py-2">{fmt(Number(r.unit_cost))}</td>
+                    <td className="px-3 py-2 text-slate-400">{r.expiry_date || "-"}</td>
+                    <td className="px-3 py-2 text-slate-500 text-xs">{r.received_by || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {/* Payments */}
       <div className="flex justify-between items-center mb-2">
         <h3 className="font-semibold">{t("po_payments")}</h3>
@@ -431,9 +483,19 @@ export default function PoDetailPage() {
             <input type="number" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={receiveCost} onChange={(e) => setReceiveCost(e.target.value)} />
 
-            <label className="text-sm text-slate-600">{t("stockIn_expiryDate")}</label>
-            <input type="date" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={receiveExpiry} onChange={(e) => setReceiveExpiry(e.target.value)} />
+            <label className="text-sm text-slate-600">
+              {t("stockIn_expiryDate")}
+              {receiveRow.requires_expiry && <span className="text-red-600"> *</span>}
+            </label>
+            <input
+              type="date"
+              className={`w-full border rounded-lg px-3 py-2 text-sm mt-1 mb-3 ${
+                receiveRow.requires_expiry && !receiveExpiry ? "border-red-300 bg-red-50" : "border-slate-200"
+              }`}
+              value={receiveExpiry}
+              onChange={(e) => setReceiveExpiry(e.target.value)}
+              required={receiveRow.requires_expiry}
+            />
 
             <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-4">
               {receiveRow.is_consignment
@@ -448,7 +510,7 @@ export default function PoDetailPage() {
                 className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
                 {t("products_cancel")}
               </button>
-              <button onClick={submitReceive} disabled={receiving}
+              <button onClick={submitReceive} disabled={receiving || (receiveRow.requires_expiry && !receiveExpiry)}
                 className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
                 {receiving ? "..." : t("po_receive")}
               </button>
