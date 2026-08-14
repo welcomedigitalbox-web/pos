@@ -34,6 +34,7 @@ export default function PoDetailPage() {
 
   // add-item form
   const [itemKey, setItemKey] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
   const [qty, setQty] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [updateCost, setUpdateCost] = useState(false);
@@ -324,12 +325,37 @@ export default function PoDetailPage() {
       {editable && (
         <form onSubmit={addItem} className="bg-white border border-slate-200 rounded-xl p-3 mb-6">
           <div className="flex flex-wrap gap-2 items-end">
+            <div className="w-44">
+              <label className="text-xs text-slate-500">{t("po_scanBarcode")}</label>
+              <input
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                value={barcodeInput}
+                placeholder={t("po_scanBarcodePlaceholder")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setBarcodeInput(v);
+                  // Scanner types the whole code then stops — match on exact SKU
+                  const hit = sellables.find(
+                    (s) => (s.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
+                  );
+                  if (hit) {
+                    setItemKey(hit.key);
+                    setBarcodeInput("");
+                    showToast(`✅ ${hit.display_name}`);
+                  }
+                }}
+              />
+            </div>
             <div className="flex-1 min-w-[200px]">
               <label className="text-xs text-slate-500">{t("stockIn_product")}</label>
               <select className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
                 value={itemKey} onChange={(e) => setItemKey(e.target.value)} required>
                 <option value="">{t("stockIn_selectPlaceholder")}</option>
-                {sellables.map((s) => <option key={s.key} value={s.key}>{s.display_name}</option>)}
+                {sellables.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.display_name}{s.sku ? ` · ${s.sku}` : ""}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="w-24">
