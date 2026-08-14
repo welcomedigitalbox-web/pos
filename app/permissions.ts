@@ -15,6 +15,7 @@ export type PageKey =
   | "ledger"
   | "warehouse"
   | "stock-transfer"
+  | "goods-received"
   | "warehouse-history"
   | "dashboard"
   | "sales-report"
@@ -53,6 +54,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "incoming-transfers", href: "/incoming-transfers", labelKey: "nav_incomingTransfers", group: "inventory" },
   { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "inventory" },
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "warehouse" },
+  { key: "goods-received", href: "/goods-received", labelKey: "nav_goodsReceived", group: "warehouse" },
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
   { key: "ledger", href: "/ledger", labelKey: "nav_ledger", group: "warehouse" },
@@ -103,6 +105,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "ledger",
     "warehouse",
     "stock-transfer",
+    "goods-received",
     "warehouse-history",
     "dashboard",
     "sales-report",
@@ -127,6 +130,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "ledger",
     "warehouse",
     "stock-transfer",
+    "goods-received",
     "warehouse-history",
     "dashboard",
     "product-category",
