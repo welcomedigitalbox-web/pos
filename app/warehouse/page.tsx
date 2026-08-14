@@ -1,69 +1,37 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, CENTRAL_WAREHOUSE_ID, upsertStoreInventory, Product } from "@/lib/supabase";
+import { supabase, CENTRAL_WAREHOUSE_ID, SellableItem, fetchSellableItems } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
-import { useStore } from "../store-context";
 import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
-type Status = "healthy" | "warning" | "urgent" | "out";
+function fmt(n: number) {
+  return n.toLocaleString() + " MMK";
+}
 
-type Row = {
-  storeId: string;
-  productId: string;
-  variantId: string | null;
-  name: string;
-  sku: string | null;
-  avgCost: number;
-  sold: number;
-  available: number;
-  target: number;
-  stockPercent: number | null;
-  status: Status;
+type Row = SellableItem & {
+  damagedQty: number;
+  inTransitQty: number;
   stockValue: number;
   nearestExpiry: string | null;
   isExpired: boolean;
   isExpiringSoon: boolean;
 };
 
-function fmt(n: number) {
-  return n.toLocaleString() + " MMK";
-}
-
-function statusInfo(status: Status, t: (k: any) => string) {
-  switch (status) {
-    case "healthy":
-      return { label: t("warehouse_healthy"), color: "bg-green-100 text-green-700" };
-    case "warning":
-      return { label: t("warehouse_warning"), color: "bg-yellow-100 text-yellow-700" };
-    case "urgent":
-      return { label: t("warehouse_urgent"), color: "bg-orange-100 text-orange-700" };
-    case "out":
-      return { label: t("warehouse_outOfStock"), color: "bg-red-100 text-red-700" };
-  }
-}
+type SortKey = "name" | "qty" | "value";
 
 export default function WarehousePage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
-  const { stores } = useStore();
-  const retailStores = stores.filter((s) => !s.is_warehouse);
   const router = useRouter();
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const [storeFilter, setStoreFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
-
-  const [transferRow, setTransferRow] = useState<Row | null>(null);
-  const [transferQty, setTransferQty] = useState("");
-  const [transferToStore, setTransferToStore] = useState("");
-  const [transferring, setTransferring] = useState(false);
-  const [toast, setToast] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("value");
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "warehouse")) router.replace("/");
@@ -80,392 +48,218 @@ export default function WarehousePage() {
   async function loadData() {
     setLoading(true);
 
-    // Per-store stock/cost, joined with the global product catalog
-    const { data: inventory } = await supabase
-      .from("store_inventory")
-      .select("*, products(name, sku), product_variants(variant_name, sku)");
+    // Only what physically sits in the central warehouse right now
+    const items = await fetchSellableItems(CENTRAL_WAREHOUSE_ID, true);
 
-    // Per-store sold qty (sale_items -> parent sale's store_id)
-    const { data: saleItems } = await supabase
-      .from("sale_items")
-      .select("product_id, variant_id, qty, sales(store_id)");
+    const { data: damages } = await supabase
+      .from("stock_damages")
+      .select("product_id, variant_id, qty")
+      .eq("store_id", CENTRAL_WAREHOUSE_ID);
 
-    // Per-store nearest expiry from remaining batches
+    // Sent but not yet confirmed by the receiving store
+    const { data: transits } = await supabase
+      .from("stock_transfers")
+      .select("product_id, variant_id, qty")
+      .eq("status", "in_transit");
+
     const { data: batches } = await supabase
       .from("stock_purchases")
-      .select("product_id, variant_id, store_id, expiry_date, remaining_qty")
+      .select("product_id, variant_id, expiry_date, remaining_qty")
+      .eq("store_id", CENTRAL_WAREHOUSE_ID)
       .gt("remaining_qty", 0)
       .not("expiry_date", "is", null)
       .order("expiry_date", { ascending: true });
 
-    const soldMap = new Map<string, number>();
-    for (const item of (saleItems as any[]) || []) {
-      const sId = item.sales?.store_id;
-      if (!sId) continue;
-      const key = `${sId}:${item.product_id}:${item.variant_id || "base"}`;
-      soldMap.set(key, (soldMap.get(key) || 0) + Number(item.qty));
+    const keyOf = (pid: string, vid: string | null) => `${pid}:${vid || "base"}`;
+
+    const damageMap = new Map<string, number>();
+    for (const d of damages || []) {
+      const k = keyOf(d.product_id, d.variant_id);
+      damageMap.set(k, (damageMap.get(k) || 0) + Number(d.qty));
+    }
+
+    const transitMap = new Map<string, number>();
+    for (const tr of transits || []) {
+      const k = keyOf(tr.product_id, tr.variant_id);
+      transitMap.set(k, (transitMap.get(k) || 0) + Number(tr.qty));
     }
 
     const expiryMap = new Map<string, string>();
     for (const b of batches || []) {
-      const key = `${b.store_id}:${b.product_id}:${b.variant_id || "base"}`;
-      if (!expiryMap.has(key)) expiryMap.set(key, b.expiry_date as string);
+      const k = keyOf(b.product_id, b.variant_id);
+      if (!expiryMap.has(k)) expiryMap.set(k, b.expiry_date as string);
     }
 
     const now = Date.now();
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
-    const built: Row[] = ((inventory as any[]) || [])
-      .filter((inv) => inv.products) // skip orphaned rows (deleted product)
-      .map((inv) => {
-        const key = `${inv.store_id}:${inv.product_id}:${inv.variant_id || "base"}`;
-        const sold = soldMap.get(key) || 0;
-        const available = Number(inv.stock_qty);
-        const target = Math.round(sold * 0.5);
-        const stockPercent = sold > 0 ? (available / sold) * 100 : null;
-
-        let status: Status;
-        if (available <= 0) status = "out";
-        else if (sold === 0) status = "healthy";
-        else if (stockPercent! >= 50) status = "healthy";
-        else if (stockPercent! >= 30) status = "warning";
-        else status = "urgent";
-
-        const nearestExpiry = expiryMap.get(key) || null;
+    setRows(
+      items.map((i) => {
+        const k = keyOf(i.product_id, i.variant_id);
+        const nearestExpiry = expiryMap.get(k) || null;
         const isExpired = !!nearestExpiry && new Date(nearestExpiry).getTime() < now;
-        const isExpiringSoon = !!nearestExpiry && !isExpired && new Date(nearestExpiry).getTime() - now < thirtyDays;
-
+        const isExpiringSoon =
+          !!nearestExpiry && !isExpired && new Date(nearestExpiry).getTime() - now < thirtyDays;
         return {
-          storeId: inv.store_id,
-          productId: inv.product_id,
-          variantId: inv.variant_id ?? null,
-          name: inv.product_variants?.variant_name
-            ? `${inv.products.name} (${inv.product_variants.variant_name})`
-            : inv.products.name,
-          sku: inv.product_variants?.sku || inv.products.sku,
-          avgCost: Number(inv.avg_cost),
-          sold,
-          available,
-          target,
-          stockPercent,
-          status,
-          stockValue: available * Number(inv.avg_cost),
+          ...i,
+          damagedQty: damageMap.get(k) || 0,
+          inTransitQty: transitMap.get(k) || 0,
+          stockValue: i.stock_qty * i.avg_cost,
           nearestExpiry,
           isExpired,
           isExpiringSoon,
         };
-      });
-
-    setRows(built);
+      })
+    );
     setLoading(false);
   }
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3000);
-  }
-
-  function openTransfer(row: Row) {
-    setTransferRow(row);
-    setTransferQty("");
-    setTransferToStore(retailStores[0]?.id || "");
-  }
-
-  async function submitTransfer() {
-    if (!transferRow) return;
-    const qty = Number(transferQty);
-    if (!qty || qty <= 0) return showToast(t("stockRequest_qtyInvalid"));
-    if (qty > transferRow.available) return showToast(t("warehouseTransfer_notEnough"));
-    if (!transferToStore) return;
-
-    setTransferring(true);
-    try {
-      // Deduct from central warehouse
-      await upsertStoreInventory(CENTRAL_WAREHOUSE_ID, transferRow.productId, transferRow.variantId, {
-        stock_qty: transferRow.available - qty,
-      });
-
-      // Goods are now in transit — the destination store confirms what actually
-      // arrived, so shortages in transit surface instead of vanishing.
-      const { error: transferError } = await supabase.from("stock_transfers").insert({
-        product_id: transferRow.productId,
-        variant_id: transferRow.variantId,
-        to_store_id: transferToStore,
-        qty,
-        status: "in_transit",
-        transferred_by: profile?.email || null,
-      });
-      if (transferError) throw transferError;
-
-      showToast(t("warehouseTransfer_sent"));
-      setTransferRow(null);
-      await loadData();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      showToast("❌ " + message);
-    } finally {
-      setTransferring(false);
-    }
-  }
-
   const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (storeFilter !== "all" && r.storeId !== storeFilter) return false;
-      if (statusFilter !== "all") {
-        if (statusFilter === "expiring" && !r.isExpiringSoon) return false;
-        if (statusFilter === "expired" && !r.isExpired) return false;
-        if (["healthy", "warning", "urgent", "out"].includes(statusFilter) && r.status !== statusFilter)
-          return false;
-      }
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        if (!r.name.toLowerCase().includes(q) && !(r.sku || "").toLowerCase().includes(q)) return false;
-      }
+    const q = search.trim().toLowerCase();
+    const list = rows.filter((r) => {
+      if (statusFilter === "in_stock" && r.stock_qty <= 0) return false;
+      if (statusFilter === "out_of_stock" && r.stock_qty > 0) return false;
+      if (statusFilter === "damaged" && r.damagedQty <= 0) return false;
+      if (statusFilter === "in_transit" && r.inTransitQty <= 0) return false;
+      if (statusFilter === "expiring" && !r.isExpiringSoon) return false;
+      if (statusFilter === "expired" && !r.isExpired) return false;
+      if (q && !r.display_name.toLowerCase().includes(q) && !(r.sku || "").toLowerCase().includes(q))
+        return false;
       return true;
     });
-  }, [rows, storeFilter, statusFilter, search]);
 
-  const summary = useMemo(() => {
-    const totalSold = filtered.reduce((s, r) => s + r.sold, 0);
-    const totalAvailable = filtered.reduce((s, r) => s + r.available, 0);
-    const totalTarget = filtered.reduce((s, r) => s + r.target, 0);
-    const totalValue = filtered.reduce((s, r) => s + r.stockValue, 0);
-    const stockPercent = totalSold > 0 ? (totalAvailable / totalSold) * 100 : 0;
-    return {
+    return [...list].sort((a, b) => {
+      if (sortKey === "name") return a.display_name.localeCompare(b.display_name);
+      if (sortKey === "qty") return b.stock_qty - a.stock_qty;
+      return b.stockValue - a.stockValue;
+    });
+  }, [rows, search, statusFilter, sortKey]);
+
+  const summary = useMemo(
+    () => ({
       products: filtered.length,
-      totalSold,
-      totalAvailable,
-      totalTarget,
-      totalValue,
-      stockPercent,
-      healthy: filtered.filter((r) => r.status === "healthy").length,
-      warning: filtered.filter((r) => r.status === "warning").length,
-      urgent: filtered.filter((r) => r.status === "urgent").length,
-      out: filtered.filter((r) => r.status === "out").length,
-    };
-  }, [filtered]);
+      totalQty: filtered.reduce((s, r) => s + r.stock_qty, 0),
+      totalValue: filtered.reduce((s, r) => s + r.stockValue, 0),
+      damaged: filtered.reduce((s, r) => s + r.damagedQty, 0),
+      inTransit: filtered.reduce((s, r) => s + r.inTransitQty, 0),
+      outOfStock: filtered.filter((r) => r.stock_qty <= 0).length,
+    }),
+    [filtered]
+  );
 
   return (
     <div className="pt-4">
-      <h2 className="font-semibold text-lg mb-1">{t("warehouse_title")}</h2>
-      <p className="text-sm text-slate-500 mb-4">{t("warehouse_subtitle")}</p>
+      <h2 className="font-semibold text-lg mb-1">🏭 {t("warehouse_currentStockTitle")}</h2>
+      <p className="text-sm text-slate-500 mb-4">{t("warehouse_currentStockSubtitle")}</p>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-4">
-        <select
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-          value={storeFilter}
-          onChange={(e) => setStoreFilter(e.target.value)}
-        >
-          <option value="all">{t("warehouse_allStores")}</option>
-          {stores.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-
         <select
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
           <option value="all">{t("warehouse_allStock")}</option>
-          <option value="healthy">{t("warehouse_healthy")}</option>
-          <option value="warning">{t("warehouse_warning")}</option>
-          <option value="urgent">{t("warehouse_urgent")}</option>
-          <option value="out">{t("warehouse_outOfStock")}</option>
+          <option value="in_stock">{t("warehouse_inStock")}</option>
+          <option value="out_of_stock">{t("warehouse_outOfStock")}</option>
+          <option value="damaged">{t("warehouse_damaged")}</option>
+          <option value="in_transit">{t("transferIn_status_in_transit")}</option>
           <option value="expiring">{t("warehouse_expiringSoon")}</option>
           <option value="expired">{t("warehouse_expired")}</option>
         </select>
 
+        <select
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+        >
+          <option value="value">{t("warehouse_sortValue")}</option>
+          <option value="qty">{t("warehouse_sortQty")}</option>
+          <option value="name">{t("warehouse_sortName")}</option>
+        </select>
+
         <input
-          className="flex-1 min-w-[180px] border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          className="flex-1 min-w-[200px] border border-slate-200 rounded-lg px-3 py-2 text-sm"
           placeholder={t("warehouse_searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("warehouse_products")}</div>
           <div className="text-xl font-bold mt-1">{summary.products}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_soldQty")}</div>
-          <div className="text-xl font-bold mt-1">{summary.totalSold.toLocaleString()}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("warehouse_availableQty")}</div>
-          <div className="text-xl font-bold mt-1">{summary.totalAvailable.toLocaleString()}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_targetQty")}</div>
-          <div className="text-xl font-bold mt-1">{summary.totalTarget.toLocaleString()}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_stockPercent")}</div>
-          <div className="text-xl font-bold mt-1 text-green-700">{summary.stockPercent.toFixed(1)}%</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_healthy")}</div>
-          <div className="text-xl font-bold mt-1 text-green-600">{summary.healthy}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_warning")}</div>
-          <div className="text-xl font-bold mt-1 text-yellow-600">{summary.warning}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_urgent")}</div>
-          <div className="text-xl font-bold mt-1 text-orange-600">{summary.urgent}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_outOfStock")}</div>
-          <div className="text-xl font-bold mt-1 text-red-600">{summary.out}</div>
+          <div className="text-xl font-bold mt-1">{summary.totalQty.toLocaleString()}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("warehouse_stockValue")}</div>
-          <div className="text-xl font-bold mt-1">{fmt(summary.totalValue)}</div>
+          <div className="text-lg font-bold mt-1">{fmt(summary.totalValue)}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <div className="text-xs text-slate-500 uppercase">{t("warehouse_damaged")}</div>
+          <div className="text-xl font-bold mt-1 text-red-600">{summary.damaged.toLocaleString()}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <div className="text-xs text-slate-500 uppercase">{t("transferIn_status_in_transit")}</div>
+          <div className="text-xl font-bold mt-1 text-yellow-600">{summary.inTransit.toLocaleString()}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <div className="text-xs text-slate-500 uppercase">{t("warehouse_outOfStock")}</div>
+          <div className="text-xl font-bold mt-1 text-slate-500">{summary.outOfStock}</div>
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[1080px]">
+        <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
-              <th className="text-left px-3 py-2">{t("warehouse_colStore")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colSold")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colAvgCost")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colTarget")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colStockPercent")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colStatus")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_stockValue")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_damaged")}</th>
+              <th className="text-left px-3 py-2">{t("transferIn_status_in_transit")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colExpiry")}</th>
-              <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={11} className="text-center text-slate-400 py-8">
-                  ...
+            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {!loading && filtered.map((r) => (
+              <tr key={r.key} className="border-t border-slate-100">
+                <td className="px-3 py-2">{r.display_name}</td>
+                <td className="px-3 py-2 text-slate-400">{r.sku || "-"}</td>
+                <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : ""}`}>
+                  {r.stock_qty.toLocaleString()}
+                </td>
+                <td className="px-3 py-2 text-slate-500">{fmt(r.avg_cost)}</td>
+                <td className="px-3 py-2 font-medium">{fmt(r.stockValue)}</td>
+                <td className={`px-3 py-2 ${r.damagedQty > 0 ? "text-red-600 font-medium" : "text-slate-300"}`}>
+                  {r.damagedQty || "-"}
+                </td>
+                <td className={`px-3 py-2 ${r.inTransitQty > 0 ? "text-yellow-600 font-medium" : "text-slate-300"}`}>
+                  {r.inTransitQty || "-"}
+                </td>
+                <td
+                  className={`px-3 py-2 text-xs ${
+                    r.isExpired ? "text-red-600 font-semibold" : r.isExpiringSoon ? "text-orange-600 font-medium" : "text-slate-400"
+                  }`}
+                >
+                  {r.nearestExpiry || "-"}
+                  {r.isExpired && " ⚠️"}
+                  {r.isExpiringSoon && " ⏰"}
                 </td>
               </tr>
-            )}
-            {!loading &&
-              filtered.map((r) => {
-                const info = statusInfo(r.status, t);
-                return (
-                  <tr key={`${r.storeId}:${r.productId}:${r.variantId || "base"}`} className="border-t border-slate-100">
-                    <td className="px-3 py-2">
-                      {r.storeId === CENTRAL_WAREHOUSE_ID ? `🏭 ${r.storeId}` : r.storeId}
-                    </td>
-                    <td className="px-3 py-2">{r.name}</td>
-                    <td className="px-3 py-2 text-slate-400">{r.sku || "-"}</td>
-                    <td className="px-3 py-2">{r.sold.toLocaleString()}</td>
-                    <td className="px-3 py-2 font-medium">{r.available.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-slate-500">{fmt(r.avgCost)}</td>
-                    <td className="px-3 py-2">{r.target.toLocaleString()}</td>
-                    <td className="px-3 py-2">{r.stockPercent !== null ? `${r.stockPercent.toFixed(0)}%` : "-"}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${info.color}`}>{info.label}</span>
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-xs ${
-                        r.isExpired ? "text-red-600 font-semibold" : r.isExpiringSoon ? "text-orange-600 font-medium" : "text-slate-400"
-                      }`}
-                    >
-                      {r.nearestExpiry ? r.nearestExpiry : "-"}
-                      {r.isExpired && " ⚠️"}
-                      {r.isExpiringSoon && " ⏰"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {r.storeId === CENTRAL_WAREHOUSE_ID && r.available > 0 && (
-                        <button
-                          onClick={() => openTransfer(r)}
-                          className="text-blue-600 text-xs font-medium whitespace-nowrap"
-                        >
-                          {t("warehouseTransfer_button")}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+            ))}
             {!loading && filtered.length === 0 && (
-              <tr>
-                <td colSpan={11} className="text-center text-slate-400 py-8">
-                  {t("warehouse_empty")}
-                </td>
-              </tr>
+              <tr><td colSpan={8} className="text-center text-slate-400 py-8">{t("warehouse_empty")}</td></tr>
             )}
           </tbody>
         </table>
       </div>
-
-      {transferRow && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
-            <h3 className="font-semibold text-lg mb-1">{t("warehouseTransfer_title")}</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              {transferRow.name} — {t("warehouseTransfer_available")}: {transferRow.available}
-            </p>
-
-            <label className="text-sm text-slate-600">{t("warehouseTransfer_toStore")}</label>
-            <select
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={transferToStore}
-              onChange={(e) => setTransferToStore(e.target.value)}
-            >
-              {retailStores.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-
-            <label className="text-sm text-slate-600">{t("warehouseTransfer_qty")}</label>
-            <input
-              type="number"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
-              value={transferQty}
-              onChange={(e) => setTransferQty(e.target.value)}
-              max={transferRow.available}
-              required
-            />
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setTransferRow(null)}
-                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
-              >
-                {t("products_cancel")}
-              </button>
-              <button
-                onClick={submitTransfer}
-                disabled={transferring}
-                className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
-              >
-                {transferring ? "..." : t("warehouseTransfer_button")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
