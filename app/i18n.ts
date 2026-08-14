@@ -2,6 +2,14 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    ledger_period30: "နောက်ဆုံး ၃၀ ရက်",
+    ledger_period90: "နောက်ဆုံး ၉၀ ရက်",
+    ledger_period365: "နောက်ဆုံး ၁ နှစ်",
+    ledger_periodAll: "အားလုံး",
+    ledger_coverDays: "ခံနိုင်ရက်",
+    ledger_daysUnit: " ရက်",
+    ledger_suggestReorder: "ထပ်ဝယ်သင့်",
+    ledger_sortCover: "ကုန်တော့မည့်အလိုက်",
     ledger_perfSubtitle: "ဆိုင်အလိုက် ပစ္စည်းတစ်ခုချင်းစီ၏ ရောင်းအား၊ လက်ကျန်နှင့် အမြတ်",
     ledger_unitsSold: "ရောင်းပြီး",
     ledger_sellThrough: "ရောင်းနှုန်း %",
@@ -531,6 +539,14 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    ledger_period30: "Last 30 days",
+    ledger_period90: "Last 90 days",
+    ledger_period365: "Last 1 year",
+    ledger_periodAll: "All time",
+    ledger_coverDays: "Stock Cover",
+    ledger_daysUnit: "d",
+    ledger_suggestReorder: "Suggested Reorder",
+    ledger_sortCover: "By Running Out Soonest",
     ledger_perfSubtitle: "Sales, stock and profit for every product in the selected location",
     ledger_unitsSold: "Units Sold",
     ledger_sellThrough: "Sell-through %",
