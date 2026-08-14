@@ -206,6 +206,22 @@ export default function ProductsPage() {
     await loadVariants(form.id);
   }
 
+  async function updateVariantPrice(id: string, value: string) {
+    const price = value.trim() === "" ? null : Number(value);
+    if (price !== null && (isNaN(price) || price < 0)) return showToast(t("products_priceInvalid"));
+    const { error } = await supabase
+      .from("product_variants")
+      .update({ price_override: price })
+      .eq("id", id);
+    if (error) {
+      showToast("❌ " + error.message);
+      return;
+    }
+    showToast(t("productVariant_priceSaved"));
+    if (form.id) await loadVariants(form.id);
+    await load();
+  }
+
   async function deleteVariant(id: string) {
     await supabase.from("product_variants").delete().eq("id", id);
     if (form.id) await loadVariants(form.id);
@@ -406,18 +422,22 @@ export default function ProductsPage() {
                 {editingVariants.length > 0 && (
                   <div className="space-y-1 mb-2">
                     {editingVariants.map((v) => (
-                      <div key={v.id} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1.5">
-                        <span>
+                      <div key={v.id} className="flex items-center gap-1 text-xs bg-slate-50 rounded px-2 py-1.5">
+                        <span className="flex-1 min-w-0 truncate">
                           {v.variant_name}
                           {v.sku && <span className="text-slate-400"> · {v.sku}</span>}
-                          {v.price_override && (
-                            <span className="text-slate-400"> · {v.price_override.toLocaleString()} MMK</span>
-                          )}
                         </span>
+                        <input
+                          type="number"
+                          className="w-24 border border-slate-200 rounded px-2 py-1 text-xs bg-white"
+                          defaultValue={v.price_override ?? ""}
+                          placeholder={t("products_price")}
+                          onBlur={(e) => updateVariantPrice(v.id, e.target.value)}
+                        />
                         <button
                           type="button"
                           onClick={() => deleteVariant(v.id)}
-                          className="text-red-500 ml-2"
+                          className="text-red-500 ml-1"
                         >
                           ✕
                         </button>
@@ -427,16 +447,23 @@ export default function ProductsPage() {
                 )}
                 <div className="flex gap-1">
                   <input
-                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
                     value={newVariantName}
                     onChange={(e) => setNewVariantName(e.target.value)}
                     placeholder={t("productVariant_variantName")}
                   />
                   <input
-                    className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                    className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
                     value={newVariantSku}
                     onChange={(e) => setNewVariantSku(e.target.value)}
                     placeholder={t("products_sku")}
+                  />
+                  <input
+                    type="number"
+                    className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                    value={newVariantPrice}
+                    onChange={(e) => setNewVariantPrice(e.target.value)}
+                    placeholder={t("products_price")}
                   />
                   <button
                     type="button"
@@ -446,6 +473,7 @@ export default function ProductsPage() {
                     +
                   </button>
                 </div>
+                <p className="text-xs text-slate-400 mt-1">{t("productVariant_priceHint")}</p>
               </div>
             )}
 
