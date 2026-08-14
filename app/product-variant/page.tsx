@@ -82,6 +82,18 @@ export default function ProductVariantPage() {
     }
   }
 
+  async function updatePrice(id: string, value: string) {
+    const price = value.trim() === "" ? null : Number(value);
+    if (price !== null && (isNaN(price) || price < 0)) return showToast(t("products_priceInvalid"));
+    const { error } = await supabase.from("product_variants").update({ price_override: price }).eq("id", id);
+    if (error) {
+      showToast("❌ " + error.message);
+      return;
+    }
+    showToast(t("productVariant_priceSaved"));
+    await load();
+  }
+
   async function handleDelete(id: string) {
     if (!confirm(t("productCategory_deleteConfirm"))) return;
     await supabase.from("product_variants").delete().eq("id", id);
@@ -115,7 +127,15 @@ export default function ProductVariantPage() {
                 <td className="px-4 py-2">{v.productName}</td>
                 <td className="px-4 py-2 font-medium">{v.variant_name}</td>
                 <td className="px-4 py-2 text-slate-400">{v.sku || "-"}</td>
-                <td className="px-4 py-2">{v.price_override ? v.price_override.toLocaleString() + " MMK" : "-"}</td>
+                <td className="px-4 py-2">
+                  <input
+                    type="number"
+                    className="w-28 border border-slate-200 rounded px-2 py-1 text-sm"
+                    defaultValue={v.price_override ?? ""}
+                    placeholder={t("products_price")}
+                    onBlur={(e) => updatePrice(v.id, e.target.value)}
+                  />
+                </td>
                 <td className="px-4 py-2 text-right">
                   <button onClick={() => handleDelete(v.id)} className="text-red-600 text-xs font-medium">
                     {t("products_delete")}
