@@ -55,7 +55,7 @@ export default function LedgerPage() {
 
     let purchaseQuery = supabase
       .from("stock_purchases")
-      .select("qty, created_at, supplier")
+      .select("qty, created_at, supplier, received_by")
       .eq("product_id", item.product_id)
       .eq("store_id", storeId);
     purchaseQuery = item.variant_id
@@ -116,7 +116,10 @@ export default function LedgerPage() {
         date: p.created_at,
         type: "in" as const,
         qty: Number(p.qty),
-        reference: p.supplier ? `Stock-in (${p.supplier})` : "Stock-in",
+        reference: [
+          p.supplier ? `Stock-in (${p.supplier})` : "Stock-in",
+          p.received_by ? `· ${p.received_by}` : "",
+        ].filter(Boolean).join(" "),
       })),
       ...(items_ || []).map((i) => ({
         date: i.created_at,
