@@ -2,6 +2,7 @@ export type PageKey =
   | "pos"
   | "sale-order"
   | "history"
+  | "order-lookup"
   | "my-sales"
   | "customers"
   | "sales-reps"
@@ -43,6 +44,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "pos", href: "/", labelKey: "nav_pos", group: "sale" },
   { key: "sale-order", href: "/sale-order", labelKey: "nav_saleOrder", group: "sale" },
   { key: "history", href: "/history", labelKey: "nav_history", group: "sale" },
+  { key: "order-lookup", href: "/order-lookup", labelKey: "nav_orderLookup", group: "sale" },
   { key: "my-sales", href: "/my-sales", labelKey: "nav_mySales", group: "sale" },
   { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
   { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "sale" },
