@@ -144,6 +144,7 @@ export default function StockInPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedProduct) return showToast(t("stockIn_selectProduct"));
+    if (selectedProduct.requires_expiry && !expiryDate) return showToast(t("po_expiryRequired"));
     if (qtyNum <= 0) return showToast(t("stockIn_qtyInvalid"));
     if (unitCostNum < 0) return showToast(t("stockIn_costInvalid"));
 
@@ -195,6 +196,8 @@ export default function StockInPage() {
           new_avg_cost: newAvgCost,
           expiry_date: expiryDate || null,
           remaining_qty: qtyNum,
+          received_by: profile?.email || null,
+          received_at: new Date().toISOString(),
         });
         if (purchaseErr) throw purchaseErr;
 
@@ -452,12 +455,20 @@ export default function StockInPage() {
               required
             />
 
-            <label className="text-sm text-slate-600">{t("stockIn_expiryDate")}</label>
+            <label className="text-sm text-slate-600">
+              {t("stockIn_expiryDate")}
+              {selectedProduct?.requires_expiry && <span className="text-red-600"> *</span>}
+            </label>
             <input
               type="date"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              className={`w-full border rounded-lg px-3 py-2 text-sm mt-1 mb-3 ${
+                selectedProduct?.requires_expiry && !expiryDate
+                  ? "border-red-300 bg-red-50"
+                  : "border-slate-200"
+              }`}
               value={expiryDate}
               onChange={(e) => setExpiryDate(e.target.value)}
+              required={!!selectedProduct?.requires_expiry}
             />
 
             {previewAvgCost !== null && (
