@@ -18,6 +18,8 @@ export type PageKey =
   | "my-pin"
   | "product-category"
   | "product-variant"
+  | "suppliers"
+  | "purchase-orders"
   | "ai-agent"
   | "profile"
   | "admin";
@@ -50,6 +52,8 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "ledger", href: "/ledger", labelKey: "nav_ledger", group: "warehouse" },
   { key: "product-category", href: "/product-category", labelKey: "nav_productCategory", group: "merchandising" },
   { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "merchandising" },
+  { key: "purchase-orders", href: "/purchase-orders", labelKey: "nav_purchaseOrders", group: "merchandising" },
+  { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
   { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "reports" },
@@ -96,6 +100,8 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "my-pin",
     "product-category",
     "product-variant",
+    "purchase-orders",
+    "suppliers",
     ...COMMON_ALL_ROLES,
   ],
   manager: [
@@ -113,6 +119,8 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "dashboard",
     "product-category",
     "product-variant",
+    "purchase-orders",
+    "suppliers",
     ...COMMON_ALL_ROLES,
   ],
   owner: ALL_KEYS_EXCEPT_ADMIN,
