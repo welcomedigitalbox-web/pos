@@ -104,7 +104,7 @@ export default function LoyaltyTiersPage() {
   }
 
   return (
-    <div className="pt-4 max-w-xl">
+    <div className="pt-4">
       <div className="flex justify-between items-center mb-3">
         <h2 className="font-semibold text-lg">{t("nav_loyaltyTiers")}</h2>
         <button onClick={openNew} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
