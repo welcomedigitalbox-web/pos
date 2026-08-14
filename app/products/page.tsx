@@ -34,6 +34,7 @@ export default function ProductsPage() {
   const [rawProducts, setRawProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [editingVariants, setEditingVariants] = useState<ProductVariant[]>([]);
+  const [variantStock, setVariantStock] = useState<Record<string, number>>({});
   const [newVariantName, setNewVariantName] = useState("");
   const [newVariantSku, setNewVariantSku] = useState("");
   const [newVariantPrice, setNewVariantPrice] = useState("");
@@ -76,6 +77,28 @@ export default function ProductsPage() {
       .eq("product_id", productId)
       .order("created_at");
     setEditingVariants(data || []);
+
+    // Current store's stock for each variant, so it can be shown/edited inline
+    const { data: inv } = await supabase
+      .from("store_inventory")
+      .select("variant_id, stock_qty")
+      .eq("store_id", storeId)
+      .eq("product_id", productId);
+    const map: Record<string, number> = {};
+    for (const row of inv || []) {
+      if (row.variant_id) map[row.variant_id] = Number(row.stock_qty);
+    }
+    setVariantStock(map);
+  }
+
+  async function updateVariantStock(variantId: string, value: string) {
+    const qty = value.trim() === "" ? 0 : Number(value);
+    if (isNaN(qty) || qty < 0) return showToast(t("products_stockInvalid"));
+    if (!form.id) return;
+    await upsertStoreInventory(storeId, form.id, variantId, { stock_qty: qty });
+    showToast(t("productVariant_stockSaved"));
+    await loadVariants(form.id);
+    await load();
   }
 
   function showToast(msg: string) {
@@ -188,12 +211,19 @@ export default function ProductsPage() {
     await load();
   }
 
+  function generateVariantSku(variantName: string) {
+    // Derive from the parent SKU so variants stay visually grouped, e.g. SKU-001-L
+    const base = form.sku.trim() || generateSku();
+    const suffix = variantName.trim().replace(/[^A-Z0-9]/gi, "").slice(0, 6).toUpperCase();
+    return suffix ? `${base}-${suffix}` : base;
+  }
+
   async function addVariant() {
     if (!form.id || !newVariantName.trim()) return;
     const { error } = await supabase.from("product_variants").insert({
       product_id: form.id,
       variant_name: newVariantName.trim(),
-      sku: newVariantSku.trim() || null,
+      sku: newVariantSku.trim() || generateVariantSku(newVariantName),
       price_override: newVariantPrice ? Number(newVariantPrice) : null,
     });
     if (error) {
@@ -421,6 +451,12 @@ export default function ProductsPage() {
                 <label className="text-sm text-slate-600 block mb-2">{t("nav_productVariant")}</label>
                 {editingVariants.length > 0 && (
                   <div className="space-y-1 mb-2">
+                    <div className="flex items-center gap-1 text-[10px] text-slate-400 px-2">
+                      <span className="flex-1">{t("productVariant_variantName")}</span>
+                      <span className="w-24">{t("products_price")}</span>
+                      <span className="w-20">{t("products_stockQty")}</span>
+                      <span className="w-4"></span>
+                    </div>
                     {editingVariants.map((v) => (
                       <div key={v.id} className="flex items-center gap-1 text-xs bg-slate-50 rounded px-2 py-1.5">
                         <span className="flex-1 min-w-0 truncate">
@@ -433,6 +469,13 @@ export default function ProductsPage() {
                           defaultValue={v.price_override ?? ""}
                           placeholder={t("products_price")}
                           onBlur={(e) => updateVariantPrice(v.id, e.target.value)}
+                        />
+                        <input
+                          type="number"
+                          className="w-20 border border-slate-200 rounded px-2 py-1 text-xs bg-white"
+                          defaultValue={variantStock[v.id] ?? 0}
+                          placeholder={t("products_stockQty")}
+                          onBlur={(e) => updateVariantStock(v.id, e.target.value)}
                         />
                         <button
                           type="button"
@@ -453,10 +496,10 @@ export default function ProductsPage() {
                     placeholder={t("productVariant_variantName")}
                   />
                   <input
-                    className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
+                    className="w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-xs"
                     value={newVariantSku}
                     onChange={(e) => setNewVariantSku(e.target.value)}
-                    placeholder={t("products_sku")}
+                    placeholder={newVariantName.trim() ? generateVariantSku(newVariantName) : t("products_sku")}
                   />
                   <input
                     type="number"
@@ -473,7 +516,7 @@ export default function ProductsPage() {
                     +
                   </button>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">{t("productVariant_priceHint")}</p>
+                <p className="text-xs text-slate-400 mt-1">{t("productVariant_priceHint")}<br />{t("productVariant_skuHint")}</p>
               </div>
             )}
 
