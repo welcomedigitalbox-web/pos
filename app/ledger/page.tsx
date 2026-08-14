@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
+import { supabase, SellableItem, CENTRAL_WAREHOUSE_ID, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -16,7 +16,8 @@ type LedgerRow = {
 };
 
 export default function LedgerPage() {
-  const { storeId } = useStore();
+  const { stores } = useStore();
+  const [storeId, setStoreId] = useState(CENTRAL_WAREHOUSE_ID);
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -72,7 +73,45 @@ export default function LedgerPage() {
       : saleQuery.is("variant_id", null);
     const { data: items_ } = await saleQuery.order("created_at", { ascending: true });
 
+    // Transfers OUT of the central warehouse / INTO a store
+    let transferOutQuery = supabase
+      .from("stock_transfers")
+      .select("qty, created_at, to_store_id")
+      .eq("product_id", item.product_id);
+    transferOutQuery = item.variant_id
+      ? transferOutQuery.eq("variant_id", item.variant_id)
+      : transferOutQuery.is("variant_id", null);
+    const { data: transfers } = await transferOutQuery.order("created_at", { ascending: true });
+
+    const isWarehouse = storeId === CENTRAL_WAREHOUSE_ID;
+    const transferRows: LedgerRow[] = (transfers || [])
+      .filter((tr) => (isWarehouse ? true : tr.to_store_id === storeId))
+      .map((tr) => ({
+        date: tr.created_at,
+        type: isWarehouse ? ("out" as const) : ("in" as const),
+        qty: Number(tr.qty),
+        reference: isWarehouse ? `Transfer → ${tr.to_store_id}` : "Transfer in",
+      }));
+
+    // Damages recorded at this location
+    let damageQuery = supabase
+      .from("stock_damages")
+      .select("qty, created_at, reason")
+      .eq("product_id", item.product_id)
+      .eq("store_id", storeId);
+    damageQuery = item.variant_id
+      ? damageQuery.eq("variant_id", item.variant_id)
+      : damageQuery.is("variant_id", null);
+    const { data: damages } = await damageQuery.order("created_at", { ascending: true });
+
     const combined: LedgerRow[] = [
+      ...transferRows,
+      ...(damages || []).map((d) => ({
+        date: d.created_at,
+        type: "out" as const,
+        qty: Number(d.qty),
+        reference: d.reason ? `Damage (${d.reason})` : "Damage",
+      })),
       ...(purchases || []).map((p) => ({
         date: p.created_at,
         type: "in" as const,
@@ -98,6 +137,21 @@ export default function LedgerPage() {
   return (
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-3">{t("ledger_title")}</h2>
+
+      <select
+        className="w-full sm:w-64 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3"
+        value={storeId}
+        onChange={(e) => {
+          setStoreId(e.target.value);
+          setItemKey("");
+        }}
+      >
+        {stores.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.is_warehouse ? `🏭 ${s.name}` : s.name}
+          </option>
+        ))}
+      </select>
 
       <select
         className="w-full sm:w-80 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
