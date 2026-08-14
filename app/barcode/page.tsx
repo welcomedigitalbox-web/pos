@@ -106,7 +106,7 @@ export default function BarcodePage() {
   const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
   return (
-    <div className="pt-4 max-w-2xl">
+    <div className="pt-4">
       <h2 className="font-semibold text-lg mb-3">{t("barcode_title")}</h2>
 
       <form onSubmit={handleSearch} className="flex gap-2 mb-4">
