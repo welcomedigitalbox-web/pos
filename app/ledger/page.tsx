@@ -23,6 +23,7 @@ type Row = SellableItem & {
   avgDaily: number;      // average units sold per day in the period
   coverDays: number | null;  // how many more days current stock lasts
   suggestedReorder: number;  // qty needed to reach the cover target
+  reorderEstimated: boolean; // true when based on all-time rate, not the period
   stockValue: number;
   rank: number;
 };
@@ -93,6 +94,7 @@ export default function LedgerPage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("sold");
   const [period, setPeriod] = useState<PeriodKey>("this_month");
+  const [channel, setChannel] = useState("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -109,7 +111,7 @@ export default function LedgerPage() {
     load();
     setExpandedKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId, period, customFrom, customTo]);
+  }, [storeId, period, customFrom, customTo, channel]);
 
   if (!profile || !hasPermission(profile, "ledger")) return null;
 
@@ -119,13 +121,30 @@ export default function LedgerPage() {
 
     const { from, to, days } = resolvePeriod(period, customFrom, customTo);
 
-    let saleQuery = supabase
-      .from("sale_items")
-      .select("product_id, variant_id, qty, line_total, line_cogs, created_at, sales!inner(store_id)")
-      .eq("sales.store_id", storeId);
+    // "pos"/"wholesale" live on order_type; the social channels live on channel
+    const applyChannel = <T extends { eq: any }>(q: T): T => {
+      if (channel === "all") return q;
+      if (channel === "pos" || channel === "wholesale") return q.eq("sales.order_type", channel);
+      return q.eq("sales.channel", channel);
+    };
+
+    let saleQuery = applyChannel(
+      supabase
+        .from("sale_items")
+        .select("product_id, variant_id, qty, line_total, line_cogs, created_at, sales!inner(store_id, order_type, channel)")
+        .eq("sales.store_id", storeId)
+    );
     if (from) saleQuery = saleQuery.gte("created_at", from.toISOString());
     if (to) saleQuery = saleQuery.lte("created_at", to.toISOString());
     const { data: saleRows } = await saleQuery;
+
+    // A quiet period shouldn't hide a reorder need, so keep an all-time rate to fall back on
+    const { data: allTimeRows } = await applyChannel(
+      supabase
+        .from("sale_items")
+        .select("product_id, variant_id, qty, created_at, sales!inner(store_id, order_type, channel)")
+        .eq("sales.store_id", storeId)
+    );
 
     const keyOf = (pid: string, vid: string | null) => `${pid}:${vid || "base"}`;
     const agg = new Map<string, { qty: number; total: number; cogs: number }>();
@@ -147,17 +166,34 @@ export default function LedgerPage() {
 
     const periodSalesTotal = ((saleRows as any[]) || []).reduce((sum, r) => sum + Number(r.line_total), 0);
 
+    const allAgg = new Map<string, number>();
+    let earliestAll = Date.now();
+    for (const r of (allTimeRows as any[]) || []) {
+      const k = keyOf(r.product_id, r.variant_id);
+      allAgg.set(k, (allAgg.get(k) || 0) + Number(r.qty));
+      const ts = new Date(r.created_at).getTime();
+      if (ts < earliestAll) earliestAll = ts;
+    }
+    const allTimeDays = Math.max(1, Math.ceil((Date.now() - earliestAll) / 86400000));
+
     const built = items.map((i) => {
       const a = agg.get(keyOf(i.product_id, i.variant_id)) || { qty: 0, total: 0, cogs: 0 };
       const gp = a.total - a.cogs;
       const denom = a.qty + i.stock_qty;
       const avgDaily = periodDays > 0 ? a.qty / periodDays : 0;
       const coverDays = avgDaily > 0 ? i.stock_qty / avgDaily : null;
-      const suggestedReorder = Math.max(0, Math.ceil(avgDaily * COVER_TARGET_DAYS - i.stock_qty));
+
+      // Fall back to the all-time rate when nothing sold in the selected period
+      const allTimeQty = allAgg.get(keyOf(i.product_id, i.variant_id)) || 0;
+      const fallbackDaily = allTimeQty > 0 ? allTimeQty / allTimeDays : 0;
+      const rateForReorder = avgDaily > 0 ? avgDaily : fallbackDaily;
+      const reorderEstimated = avgDaily === 0 && fallbackDaily > 0;
+      const suggestedReorder = Math.max(0, Math.ceil(rateForReorder * COVER_TARGET_DAYS - i.stock_qty));
       return {
         avgDaily,
         coverDays,
         suggestedReorder,
+        reorderEstimated,
         ...i,
         soldQty: a.qty,
         salesValue: a.total,
@@ -289,6 +325,17 @@ export default function LedgerPage() {
         </select>
 
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          value={channel} onChange={(e) => setChannel(e.target.value)}>
+          <option value="all">{t("ledger_allChannels")}</option>
+          <option value="pos">{t("nav_pos")}</option>
+          <option value="wholesale">{t("saleOrder_wholesale")}</option>
+          <option value="facebook">Facebook</option>
+          <option value="tiktok">TikTok</option>
+          <option value="viber">Viber</option>
+          <option value="other">{t("saleOrder_channelOther")}</option>
+        </select>
+
+        <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           value={period} onChange={(e) => setPeriod(e.target.value as PeriodKey)}>
           <option value="today">{t("ledger_periodToday")}</option>
           <option value="this_month">{t("ledger_periodThisMonth")}</option>
@@ -388,8 +435,19 @@ export default function LedgerPage() {
                     }`}>
                       {r.coverDays === null ? "-" : `${Math.floor(r.coverDays)}${t("ledger_daysUnit")}`}
                     </td>
-                    <td className={`px-3 py-2 font-medium ${r.suggestedReorder > 0 ? "text-orange-600" : "text-slate-300"}`}>
-                      {r.suggestedReorder > 0 ? `+${r.suggestedReorder.toLocaleString()}` : "-"}
+                    <td className="px-3 py-2 font-medium">
+                      {r.suggestedReorder > 0 ? (
+                        <span className="text-orange-600">
+                          +{r.suggestedReorder.toLocaleString()}
+                          {r.reorderEstimated && (
+                            <span className="ml-1 text-[10px] text-slate-400">{t("ledger_estimated")}</span>
+                          )}
+                        </span>
+                      ) : r.stock_qty <= 0 ? (
+                        <span className="text-red-600 text-xs">{t("ledger_needsRestock")}</span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${lvl.color}`}>
