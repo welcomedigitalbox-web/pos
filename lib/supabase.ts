@@ -265,11 +265,10 @@ export async function upsertStoreInventory(
     updated_at: new Date().toISOString(),
   };
 
-  if (existing) {
-    await supabase.from("store_inventory").update(merged).eq("id", existing.id);
-  } else {
-    await supabase.from("store_inventory").insert(merged);
-  }
+  const { error } = existing
+    ? await supabase.from("store_inventory").update(merged).eq("id", existing.id)
+    : await supabase.from("store_inventory").insert(merged);
+  if (error) throw error;
 }
 
 export type ProductCategory = {
@@ -388,7 +387,7 @@ export async function receivePoItem(params: {
   const useLatestCost = updateCost && !isConsignment;
   const newAvgCost = useLatestCost ? unitCost : movingAvg;
 
-  await supabase.from("stock_purchases").insert({
+  const { error: batchError } = await supabase.from("stock_purchases").insert({
     product_id: productId,
     variant_id: variantId,
     store_id: storeId,
@@ -401,6 +400,8 @@ export async function receivePoItem(params: {
     expiry_date: expiryDate || null,
     po_id: poId || null,
   });
+  // Surface batch failures instead of silently updating stock without a ledger entry
+  if (batchError) throw batchError;
 
   await upsertStoreInventory(storeId, productId, variantId, {
     stock_qty: newQty,
