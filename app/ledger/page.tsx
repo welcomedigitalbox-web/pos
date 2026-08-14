@@ -18,13 +18,20 @@ type Row = SellableItem & {
   cogs: number;
   gp: number;
   gpMargin: number;      // GP as % of sales
-  sellThrough: number;   // sold / (sold + on hand)
+  sellThrough: number;   // sold in period / (sold in period + on hand)
+  avgDaily: number;      // average units sold per day in the period
+  coverDays: number | null;  // how many more days current stock lasts
+  suggestedReorder: number;  // qty needed to reach the cover target
   stockValue: number;
   rank: number;
 };
 
 type MovementRow = { date: string; type: string; qty: number; balance: number; reference: string };
-type SortKey = "sold" | "gp" | "margin" | "stock" | "name";
+type SortKey = "sold" | "gp" | "margin" | "stock" | "cover" | "name";
+type PeriodKey = "30" | "90" | "365" | "all";
+
+// How many days of stock we want on hand before a reorder is suggested
+const COVER_TARGET_DAYS = 30;
 
 function stockLevel(r: Row) {
   if (r.stock_qty <= 0) return { key: "out", color: "bg-red-100 text-red-700" };
@@ -46,6 +53,7 @@ export default function LedgerPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("sold");
+  const [period, setPeriod] = useState<PeriodKey>("30");
 
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [movements, setMovements] = useState<MovementRow[]>([]);
@@ -60,7 +68,7 @@ export default function LedgerPage() {
     load();
     setExpandedKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
+  }, [storeId, period]);
 
   if (!profile || !hasPermission(profile, "ledger")) return null;
 
@@ -68,10 +76,15 @@ export default function LedgerPage() {
     setLoading(true);
     const items = await fetchSellableItems(storeId, true);
 
-    const { data: saleRows } = await supabase
+    const days = period === "all" ? null : Number(period);
+    const since = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : null;
+
+    let saleQuery = supabase
       .from("sale_items")
-      .select("product_id, variant_id, qty, line_total, line_cogs, sales!inner(store_id)")
+      .select("product_id, variant_id, qty, line_total, line_cogs, created_at, sales!inner(store_id)")
       .eq("sales.store_id", storeId);
+    if (since) saleQuery = saleQuery.gte("created_at", since);
+    const { data: saleRows } = await saleQuery;
 
     const keyOf = (pid: string, vid: string | null) => `${pid}:${vid || "base"}`;
     const agg = new Map<string, { qty: number; total: number; cogs: number }>();
@@ -84,11 +97,24 @@ export default function LedgerPage() {
       agg.set(k, cur);
     }
 
+    // For "all time", measure against the span of actual sales rather than a fixed window
+    let periodDays = days ?? 0;
+    if (!days) {
+      const dates = ((saleRows as any[]) || []).map((r) => new Date(r.created_at).getTime());
+      periodDays = dates.length ? Math.max(1, Math.ceil((Date.now() - Math.min(...dates)) / 86400000)) : 0;
+    }
+
     const built = items.map((i) => {
       const a = agg.get(keyOf(i.product_id, i.variant_id)) || { qty: 0, total: 0, cogs: 0 };
       const gp = a.total - a.cogs;
       const denom = a.qty + i.stock_qty;
+      const avgDaily = periodDays > 0 ? a.qty / periodDays : 0;
+      const coverDays = avgDaily > 0 ? i.stock_qty / avgDaily : null;
+      const suggestedReorder = Math.max(0, Math.ceil(avgDaily * COVER_TARGET_DAYS - i.stock_qty));
       return {
+        avgDaily,
+        coverDays,
+        suggestedReorder,
         ...i,
         soldQty: a.qty,
         salesValue: a.total,
@@ -186,6 +212,8 @@ export default function LedgerPage() {
       if (sortKey === "gp") return b.gp - a.gp;
       if (sortKey === "margin") return b.gpMargin - a.gpMargin;
       if (sortKey === "stock") return b.stock_qty - a.stock_qty;
+      // Lowest cover first — those are the ones about to run out
+      if (sortKey === "cover") return (a.coverDays ?? Infinity) - (b.coverDays ?? Infinity);
       if (sortKey === "name") return a.display_name.localeCompare(b.display_name);
       return b.soldQty - a.soldQty;
     });
@@ -216,11 +244,20 @@ export default function LedgerPage() {
         </select>
 
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          value={period} onChange={(e) => setPeriod(e.target.value as PeriodKey)}>
+          <option value="30">{t("ledger_period30")}</option>
+          <option value="90">{t("ledger_period90")}</option>
+          <option value="365">{t("ledger_period365")}</option>
+          <option value="all">{t("ledger_periodAll")}</option>
+        </select>
+
+        <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
           <option value="sold">{t("ledger_sortSold")}</option>
           <option value="gp">{t("ledger_sortGp")}</option>
           <option value="margin">{t("ledger_sortMargin")}</option>
           <option value="stock">{t("ledger_sortStock")}</option>
+          <option value="cover">{t("ledger_sortCover")}</option>
           <option value="name">{t("warehouse_sortName")}</option>
         </select>
 
@@ -253,7 +290,7 @@ export default function LedgerPage() {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[1100px]">
+        <table className="w-full text-sm min-w-[1320px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-3 py-2">#</th>
@@ -262,6 +299,8 @@ export default function LedgerPage() {
               <th className="text-left px-3 py-2">{t("ledger_unitsSold")}</th>
               <th className="text-left px-3 py-2">{t("ledger_sellThrough")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
+              <th className="text-left px-3 py-2">{t("ledger_coverDays")}</th>
+              <th className="text-left px-3 py-2">{t("ledger_suggestReorder")}</th>
               <th className="text-left px-3 py-2">{t("ledger_stockLevel")}</th>
               <th className="text-left px-3 py-2">{t("barcode_totalSale")}</th>
               <th className="text-left px-3 py-2">{t("dashboard_gp")}</th>
@@ -270,7 +309,7 @@ export default function LedgerPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={11} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={13} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filtered.map((r) => {
               const lvl = stockLevel(r);
               const open = expandedKey === r.key;
@@ -284,6 +323,14 @@ export default function LedgerPage() {
                     <td className="px-3 py-2">{r.sellThrough.toFixed(0)}%</td>
                     <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : ""}`}>
                       {r.stock_qty.toLocaleString()}
+                    </td>
+                    <td className={`px-3 py-2 ${
+                      r.coverDays !== null && r.coverDays < 14 ? "text-red-600 font-medium" : "text-slate-500"
+                    }`}>
+                      {r.coverDays === null ? "-" : `${Math.floor(r.coverDays)}${t("ledger_daysUnit")}`}
+                    </td>
+                    <td className={`px-3 py-2 font-medium ${r.suggestedReorder > 0 ? "text-orange-600" : "text-slate-300"}`}>
+                      {r.suggestedReorder > 0 ? `+${r.suggestedReorder.toLocaleString()}` : "-"}
                     </td>
                     <td className="px-3 py-2">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${lvl.color}`}>
@@ -303,7 +350,7 @@ export default function LedgerPage() {
                   </tr>
                   {open && (
                     <tr key={`${r.key}-mov`} className="bg-slate-50">
-                      <td colSpan={11} className="px-3 py-3">
+                      <td colSpan={13} className="px-3 py-3">
                         {movLoading ? (
                           <div className="text-slate-400 text-center py-3">...</div>
                         ) : movements.length === 0 ? (
@@ -346,7 +393,7 @@ export default function LedgerPage() {
               );
             })}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={11} className="text-center text-slate-400 py-8">{t("warehouse_empty")}</td></tr>
+              <tr><td colSpan={13} className="text-center text-slate-400 py-8">{t("warehouse_empty")}</td></tr>
             )}
           </tbody>
         </table>
