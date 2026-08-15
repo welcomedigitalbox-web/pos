@@ -477,3 +477,74 @@ export function netLineTotal(
   const share = Number(lineTotal) / subtotal;
   return Number(lineTotal) - discount * share;
 }
+
+export type RefundMethod = "cash" | "exchange" | "store_credit";
+export type ReturnStatus = "pending" | "approved" | "rejected";
+export type ItemCondition = "good" | "damaged";
+
+export type SaleReturn = {
+  id: string;
+  return_number: string;
+  original_sale_id: string | null;
+  store_id: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  refund_method: RefundMethod;
+  refund_amount: number;
+  status: ReturnStatus;
+  reason: string | null;
+  voucher_url: string | null;
+  requested_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_reason: string | null;
+  created_at: string;
+};
+
+export type SaleReturnItem = {
+  id: string;
+  return_id: string;
+  product_id: string;
+  variant_id: string | null;
+  product_name: string | null;
+  qty: number;
+  unit_price: number;
+  unit_cogs: number;
+  condition: ItemCondition;
+  created_at: string;
+};
+
+// Voucher photos come straight off a phone camera at several MB each. Shrinking
+// them in the browser keeps uploads fast on a slow shop connection and stops
+// storage costs running away.
+export async function compressImage(file: File, maxDimension = 1280, quality = 0.7): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Compression failed"))), "image/jpeg", quality)
+  );
+}
+
+export async function uploadReturnVoucher(file: File, storeId: string, returnId: string) {
+  const compressed = await compressImage(file);
+  const now = new Date();
+  // Grouped by store/year/month so old vouchers are easy to find or purge later
+  const path = `${storeId}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${returnId}.jpg`;
+  const { error } = await supabase.storage
+    .from("return-vouchers")
+    .upload(path, compressed, { contentType: "image/jpeg", upsert: true });
+  if (error) throw error;
+  return path;
+}
+
+// The bucket is private, so a viewable link has to be minted on demand
+export async function getVoucherUrl(path: string) {
+  const { data } = await supabase.storage.from("return-vouchers").createSignedUrl(path, 3600);
+  return data?.signedUrl || null;
+}
