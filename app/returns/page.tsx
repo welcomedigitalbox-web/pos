@@ -26,6 +26,7 @@ type OrderItem = {
   line_cogs: number;
   alreadyReturned: number;
   netUnitPrice: number;
+  sku: string | null;
 };
 
 type DraftLine = { qty: string; condition: ItemCondition };
@@ -140,7 +141,10 @@ export default function ReturnsPage() {
       return showToast(canApprove ? t("returns_orderNotFound") : t("returns_orderNotFoundStore"));
     }
 
-    const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    const { data: items } = await supabase
+      .from("sale_items")
+      .select("*, products(sku), product_variants(sku)")
+      .eq("sale_id", sale.id);
 
     // Anything already returned can't be returned twice
     // Query the items directly rather than through a nested select, so a missing
@@ -175,6 +179,7 @@ export default function ReturnsPage() {
           alreadyReturned: returnedMap.get(`${i.product_id}:${i.variant_id || "base"}`) || 0,
           // Refund what was actually paid per unit, not the pre-discount price
           netUnitPrice: Number(i.qty) > 0 ? net / Number(i.qty) : 0,
+          sku: i.product_variants?.sku || i.products?.sku || null,
         };
       })
     );
@@ -575,6 +580,7 @@ export default function ReturnsPage() {
                     <thead className="bg-slate-50 text-slate-500">
                       <tr>
                         <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
+                        <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
                         <th className="text-left px-3 py-2">{t("returns_bought")}</th>
                         <th className="text-left px-3 py-2">{t("returns_returnQty")}</th>
                         <th className="text-left px-3 py-2">{t("returns_condition")}</th>
@@ -588,6 +594,7 @@ export default function ReturnsPage() {
                         return (
                           <tr key={i.id} className="border-t border-slate-100">
                             <td className="px-3 py-2">{i.product_name}</td>
+                            <td className="px-3 py-2 text-slate-400 text-xs">{i.sku || "-"}</td>
                             <td className="px-3 py-2">
                               {i.qty}
                               {i.alreadyReturned > 0 && (

@@ -26,6 +26,7 @@ type OutgoingRow = {
   discrepancy_note: string | null;
   created_at: string;
   display_name: string;
+  sku: string | null;
 };
 
 const statusColor: Record<string, string> = {
@@ -90,7 +91,7 @@ export default function StockTransferPage() {
 
     const { data } = await supabase
       .from("stock_transfers")
-      .select("*, products(name), product_variants(variant_name)")
+      .select("*, products(name, sku), product_variants(variant_name, sku)")
       .eq("from_store_id", whId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -101,6 +102,7 @@ export default function StockTransferPage() {
         display_name: r.product_variants?.variant_name
           ? `${r.products?.name} (${r.product_variants.variant_name})`
           : r.products?.name || "-",
+        sku: r.product_variants?.sku || r.products?.sku || null,
       }))
     );
     setLoading(false);
@@ -221,7 +223,17 @@ export default function StockTransferPage() {
         className="w-full sm:w-96 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2"
         placeholder={t("warehouse_searchPlaceholder")}
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => {
+          const v = e.target.value;
+          setSearch(v);
+          const hit = items.find(
+            (i) => (i.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
+          );
+          if (hit) {
+            openTransfer(hit);
+            setSearch("");
+          }
+        }}
       />
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
         <table className="w-full text-sm min-w-[640px]">
@@ -279,6 +291,7 @@ export default function StockTransferPage() {
             <tr>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("stockTransfer_toStore")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_sent")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_actual")}</th>
@@ -288,13 +301,14 @@ export default function StockTransferPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filteredOutgoing.map((o) => {
               const diff = o.received_qty === null ? null : o.received_qty - o.qty;
               return (
                 <tr key={o.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{new Date(o.created_at).toLocaleString()}</td>
                   <td className="px-3 py-2">{o.display_name}</td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">{o.sku || "-"}</td>
                   <td className="px-3 py-2">{o.to_store_id}</td>
                   <td className="px-3 py-2">{o.qty}</td>
                   <td className="px-3 py-2 font-medium">{o.received_qty ?? "-"}</td>
@@ -314,7 +328,7 @@ export default function StockTransferPage() {
               );
             })}
             {!loading && filteredOutgoing.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>

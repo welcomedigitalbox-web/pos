@@ -20,6 +20,7 @@ type RequestRow = {
   note: string | null;
   created_at: string;
   displayName: string;
+  sku: string | null;
   availableAtWh: number;
 };
 
@@ -73,7 +74,7 @@ export default function RequestInboxPage() {
 
     const { data } = await supabase
       .from("stock_requests")
-      .select("*, products(name), product_variants(variant_name)")
+      .select("*, products(name, sku), product_variants(variant_name, sku)")
       .in("store_id", suppliedStores.length ? suppliedStores : ["__none__"])
       .order("created_at", { ascending: false })
       .limit(200);
@@ -87,6 +88,7 @@ export default function RequestInboxPage() {
         displayName: r.product_variants?.variant_name
           ? `${r.products?.name} (${r.product_variants.variant_name})`
           : r.products?.name || "-",
+        sku: r.product_variants?.sku || r.products?.sku || null,
         availableAtWh: stockMap.get(`${r.product_id}:${r.variant_id || "base"}`) ?? 0,
       }))
     );
@@ -202,6 +204,7 @@ export default function RequestInboxPage() {
               <th className="text-left px-3 py-2">{t("history_time")}</th>
               <th className="text-left px-3 py-2">{t("requestInbox_fromStore")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("stockRequest_requestedQty")}</th>
               <th className="text-left px-3 py-2">{t("requestInbox_whStock")}</th>
               <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
@@ -210,7 +213,7 @@ export default function RequestInboxPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && visible.map((r) => {
               const short = r.availableAtWh < r.requested_qty;
               return (
@@ -218,6 +221,7 @@ export default function RequestInboxPage() {
                   <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
                   <td className="px-3 py-2 font-medium">{r.store_id}</td>
                   <td className="px-3 py-2">{r.displayName}</td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                   <td className="px-3 py-2 font-medium">{r.requested_qty}</td>
                   <td className={`px-3 py-2 ${short ? "text-red-600 font-medium" : ""}`}>
                     {r.availableAtWh}
@@ -246,7 +250,7 @@ export default function RequestInboxPage() {
               );
             })}
             {!loading && visible.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>

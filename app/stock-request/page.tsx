@@ -21,8 +21,8 @@ type RequestRow = {
   received_by: string | null;
   approved_by: string | null;
   created_at: string;
-  products: { name: string } | null;
-  product_variants: { variant_name: string } | null;
+  products: { name: string; sku: string | null } | null;
+  product_variants: { variant_name: string; sku: string | null } | null;
 };
 
 function fmt(n: number) {
@@ -49,6 +49,7 @@ export default function StockRequestPage() {
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [itemKey, setItemKey] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
   const [requestedQty, setRequestedQty] = useState("");
   const [note, setNote] = useState("");
 
@@ -79,7 +80,7 @@ export default function StockRequestPage() {
   async function loadRequests() {
     const { data } = await supabase
       .from("stock_requests")
-      .select("*, products(name), product_variants(variant_name)")
+      .select("*, products(name, sku), product_variants(variant_name, sku)")
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -226,6 +227,9 @@ export default function StockRequestPage() {
                     <span className="text-blue-600 text-xs ml-1">({r.product_variants.variant_name})</span>
                   )}
                 </td>
+                <td className="px-3 py-2 text-slate-400 text-xs">
+                  {r.product_variants?.sku || r.products?.sku || "-"}
+                </td>
                 <td className="px-3 py-2">{r.requested_qty}</td>
                 <td className="px-3 py-2">{r.received_qty ?? "-"}</td>
                 <td className="px-3 py-2">
@@ -267,7 +271,26 @@ export default function StockRequestPage() {
           <form onSubmit={submitRequest} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
             <h3 className="font-semibold text-lg mb-4">{t("stockRequest_new")}</h3>
 
-            <label className="text-sm text-slate-600">{t("stockIn_product")}</label>
+            <label className="text-sm text-slate-600">{t("po_scanBarcode")}</label>
+          <input
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+            placeholder={t("po_scanBarcodePlaceholder")}
+            value={barcodeInput}
+            onChange={(e) => {
+              const v = e.target.value;
+              setBarcodeInput(v);
+              // Scanners type the whole code then stop, so match on an exact SKU
+              const hit = items.find(
+                (i) => (i.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
+              );
+              if (hit) {
+                setItemKey(hit.key);
+                setBarcodeInput("");
+              }
+            }}
+          />
+
+          <label className="text-sm text-slate-600">{t("stockIn_product")}</label>
             <select
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={itemKey}
@@ -277,7 +300,7 @@ export default function StockRequestPage() {
               <option value="">{t("stockIn_selectPlaceholder")}</option>
               {items.map((i) => (
                 <option key={i.key} value={i.key}>
-                  {i.display_name} ({t("barcode_balanceStock")}: {i.stock_qty})
+                  {i.display_name}{i.sku ? ` · ${i.sku}` : ""} ({t("barcode_balanceStock")}: {i.stock_qty})
                 </option>
               ))}
             </select>

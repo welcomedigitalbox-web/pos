@@ -22,6 +22,7 @@ type TransferRow = {
   discrepancy_note: string | null;
   created_at: string;
   display_name: string;
+  sku: string | null;
 };
 
 const statusColor: Record<string, string> = {
@@ -61,7 +62,7 @@ export default function IncomingTransfersPage() {
     setLoading(true);
     const { data } = await supabase
       .from("stock_transfers")
-      .select("*, products(name), product_variants(variant_name)")
+      .select("*, products(name, sku), product_variants(variant_name, sku)")
       .eq("to_store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -72,6 +73,7 @@ export default function IncomingTransfersPage() {
         display_name: r.product_variants?.variant_name
           ? `${r.products?.name} (${r.product_variants.variant_name})`
           : r.products?.name || "-",
+        sku: r.product_variants?.sku || r.products?.sku || null,
       }))
     );
     setLoading(false);
@@ -167,6 +169,7 @@ export default function IncomingTransfersPage() {
             <tr>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_sent")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_actual")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_diff")}</th>
@@ -176,13 +179,14 @@ export default function IncomingTransfersPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && rows.map((r) => {
               const diff = r.received_qty === null ? null : r.received_qty - r.qty;
               return (
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
                   <td className="px-3 py-2">{r.display_name}</td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                   <td className="px-3 py-2">{r.qty}</td>
                   <td className="px-3 py-2 font-medium">{r.received_qty ?? "-"}</td>
                   <td className={`px-3 py-2 font-medium ${diff ? "text-red-600" : "text-slate-400"}`}>
@@ -208,7 +212,7 @@ export default function IncomingTransfersPage() {
               );
             })}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
