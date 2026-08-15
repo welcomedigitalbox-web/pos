@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    stockTransfer_noPhoto: "⚠️ ဓာတ်ပုံ မပါပါ — ဆိုင်ဘက်သို့ မေးမြန်းပါ",
     stockTransfer_resolve: "ဖြေရှင်းမည်",
     stockTransfer_resolveTitle: "ကွာဟမှု ဖြေရှင်းခြင်း",
     stockTransfer_missing: "လိုနေသည်",
@@ -696,6 +697,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    stockTransfer_noPhoto: "⚠️ No photo attached — check with the store",
     stockTransfer_resolve: "Resolve",
     stockTransfer_resolveTitle: "Resolve Shortage",
     stockTransfer_missing: "Missing",

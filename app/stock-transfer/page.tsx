@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   supabase, SellableItem,
-  fetchSellableItems, upsertStoreInventory, logActivity,
+  fetchSellableItems, upsertStoreInventory, logActivity, getTransferPhotoUrl,
 } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -67,6 +67,8 @@ export default function StockTransferPage() {
   const [resolution, setResolution] = useState<"miscount" | "damaged">("miscount");
   const [resolutionNote, setResolutionNote] = useState("");
   const [resolving, setResolving] = useState(false);
+  const [resolvePhoto, setResolvePhoto] = useState<string | null>(null);
+  const [zoomPhoto, setZoomPhoto] = useState<string | null>(null);
 
   // Only offer the stores this warehouse supplies. Unassigned stores stay listed
   // so a half-configured setup never blocks a transfer.
@@ -431,7 +433,13 @@ export default function StockTransferPage() {
                   <td className="px-3 py-2 text-slate-500 text-xs">{o.received_by || "-"}</td>
                   <td className="px-3 py-2 text-right">
                     {o.status === "discrepancy" && (
-                      <button onClick={() => { setResolveRow(o); setResolution("miscount"); setResolutionNote(""); }}
+                      <button onClick={async () => {
+                          setResolveRow(o);
+                          setResolution("miscount");
+                          setResolutionNote("");
+                          // The store's photo is the evidence this decision rests on
+                          setResolvePhoto(o.photo_url ? await getTransferPhotoUrl(o.photo_url) : null);
+                        }}
                         className="text-blue-600 text-xs font-medium">
                         {t("stockTransfer_resolve")}
                       </button>
@@ -465,6 +473,25 @@ export default function StockTransferPage() {
                 {t("stockTransfer_missing")}: {Number(resolveRow.qty) - Number(resolveRow.received_qty ?? 0)}
               </span>
             </p>
+
+            {resolveRow.discrepancy_note && (
+              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 mb-3">
+                <span className="text-slate-400 uppercase text-[10px] block">{t("transferIn_note")}</span>
+                {resolveRow.discrepancy_note}
+              </div>
+            )}
+
+            {resolvePhoto ? (
+              <button type="button" onClick={() => setZoomPhoto(resolvePhoto)} className="block w-full mb-3">
+                <img src={resolvePhoto} alt=""
+                  className="w-full max-h-48 object-cover rounded-lg border border-slate-200" />
+                <span className="text-[10px] text-slate-400">{t("transferIn_viewPhoto")}</span>
+              </button>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
+                {t("stockTransfer_noPhoto")}
+              </div>
+            )}
 
             <label className="text-sm text-slate-600">{t("stockTransfer_whatHappened")}</label>
             <div className="space-y-2 mt-2 mb-3">
@@ -501,6 +528,13 @@ export default function StockTransferPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {zoomPhoto && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4"
+          onClick={() => setZoomPhoto(null)}>
+          <img src={zoomPhoto} alt="" className="max-h-[85vh] max-w-full rounded-lg" />
         </div>
       )}
 
