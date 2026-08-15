@@ -17,13 +17,19 @@ function fmt(n: number) {
 
 type OutgoingRow = {
   id: string;
+  product_id: string;
+  variant_id: string | null;
   to_store_id: string;
   qty: number;
   received_qty: number | null;
-  status: "in_transit" | "received" | "discrepancy";
+  status: "in_transit" | "received" | "discrepancy" | "pending_approval" | "resolved";
   transferred_by: string | null;
   received_by: string | null;
   discrepancy_note: string | null;
+  discrepancy_approved_by: string | null;
+  photo_url: string | null;
+  resolution: "miscount" | "damaged" | null;
+  resolved_by: string | null;
   created_at: string;
   display_name: string;
   sku: string | null;
@@ -31,6 +37,8 @@ type OutgoingRow = {
 
 const statusColor: Record<string, string> = {
   in_transit: "bg-yellow-100 text-yellow-700",
+  pending_approval: "bg-orange-100 text-orange-700",
+  resolved: "bg-slate-100 text-slate-600",
   received: "bg-green-100 text-green-700",
   discrepancy: "bg-red-100 text-red-700",
 };
@@ -55,6 +63,10 @@ export default function StockTransferPage() {
   const [transferQty, setTransferQty] = useState("");
   const [transferToStore, setTransferToStore] = useState("");
   const [sending, setSending] = useState(false);
+  const [resolveRow, setResolveRow] = useState<OutgoingRow | null>(null);
+  const [resolution, setResolution] = useState<"miscount" | "damaged">("miscount");
+  const [resolutionNote, setResolutionNote] = useState("");
+  const [resolving, setResolving] = useState(false);
 
   // Only offer the stores this warehouse supplies. Unassigned stores stay listed
   // so a half-configured setup never blocks a transfer.
@@ -165,6 +177,78 @@ export default function StockTransferPage() {
     }
   }
 
+  async function submitResolution() {
+    if (!resolveRow) return;
+    const missing = Number(resolveRow.qty) - Number(resolveRow.received_qty ?? 0);
+    if (missing <= 0) return;
+
+    setResolving(true);
+    try {
+      // The warehouse was debited the full shipment, so put the missing units back
+      // first. Whether they then stay on the shelf or get written off depends on
+      // what actually happened.
+      const { data: inv } = await (resolveRow.variant_id
+        ? supabase.from("store_inventory").select("*").eq("store_id", whId)
+            .eq("product_id", resolveRow.product_id).eq("variant_id", resolveRow.variant_id).maybeSingle()
+        : supabase.from("store_inventory").select("*").eq("store_id", whId)
+            .eq("product_id", resolveRow.product_id).is("variant_id", null).maybeSingle());
+
+      await upsertStoreInventory(whId, resolveRow.product_id, resolveRow.variant_id, {
+        stock_qty: Number(inv?.stock_qty || 0) + missing,
+      });
+
+      if (resolution === "damaged") {
+        // Written off against the warehouse, which is where the loss occurred
+        await supabase.from("stock_damages").insert({
+          store_id: whId,
+          product_id: resolveRow.product_id,
+          variant_id: resolveRow.variant_id,
+          qty: missing,
+          reason: `Transfer shortage → ${resolveRow.to_store_id}${resolutionNote.trim() ? ` · ${resolutionNote.trim()}` : ""}`,
+          reported_by: profile?.email || null,
+        });
+
+        const { data: after } = await (resolveRow.variant_id
+          ? supabase.from("store_inventory").select("*").eq("store_id", whId)
+              .eq("product_id", resolveRow.product_id).eq("variant_id", resolveRow.variant_id).maybeSingle()
+          : supabase.from("store_inventory").select("*").eq("store_id", whId)
+              .eq("product_id", resolveRow.product_id).is("variant_id", null).maybeSingle());
+
+        await upsertStoreInventory(whId, resolveRow.product_id, resolveRow.variant_id, {
+          stock_qty: Number(after?.stock_qty || 0) - missing,
+        });
+      }
+
+      await supabase
+        .from("stock_transfers")
+        .update({
+          status: "resolved",
+          resolution,
+          resolution_note: resolutionNote.trim() || null,
+          resolved_by: profile?.email || null,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq("id", resolveRow.id);
+
+      await logActivity({
+        entityType: "stock_transfer",
+        entityId: resolveRow.id,
+        action: `resolved_${resolution}`,
+        detail: `${resolveRow.display_name} · ${missing} · ${resolutionNote.trim()}`,
+        actor: profile?.email,
+      });
+
+      showToast(resolution === "damaged" ? t("stockTransfer_resolvedDamaged") : t("stockTransfer_resolvedMiscount"));
+      setResolveRow(null);
+      setResolutionNote("");
+      await load();
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setResolving(false);
+    }
+  }
+
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
@@ -185,6 +269,14 @@ export default function StockTransferPage() {
 
   const pendingCount = outgoing.filter((o) => o.status === "in_transit").length;
   const problemCount = outgoing.filter((o) => o.status === "discrepancy").length;
+  const awaitingCount = outgoing.filter((o) => o.status === "pending_approval").length;
+
+  // The warehouse has already been debited the full amount, so anything the store
+  // did not receive is a loss with no home. Surfacing it is what makes it
+  // investigable rather than silently absorbed.
+  const lostUnits = outgoing
+    .filter((o) => o.status === "discrepancy" && o.received_qty !== null)
+    .reduce((sum, o) => sum + Math.max(0, Number(o.qty) - Number(o.received_qty)), 0);
 
   return (
     <div className="pt-4">
@@ -202,7 +294,7 @@ export default function StockTransferPage() {
         <p className="text-xs text-slate-400 mb-3">{t("stockTransfer_unassignedNote")}</p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("stockTransfer_available")}</div>
           <div className="text-xl font-bold mt-1">{items.length}</div>
@@ -212,8 +304,16 @@ export default function StockTransferPage() {
           <div className="text-xl font-bold mt-1 text-yellow-600">{pendingCount}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <div className="text-xs text-slate-500 uppercase">{t("transferIn_status_pending_approval")}</div>
+          <div className="text-xl font-bold mt-1 text-orange-600">{awaitingCount}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("transferIn_status_discrepancy")}</div>
           <div className="text-xl font-bold mt-1 text-red-600">{problemCount}</div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <div className="text-xs text-slate-500 uppercase">{t("stockTransfer_lostUnits")}</div>
+          <div className="text-xl font-bold mt-1 text-red-600">{lostUnits.toLocaleString()}</div>
         </div>
       </div>
 
@@ -281,6 +381,7 @@ export default function StockTransferPage() {
           <option value="all">{t("warehouse_allStock")}</option>
           <option value="in_transit">{t("transferIn_status_in_transit")}</option>
           <option value="received">{t("transferIn_status_received")}</option>
+          <option value="pending_approval">{t("transferIn_status_pending_approval")}</option>
           <option value="discrepancy">{t("transferIn_status_discrepancy")}</option>
         </select>
       </div>
@@ -298,10 +399,11 @@ export default function StockTransferPage() {
               <th className="text-left px-3 py-2">{t("transferIn_diff")}</th>
               <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
               <th className="text-left px-3 py-2">{t("po_receivedBy")}</th>
+              <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={10} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filteredOutgoing.map((o) => {
               const diff = o.received_qty === null ? null : o.received_qty - o.qty;
               return (
@@ -322,17 +424,85 @@ export default function StockTransferPage() {
                     {o.discrepancy_note && (
                       <div className="text-[10px] text-red-600 mt-0.5">{o.discrepancy_note}</div>
                     )}
+                    {o.discrepancy_approved_by && (
+                      <div className="text-[10px] text-slate-400">{o.discrepancy_approved_by}</div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{o.received_by || "-"}</td>
+                  <td className="px-3 py-2 text-right">
+                    {o.status === "discrepancy" && (
+                      <button onClick={() => { setResolveRow(o); setResolution("miscount"); setResolutionNote(""); }}
+                        className="text-blue-600 text-xs font-medium">
+                        {t("stockTransfer_resolve")}
+                      </button>
+                    )}
+                    {o.status === "resolved" && (
+                      <span className="text-xs text-slate-400">
+                        {t(`stockTransfer_res_${o.resolution}` as any)}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {!loading && filteredOutgoing.length === 0 && (
-              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={10} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {resolveRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("stockTransfer_resolveTitle")}</h3>
+            <p className="text-sm text-slate-500 mb-1">
+              {resolveRow.display_name} → {resolveRow.to_store_id}
+            </p>
+            <p className="text-sm mb-4">
+              {t("transferIn_sent")}: {resolveRow.qty} · {t("transferIn_actual")}: {resolveRow.received_qty} ·{" "}
+              <span className="text-red-600 font-semibold">
+                {t("stockTransfer_missing")}: {Number(resolveRow.qty) - Number(resolveRow.received_qty ?? 0)}
+              </span>
+            </p>
+
+            <label className="text-sm text-slate-600">{t("stockTransfer_whatHappened")}</label>
+            <div className="space-y-2 mt-2 mb-3">
+              <label className="flex items-start gap-2 border border-slate-200 rounded-lg px-3 py-2 cursor-pointer">
+                <input type="radio" className="mt-1" checked={resolution === "miscount"}
+                  onChange={() => setResolution("miscount")} />
+                <span className="text-sm">
+                  <span className="font-medium">{t("stockTransfer_res_miscount")}</span>
+                  <span className="block text-xs text-slate-500">{t("stockTransfer_miscountHint")}</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 border border-slate-200 rounded-lg px-3 py-2 cursor-pointer">
+                <input type="radio" className="mt-1" checked={resolution === "damaged"}
+                  onChange={() => setResolution("damaged")} />
+                <span className="text-sm">
+                  <span className="font-medium">{t("stockTransfer_res_damaged")}</span>
+                  <span className="block text-xs text-slate-500">{t("stockTransfer_damagedHint")}</span>
+                </span>
+              </label>
+            </div>
+
+            <label className="text-sm text-slate-600">{t("pos_note")}</label>
+            <textarea rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={resolutionNote} onChange={(e) => setResolutionNote(e.target.value)} />
+
+            <div className="flex gap-2">
+              <button onClick={() => setResolveRow(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={submitResolution} disabled={resolving}
+                className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {resolving ? "..." : t("stockTransfer_resolve")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {transferItem && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">

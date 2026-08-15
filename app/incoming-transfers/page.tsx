@@ -231,13 +231,23 @@ export default function IncomingTransfersPage() {
   }
 
   const pending = rows.filter((r) => r.status === "in_transit");
+  const awaitingApproval = rows.filter((r) => r.status === "pending_approval");
   const storeName = stores.find((s) => s.id === storeId)?.name || storeId;
 
   return (
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-1">{t("nav_incomingTransfers")}</h2>
       <p className="text-sm text-slate-500 mb-4">
-        {storeName} · {t("transferIn_pendingCount")}: <span className="font-semibold text-orange-600">{pending.length}</span>
+        {storeName} · {t("transferIn_pendingCount")}:{" "}
+        <span className="font-semibold text-orange-600">{pending.length}</span>
+        {awaitingApproval.length > 0 && (
+          <>
+            {" · "}
+            <span className="font-semibold text-red-600">
+              {t("transferIn_status_pending_approval")}: {awaitingApproval.length}
+            </span>
+          </>
+        )}
       </p>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
