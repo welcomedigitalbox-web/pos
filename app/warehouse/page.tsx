@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, CENTRAL_WAREHOUSE_ID, SellableItem, fetchSellableItems } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
+import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
@@ -23,6 +24,8 @@ type Row = SellableItem & {
 type SortKey = "name" | "qty" | "value";
 
 export default function WarehousePage() {
+  const { warehouses, defaultWarehouseId } = useStore();
+  const [whId, setWhId] = useState("");
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -39,9 +42,13 @@ export default function WarehousePage() {
   }, [profile]);
 
   useEffect(() => {
-    loadData();
+    if (!whId && defaultWarehouseId) setWhId(defaultWarehouseId);
+  }, [defaultWarehouseId, whId]);
+
+  useEffect(() => {
+    if (whId) loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [whId]);
 
   if (!profile || !hasPermission(profile, "warehouse")) return null;
 
@@ -49,12 +56,12 @@ export default function WarehousePage() {
     setLoading(true);
 
     // Only what physically sits in the central warehouse right now
-    const items = await fetchSellableItems(CENTRAL_WAREHOUSE_ID, true);
+    const items = await fetchSellableItems(whId, true);
 
     const { data: damages } = await supabase
       .from("stock_damages")
       .select("product_id, variant_id, qty")
-      .eq("store_id", CENTRAL_WAREHOUSE_ID);
+      .eq("store_id", whId);
 
     // Sent but not yet confirmed by the receiving store
     const { data: transits } = await supabase
@@ -65,7 +72,7 @@ export default function WarehousePage() {
     const { data: batches } = await supabase
       .from("stock_purchases")
       .select("product_id, variant_id, expiry_date, remaining_qty")
-      .eq("store_id", CENTRAL_WAREHOUSE_ID)
+      .eq("store_id", whId)
       .gt("remaining_qty", 0)
       .not("expiry_date", "is", null)
       .order("expiry_date", { ascending: true });
@@ -153,6 +160,13 @@ export default function WarehousePage() {
       <p className="text-sm text-slate-500 mb-4">{t("warehouse_currentStockSubtitle")}</p>
 
       <div className="flex flex-wrap gap-2 mb-4">
+        {warehouses.length > 1 && (
+          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            value={whId} onChange={(e) => setWhId(e.target.value)}>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
+          </select>
+        )}
+
         <select
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           value={statusFilter}
