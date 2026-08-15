@@ -12,6 +12,8 @@ type StoreContextType = {
   stores: StoreRow[];
   refreshStores: () => Promise<void>;
   isStoreLocked: boolean;
+  warehouses: StoreRow[];
+  defaultWarehouseId: string;
 };
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -23,8 +25,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const isStoreLocked = !!profile && STORE_LOCKED_ROLES.includes(profile.role);
 
+  // Warehouses are just stores flagged as such, so a business can run several
+  const warehouses = stores.filter((s) => s.is_warehouse);
+  const defaultWarehouseId = warehouses[0]?.id || "";
+
   async function refreshStores() {
-    const { data } = await supabase.from("stores").select("*").order("name");
+    const { data } = await supabase.from("stores").select("*").eq("is_active", true).order("name");
     setStores(data || []);
     if (data && data.length > 0 && !storeId) {
       const firstRetail = data.find((s) => !s.is_warehouse) || data[0];
@@ -51,7 +57,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <StoreContext.Provider value={{ storeId, setStoreId, stores, refreshStores, isStoreLocked }}>
+    <StoreContext.Provider
+      value={{ storeId, setStoreId, stores, refreshStores, isStoreLocked, warehouses, defaultWarehouseId }}
+    >
       {children}
     </StoreContext.Provider>
   );
