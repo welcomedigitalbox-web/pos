@@ -78,6 +78,7 @@ export default function RequestInboxPage() {
       .from("stock_requests")
       .select("*, products(name, sku), product_variants(variant_name, sku)")
       .in("store_id", suppliedStores.length ? suppliedStores : ["__none__"])
+      .neq("status", "awaiting_approval")
       .order("created_at", { ascending: false })
       .limit(200);
 

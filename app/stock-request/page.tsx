@@ -16,11 +16,13 @@ type RequestRow = {
   requested_qty: number;
   received_qty: number | null;
   note: string | null;
-  status: "pending" | "received" | "mismatch" | "approved" | "rejected";
+  status: "awaiting_approval" | "pending" | "received" | "mismatch" | "approved" | "rejected";
   requested_by: string | null;
   received_by: string | null;
   approved_by: string | null;
   created_at: string;
+  requested_warehouse_id: string | null;
+  rejected_reason: string | null;
   products: { name: string; sku: string | null } | null;
   product_variants: { variant_name: string; sku: string | null } | null;
 };
@@ -38,7 +40,7 @@ const statusColor: Record<string, string> = {
 };
 
 export default function StockRequestPage() {
-  const { storeId } = useStore();
+  const { storeId, stores } = useStore();
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -52,6 +54,10 @@ export default function StockRequestPage() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [requestedQty, setRequestedQty] = useState("");
   const [note, setNote] = useState("");
+
+  const [approveRow, setApproveRow] = useState<RequestRow | null>(null);
+  const [approvalPin, setApprovalPin] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [receivedQty, setReceivedQty] = useState("");
@@ -71,6 +77,12 @@ export default function StockRequestPage() {
   }, [storeId]);
 
   if (!profile || !hasPermission(profile, "stock-request")) return null;
+
+  const supplyWarehouseId = stores.find((s) => s.id === storeId)?.supply_warehouse_id || null;
+  const supplyWarehouse = stores.find((s) => s.id === supplyWarehouseId);
+  const canApproveRequest =
+    profile.role === "sale_manager" || profile.role === "manager" ||
+    profile.role === "owner" || profile.role === "admin";
 
   async function loadProducts() {
     const data = await fetchSellableItems(storeId);
@@ -92,6 +104,36 @@ export default function StockRequestPage() {
     setTimeout(() => setToast(""), 3000);
   }
 
+  async function approveRequest(approver?: string) {
+    if (!approveRow) return;
+    const { error } = await supabase
+      .from("stock_requests")
+      .update({ status: "pending", approved_by: approver || profile?.email || null })
+      .eq("id", approveRow.id);
+    if (error) return showToast("❌ " + error.message);
+    showToast(t("stockRequest_approvedSent"));
+    setApproveRow(null);
+    setApprovalPin("");
+    await loadRequests();
+  }
+
+  async function approveWithPin() {
+    if (!approvalPin.trim()) return showToast(t("returns_pinRequired"));
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
+        body: { pin: approvalPin.trim() },
+      });
+      if (error) throw error;
+      if (!data?.approved) return showToast("❌ " + (data?.error || t("returns_pinInvalid")));
+      await approveRequest(data.approver_email);
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   async function submitRequest(e: React.FormEvent) {
     e.preventDefault();
     const item = items.find((i) => i.key === itemKey);
@@ -100,6 +142,8 @@ export default function StockRequestPage() {
       store_id: storeId,
       product_id: item.product_id,
       variant_id: item.variant_id,
+      requested_warehouse_id: supplyWarehouseId,
+      status: canApproveRequest ? "pending" : "awaiting_approval",
       requested_qty: Number(requestedQty),
       note: note.trim() || null,
       requested_by: profile?.email || null,
@@ -230,6 +274,10 @@ export default function StockRequestPage() {
                 <td className="px-3 py-2 text-slate-400 text-xs">
                   {r.product_variants?.sku || r.products?.sku || "-"}
                 </td>
+                <td className="px-3 py-2 text-slate-500 text-xs">
+                  {stores.find((st) => st.id === r.requested_warehouse_id)?.name ||
+                    (r.requested_warehouse_id ? r.requested_warehouse_id : "-")}
+                </td>
                 <td className="px-3 py-2">{r.requested_qty}</td>
                 <td className="px-3 py-2">{r.received_qty ?? "-"}</td>
                 <td className="px-3 py-2">
@@ -238,6 +286,12 @@ export default function StockRequestPage() {
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
+                  {r.status === "awaiting_approval" && (
+                    <button onClick={() => { setApproveRow(r); setApprovalPin(""); }}
+                      className="text-blue-600 text-xs font-medium">
+                      {t("stockRequest_needsApproval")}
+                    </button>
+                  )}
                   {r.status === "pending" && (
                     <span className="text-xs text-slate-400">{t("stockRequest_awaitingWarehouse")}</span>
                   )}
@@ -380,6 +434,51 @@ export default function StockRequestPage() {
                 {t("products_save")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {approveRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("stockRequest_approveTitle")}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {approveRow.products?.name} · {t("stockRequest_requestedQty")}: {approveRow.requested_qty}
+            </p>
+
+            {canApproveRequest ? (
+              <div className="flex gap-2">
+                <button onClick={() => setApproveRow(null)}
+                  className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                  {t("products_cancel")}
+                </button>
+                <button onClick={() => approveRequest()}
+                  className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold">
+                  {t("returns_approve")}
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3">
+                  {t("returns_pinHint")}
+                </p>
+                <input type="password" inputMode="numeric" autoFocus
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3 tracking-widest text-center"
+                  placeholder="••••"
+                  value={approvalPin} onChange={(e) => setApprovalPin(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && approveWithPin()} />
+                <div className="flex gap-2">
+                  <button onClick={() => setApproveRow(null)}
+                    className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                    {t("products_cancel")}
+                  </button>
+                  <button onClick={approveWithPin} disabled={verifying}
+                    className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                    {verifying ? "..." : t("returns_approveWithPin")}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

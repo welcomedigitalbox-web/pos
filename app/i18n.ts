@@ -2,6 +2,11 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    stockRequest_noWarehouse: "⚠️ ဤဆိုင်အတွက် ပေးသွင်းသည့် ဂိုဒေါင် မသတ်မှတ်ရသေးပါ",
+    stockRequest_needsApproval: "🔒 အတည်ပြုရန်",
+    stockRequest_approveTitle: "တောင်းခံမှု အတည်ပြုခြင်း",
+    stockRequest_approvedSent: "✅ အတည်ပြုပြီး — ဂိုဒေါင်သို့ ပို့ပြီးပါပြီ",
+    stockRequest_status_awaiting_approval: "အတည်ပြုရန်",
     productDetail_totalStock: "စုစုပေါင်း လက်ကျန်",
     productDetail_byLocation: "နေရာအလိုက် လက်ကျန်",
     nav_inventory: "လက်ကျန်စာရင်း",
@@ -668,6 +673,11 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    stockRequest_noWarehouse: "⚠️ No supplying warehouse set for this store",
+    stockRequest_needsApproval: "🔒 Needs approval",
+    stockRequest_approveTitle: "Approve Request",
+    stockRequest_approvedSent: "✅ Approved — sent to the warehouse",
+    stockRequest_status_awaiting_approval: "Awaiting approval",
     productDetail_totalStock: "Total Stock",
     productDetail_byLocation: "Stock by Location",
     nav_inventory: "Inventory",
