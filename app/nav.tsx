@@ -84,14 +84,14 @@ export default function Nav() {
       {/* Top bar + sub-page header */}
       <div className="sm:ml-20">
         <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
-          <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <button className="sm:hidden text-xl leading-none" onClick={() => setMobileOpen(true)}>
+          <div className="px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <button className="sm:hidden text-xl leading-none shrink-0" onClick={() => setMobileOpen(true)}>
                 ☰
               </button>
-              <h1 className="font-semibold text-lg">{t("appName")}</h1>
+              <h1 className="font-semibold text-base sm:text-lg truncate">{t("appName")}</h1>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {showStoreSelector &&
                 (isStoreLocked ? (
                   <span className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs sm:text-sm bg-slate-50 text-slate-600">
@@ -111,7 +111,7 @@ export default function Nav() {
                   </select>
                 ))}
 
-              <div className="flex border border-slate-200 rounded-lg overflow-hidden text-xs">
+              <div className="hidden sm:flex border border-slate-200 rounded-lg overflow-hidden text-xs">
                 <button
                   onClick={() => setLang("my")}
                   className={`px-2 py-1.5 ${lang === "my" ? "bg-blue-600 text-white" : "bg-white text-slate-500"}`}
@@ -131,15 +131,15 @@ export default function Nav() {
               </span>
               <button
                 onClick={signOut}
-                className="text-xs text-slate-500 border border-slate-200 rounded-lg px-2 py-1.5"
+                className="hidden sm:inline-block text-xs text-slate-500 border border-slate-200 rounded-lg px-2 py-1.5"
               >
                 {t("logout")}
               </button>
             </div>
           </div>
 
-          {subPages.length > 1 && (
-            <div className="px-4 flex gap-1 overflow-x-auto">
+          {subPages.length > 0 && (
+            <div className="px-3 sm:px-4 flex gap-1 overflow-x-auto scrollbar-none">
               {subPages.map((p) => (
                 <Link
                   key={p.href}
@@ -157,7 +157,7 @@ export default function Nav() {
           )}
 
           {activeDept === "admin" && (
-            <div className="px-4 flex gap-1 overflow-x-auto">
+            <div className="px-3 sm:px-4 flex gap-1 overflow-x-auto scrollbar-none">
               {[
                 { href: "/admin/users", label: t("admin_users_title") },
                 { href: "/admin/stores", label: t("admin_stores_title") },
