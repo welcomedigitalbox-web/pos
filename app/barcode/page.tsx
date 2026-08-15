@@ -25,7 +25,11 @@ export default function BarcodePage() {
   const [totalSale, setTotalSale] = useState(0);
   const [totalMargin, setTotalMargin] = useState(0);
   const [batches, setBatches] = useState<StockBatch[]>([]);
-  const [storeBreakdown, setStoreBreakdown] = useState<{ storeId: string; storeName: string; stockQty: number; avgCost: number }[]>([]);
+  const [storeBreakdown, setStoreBreakdown] = useState<
+    { storeId: string; storeName: string; isWarehouse: boolean; stockQty: number; avgCost: number;
+      batches: { expiry: string | null; qty: number }[] }[]
+  >([]);
+  const [expandedLoc, setExpandedLoc] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "barcode")) router.replace("/");
@@ -88,20 +92,47 @@ export default function BarcodePage() {
     // Stock breakdown across ALL stores (not just the current one)
     let invQuery = supabase
       .from("store_inventory")
-      .select("store_id, stock_qty, avg_cost, stores(name)")
+      .select("store_id, stock_qty, avg_cost, stores(name, is_warehouse)")
       .eq("product_id", prod.product_id);
     invQuery = prod.variant_id
       ? invQuery.eq("variant_id", prod.variant_id)
       : invQuery.is("variant_id", null);
     const { data: inventoryRows } = await invQuery;
+    // Remaining batches per location, so one barcode with several expiry dates
+    // can be drilled into rather than shown as a single lump
+    let batchAllQuery = supabase
+      .from("stock_purchases")
+      .select("store_id, expiry_date, remaining_qty")
+      .eq("product_id", prod.product_id)
+      .gt("remaining_qty", 0);
+    batchAllQuery = prod.variant_id
+      ? batchAllQuery.eq("variant_id", prod.variant_id)
+      : batchAllQuery.is("variant_id", null);
+    const { data: allBatches } = await batchAllQuery.order("expiry_date", {
+      ascending: true,
+      nullsFirst: false,
+    });
+
+    const batchByStore = new Map<string, { expiry: string | null; qty: number }[]>();
+    for (const b of (allBatches as any[]) || []) {
+      const list = batchByStore.get(b.store_id) || [];
+      const hit = list.find((e) => e.expiry === b.expiry_date);
+      if (hit) hit.qty += Number(b.remaining_qty);
+      else list.push({ expiry: b.expiry_date, qty: Number(b.remaining_qty) });
+      batchByStore.set(b.store_id, list);
+    }
+
     const breakdown = ((inventoryRows as any[]) || [])
       .map((row) => ({
         storeId: row.store_id,
         storeName: row.stores?.name || row.store_id,
+        isWarehouse: !!row.stores?.is_warehouse,
         stockQty: Number(row.stock_qty),
         avgCost: Number(row.avg_cost),
+        batches: batchByStore.get(row.store_id) || [],
       }))
-      .sort((a, b) => b.stockQty - a.stockQty);
+      // Warehouses first, then by how much is on hand
+      .sort((a, b) => Number(b.isWarehouse) - Number(a.isWarehouse) || b.stockQty - a.stockQty);
     setStoreBreakdown(breakdown);
   }
 
@@ -173,27 +204,68 @@ export default function BarcodePage() {
                 <tr>
                   <th className="text-left px-3 py-2">{t("admin_store")}</th>
                   <th className="text-left px-3 py-2">{t("barcode_balanceStock")}</th>
+                  <th className="text-left px-3 py-2">{t("products_price")}</th>
                   <th className="text-left px-3 py-2">{t("barcode_avgCost")}</th>
+                  <th className="text-left px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {storeBreakdown.map((row) => (
-                  <tr key={row.storeId} className={`border-t border-slate-100 ${row.storeId === storeId ? "bg-blue-50" : ""}`}>
-                    <td className="px-3 py-2">
-                      {row.storeName}
-                      {row.storeId === storeId && (
-                        <span className="ml-1 text-xs text-blue-600">({t("barcode_currentStore")})</span>
-                      )}
-                    </td>
-                    <td className={`px-3 py-2 font-medium ${row.stockQty <= 5 ? "text-red-600" : ""}`}>
-                      {row.stockQty}
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">{fmt(row.avgCost)}</td>
-                  </tr>
+                  <>
+                    <tr key={row.storeId} className={`border-t border-slate-100 ${row.storeId === storeId ? "bg-blue-50" : ""}`}>
+                      <td className="px-3 py-2">
+                        {row.isWarehouse ? "🏭 " : ""}
+                        {row.storeName}
+                        {row.storeId === storeId && (
+                          <span className="ml-1 text-xs text-blue-600">({t("barcode_currentStore")})</span>
+                        )}
+                      </td>
+                      <td className={`px-3 py-2 font-medium ${row.stockQty <= 5 ? "text-red-600" : ""}`}>
+                        {row.stockQty}
+                      </td>
+                      <td className="px-3 py-2">{fmt(product.price)}</td>
+                      <td className="px-3 py-2 text-slate-500">{fmt(row.avgCost)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {row.batches.length > 1 && (
+                          <button
+                            onClick={() => setExpandedLoc(expandedLoc === row.storeId ? null : row.storeId)}
+                            className="text-blue-600 text-xs font-medium"
+                          >
+                            {expandedLoc === row.storeId ? t("ledger_hideMovement") : t("ledger_expiryBatches")}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {expandedLoc === row.storeId && (
+                      <tr key={`${row.storeId}-exp`} className="bg-amber-50/40">
+                        <td colSpan={5} className="px-3 py-2">
+                          <div className="flex flex-wrap gap-2">
+                            {row.batches.map((b, bi) => {
+                              const expired = b.expiry ? new Date(b.expiry).getTime() < Date.now() : false;
+                              const soon =
+                                b.expiry && !expired
+                                  ? new Date(b.expiry).getTime() - Date.now() < 30 * 86400000
+                                  : false;
+                              return (
+                                <span key={bi} className={`text-xs px-2 py-1 rounded border ${
+                                  expired ? "border-red-200 bg-red-50 text-red-700"
+                                  : soon ? "border-orange-200 bg-orange-50 text-orange-700"
+                                  : "border-slate-200 bg-white text-slate-600"}`}>
+                                  {b.expiry || t("ledger_noExpiry")} · <strong>{b.qty.toLocaleString()}</strong>
+                                  {expired && " ⚠️"}
+                                  {soon && " ⏰"}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
                 {storeBreakdown.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="text-center text-slate-400 py-6">
+                    <td colSpan={5} className="text-center text-slate-400 py-6">
                       -
                     </td>
                   </tr>

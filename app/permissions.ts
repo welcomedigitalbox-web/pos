@@ -8,6 +8,7 @@ export type PageKey =
   | "sales-reps"
   | "loyalty-tiers"
   | "products"
+  | "inventory"
   | "stock-in"
   | "stock-request"
   | "damage"
@@ -51,6 +52,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "sale" },
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
+  { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
   { key: "damage", href: "/damage", labelKey: "nav_damage", group: "inventory" },
@@ -89,7 +91,7 @@ const ALL_KEYS: PageKey[] = [...ALL_KEYS_EXCEPT_ADMIN, "admin"];
 const COMMON_ALL_ROLES: PageKey[] = ["ai-agent", "profile"];
 
 export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> = {
-  cashier: ["pos", "history", "returns", "customers", ...COMMON_ALL_ROLES],
+  cashier: ["pos", "inventory", "history", "returns", "customers", ...COMMON_ALL_ROLES],
   online_sale: ["sale-order", "history", "customers", ...COMMON_ALL_ROLES],
   wholesale: ["sale-order", "history", "customers", ...COMMON_ALL_ROLES],
   sale_manager: [
@@ -100,6 +102,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "sales-reps",
     "loyalty-tiers",
     "products",
+    "inventory",
     "stock-in",
     "stock-request",
     "damage",
@@ -127,6 +130,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "customers",
     "sales-reps",
     "products",
+    "inventory",
     "stock-in",
     "stock-request",
     "damage",

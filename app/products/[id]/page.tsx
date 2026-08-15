@@ -15,20 +15,19 @@ function fmt(n: number) {
 
 type LedgerRow = {
   date: string;
-  type: "in" | "out" | "damage";
+  type: "in" | "out" | "damage" | "transfer";
   qty: number;
   reference: string;
 };
 
-type Tab = "sales" | "batches" | "ledger";
+type Tab = "batches" | "ledger";
 
 export default function ProductDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
   const { profile } = useAuth();
-  const { stores, defaultWarehouseId } = useStore();
-  const [storeId, setStoreId] = useState("");
+  const { stores } = useStore();
   const { t } = useLanguage();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -37,7 +36,7 @@ export default function ProductDetailPage() {
 
   const [primaryOpen, setPrimaryOpen] = useState(true);
   const [costOpen, setCostOpen] = useState(true);
-  const [tab, setTab] = useState<Tab>("sales");
+  const [tab, setTab] = useState<Tab>("batches");
 
   const [soldQty, setSoldQty] = useState(0);
   const [totalSale, setTotalSale] = useState(0);
@@ -45,6 +44,9 @@ export default function ProductDetailPage() {
 
   const [batches, setBatches] = useState<StockBatch[]>([]);
   const [ledgerRows, setLedgerRows] = useState<(LedgerRow & { balance: number })[]>([]);
+  const [locationRows, setLocationRows] = useState<
+    { storeId: string; storeName: string; isWarehouse: boolean; stockQty: number; avgCost: number }[]
+  >([]);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "products")) router.replace("/");
@@ -52,13 +54,10 @@ export default function ProductDetailPage() {
   }, [profile]);
 
   useEffect(() => {
-    if (id && storeId) load();
+    if (id) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, storeId]);
+  }, [id]);
 
-  useEffect(() => {
-    if (!storeId && defaultWarehouseId) setStoreId(defaultWarehouseId);
-  }, [defaultWarehouseId, storeId]);
 
   if (!profile || !hasPermission(profile, "products")) return null;
 
@@ -71,20 +70,63 @@ export default function ProductDetailPage() {
     setProduct(prod as Product);
 
     // All sellable units belonging to this product (one row if it has no variants)
-    const allItems = await fetchSellableItems(storeId, true);
-    setVariantRows(allItems.filter((i) => i.product_id === id));
+    // Stock now comes from every location, so the page can show a full picture
+    const { data: invRows } = await supabase
+      .from("store_inventory")
+      .select("store_id, variant_id, stock_qty, avg_cost, stores(name, is_warehouse)")
+      .eq("product_id", id);
+
+    const byLocation = new Map<string, { qty: number; value: number; name: string; wh: boolean }>();
+    for (const r of (invRows as any[]) || []) {
+      const cur = byLocation.get(r.store_id) || {
+        qty: 0, value: 0, name: r.stores?.name || r.store_id, wh: !!r.stores?.is_warehouse,
+      };
+      cur.qty += Number(r.stock_qty);
+      cur.value += Number(r.stock_qty) * Number(r.avg_cost);
+      byLocation.set(r.store_id, cur);
+    }
+    setLocationRows(
+      Array.from(byLocation.entries())
+        .map(([sid, v]) => ({
+          storeId: sid,
+          storeName: v.name,
+          isWarehouse: v.wh,
+          stockQty: v.qty,
+          avgCost: v.qty > 0 ? v.value / v.qty : 0,
+        }))
+        .sort((a, b) => Number(b.isWarehouse) - Number(a.isWarehouse) || b.stockQty - a.stockQty)
+    );
+
+    // Variant rows aggregated across locations
+    const variantAgg = new Map<string, { qty: number; value: number }>();
+    for (const r of (invRows as any[]) || []) {
+      const k = r.variant_id || "base";
+      const cur = variantAgg.get(k) || { qty: 0, value: 0 };
+      cur.qty += Number(r.stock_qty);
+      cur.value += Number(r.stock_qty) * Number(r.avg_cost);
+      variantAgg.set(k, cur);
+    }
+
+    const allItems = await fetchSellableItems(stores[0]?.id || "", true);
+    setVariantRows(
+      allItems
+        .filter((i) => i.product_id === id)
+        .map((i) => {
+          const a = variantAgg.get(i.variant_id || "base") || { qty: 0, value: 0 };
+          return { ...i, stock_qty: a.qty, avg_cost: a.qty > 0 ? a.value / a.qty : 0 };
+        })
+    );
 
     const { data: items } = await supabase
       .from("sale_items")
       .select("qty, line_total, line_cogs, sales!inner(store_id, subtotal, discount_amount)")
       .eq("product_id", id)
-      .eq("sales.store_id", storeId);
+      ;
     const { data: returnRows } = await supabase
       .from("sale_return_items")
       .select("qty, unit_price, unit_cogs, sale_returns!inner(store_id, status)")
       .eq("product_id", id)
-      .eq("sale_returns.status", "approved")
-      .eq("sale_returns.store_id", storeId);
+      .eq("sale_returns.status", "approved");
 
     const returned = ((returnRows as any[]) || []).reduce(
       (acc, r) => ({
@@ -110,7 +152,6 @@ export default function ProductDetailPage() {
       .from("stock_purchases")
       .select("*")
       .eq("product_id", id)
-      .eq("store_id", storeId)
       .gt("remaining_qty", 0)
       .order("expiry_date", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true });
@@ -121,21 +162,18 @@ export default function ProductDetailPage() {
       .from("stock_purchases")
       .select("qty, created_at, supplier")
       .eq("product_id", id)
-      .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
     const { data: saleItemRows } = await supabase
       .from("sale_items")
       .select("qty, created_at, sale_id, sales!inner(store_id)")
       .eq("product_id", id)
-      .eq("sales.store_id", storeId)
       .order("created_at", { ascending: true });
 
     const { data: damageRows } = await supabase
       .from("stock_damages")
       .select("qty, created_at, reason")
       .eq("product_id", id)
-      .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
     const { data: transferRows } = await supabase
@@ -144,26 +182,16 @@ export default function ProductDetailPage() {
       .eq("product_id", id)
       .order("created_at", { ascending: true });
 
-    const isWarehouse = !!stores.find((st) => st.id === storeId)?.is_warehouse;
+    // Across all locations a transfer is one movement, shown from → to
     const transferMoves: LedgerRow[] = ((transferRows as any[]) || [])
-      .filter((tr) => (tr.from_store_id === storeId ? true : tr.to_store_id === storeId))
-      // Stock only lands in the destination once the store confirms receipt
-      .filter((tr) => tr.from_store_id === storeId || tr.status !== "in_transit")
-      .map((tr) =>
-        tr.from_store_id === storeId
-          ? {
-              date: tr.created_at,
-              type: "out" as const,
-              qty: Number(tr.qty),
-              reference: `Transfer → ${tr.to_store_id}`,
-            }
-          : {
-              date: tr.created_at,
-              type: "in" as const,
-              qty: Number(tr.received_qty ?? tr.qty),
-              reference: `Transfer ← ${tr.from_store_id || "WH"}`,
-            }
-      );
+      // Stock only lands at the destination once the store confirms receipt
+      .filter((tr) => tr.status !== "in_transit")
+      .map((tr) => ({
+        date: tr.created_at,
+        type: "transfer" as const,
+        qty: Number(tr.received_qty ?? tr.qty),
+        reference: `${tr.from_store_id || "WH"} → ${tr.to_store_id}`,
+      }));
 
     const combined: LedgerRow[] = [
       ...transferMoves,
@@ -189,7 +217,9 @@ export default function ProductDetailPage() {
 
     let balance = 0;
     const withBalance = combined.map((r) => {
-      balance += r.type === "in" ? r.qty : -r.qty;
+      // A transfer only moves stock between locations, so the overall balance is unchanged
+      if (r.type === "in") balance += r.qty;
+      else if (r.type !== "transfer") balance -= r.qty;
       return { ...r, balance };
     });
     setLedgerRows(withBalance.reverse());
@@ -247,18 +277,8 @@ export default function ProductDetailPage() {
               <div className="mt-1">{fmt(product.price)}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-400 uppercase">{t("productDetail_viewing")}</div>
-              <select
-                className="mt-1 border border-slate-200 rounded-lg px-2 py-1 text-sm w-full"
-                value={storeId}
-                onChange={(e) => setStoreId(e.target.value)}
-              >
-                {stores.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.is_warehouse ? `🏭 ${st.name}` : st.name}
-                  </option>
-                ))}
-              </select>
+              <div className="text-xs text-slate-400 uppercase">{t("productDetail_totalStock")}</div>
+              <div className="mt-1 font-semibold">{totalStock.toLocaleString()}</div>
             </div>
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("stockIn_currentStock")}</div>
@@ -316,6 +336,37 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
+      <div className="bg-white border border-slate-200 rounded-xl mb-4 overflow-x-auto">
+        <div className="px-4 py-2 font-semibold text-sm border-b border-slate-100">
+          {t("productDetail_byLocation")}
+        </div>
+        <table className="w-full text-sm min-w-[520px]">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="text-left px-3 py-2">{t("admin_store")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
+              <th className="text-left px-3 py-2">{t("barcode_avgCost")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_stockValue")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {locationRows.map((l) => (
+              <tr key={l.storeId} className="border-t border-slate-100">
+                <td className="px-3 py-2">{l.isWarehouse ? "🏭 " : ""}{l.storeName}</td>
+                <td className={`px-3 py-2 font-medium ${l.stockQty <= 0 ? "text-red-600" : ""}`}>
+                  {l.stockQty.toLocaleString()}
+                </td>
+                <td className="px-3 py-2 text-slate-500">{fmt(l.avgCost)}</td>
+                <td className="px-3 py-2">{fmt(l.stockQty * l.avgCost)}</td>
+              </tr>
+            ))}
+            {locationRows.length === 0 && (
+              <tr><td colSpan={4} className="text-center text-slate-400 py-6">-</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
       {hasVariants && (
         <div className="bg-white border border-slate-200 rounded-xl mb-4 overflow-x-auto">
           <div className="px-4 py-2 font-semibold text-sm border-b border-slate-100">
@@ -350,7 +401,7 @@ export default function ProductDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200 mb-3 overflow-x-auto">
-        {(["sales", "batches", "ledger"] as Tab[]).map((tb) => (
+        {(["batches", "ledger"] as Tab[]).map((tb) => (
           <button
             key={tb}
             onClick={() => setTab(tb)}
@@ -358,19 +409,11 @@ export default function ProductDetailPage() {
               tab === tb ? "text-blue-600 font-semibold border-b-2 border-blue-600" : "text-slate-500"
             }`}
           >
-            {tb === "sales" && t("dashboard_gp")}
             {tb === "batches" && t("barcode_batchTitle")}
             {tb === "ledger" && t("ledger_title")}
           </button>
         ))}
       </div>
-
-      {tab === "sales" && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-500">
-          {t("barcode_soldQty")}: {soldQty} · {t("barcode_totalSale")}: {fmt(totalSale)} ·{" "}
-          {t("barcode_totalMargin")}: {fmt(totalMargin)}
-        </div>
-      )}
 
       {tab === "batches" && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">

@@ -2,6 +2,13 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    productDetail_totalStock: "စုစုပေါင်း လက်ကျန်",
+    productDetail_byLocation: "နေရာအလိုက် လက်ကျန်",
+    nav_inventory: "လက်ကျန်စာရင်း",
+    inventory_subtitle: "လက်ရှိ လက်ကျန်နှင့် သက်တမ်း အခြေအနေ",
+    inventory_lowStock: "လက်ကျန်နည်း",
+    requestInbox_rejectReasonRequired: "⚠️ ငြင်းပယ်ရသည့် အကြောင်းရင်း ဖြည့်ပါ",
+    requestInbox_rejectPlaceholder: "ဥပမာ - လက်ကျန်မရှိ၊ နောက်ပတ်မှ ပို့ပေးမည်...",
     stockRequest_awaitingWarehouse: "ဂိုဒေါင်၏ တုံ့ပြန်မှု စောင့်ဆိုင်းဆဲ",
     stockRequest_confirmInTransfers: "Incoming Transfers တွင် လက်ခံရန် →",
     nav_requestInbox: "ဆိုင်တောင်းခံမှု",
@@ -661,6 +668,13 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    productDetail_totalStock: "Total Stock",
+    productDetail_byLocation: "Stock by Location",
+    nav_inventory: "Inventory",
+    inventory_subtitle: "Current stock and expiry status",
+    inventory_lowStock: "Low stock",
+    requestInbox_rejectReasonRequired: "⚠️ A rejection reason is required",
+    requestInbox_rejectPlaceholder: "e.g. out of stock, will send next week...",
     stockRequest_awaitingWarehouse: "Waiting for the warehouse",
     stockRequest_confirmInTransfers: "Confirm in Incoming Transfers →",
     nav_requestInbox: "Store Requests",

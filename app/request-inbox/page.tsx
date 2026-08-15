@@ -47,6 +47,8 @@ export default function RequestInboxPage() {
   const [sendRow, setSendRow] = useState<RequestRow | null>(null);
   const [sendQty, setSendQty] = useState("");
   const [sending, setSending] = useState(false);
+  const [rejectRow, setRejectRow] = useState<RequestRow | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "request-inbox")) router.replace("/");
@@ -157,13 +159,27 @@ export default function RequestInboxPage() {
     }
   }
 
-  async function rejectRequest(r: RequestRow) {
-    if (!confirm(t("requestInbox_rejectConfirm"))) return;
+  async function submitReject() {
+    if (!rejectRow) return;
+    if (!rejectReason.trim()) return showToast(t("requestInbox_rejectReasonRequired"));
     await supabase
       .from("stock_requests")
-      .update({ status: "rejected", approved_by: profile?.email || null })
-      .eq("id", r.id);
+      .update({
+        status: "rejected",
+        approved_by: profile?.email || null,
+        rejected_reason: rejectReason.trim(),
+      })
+      .eq("id", rejectRow.id);
+    await logActivity({
+      entityType: "stock_request",
+      entityId: rejectRow.id,
+      action: "rejected",
+      detail: `${rejectRow.displayName} → ${rejectRow.store_id} · ${rejectReason.trim()}`,
+      actor: profile?.email,
+    });
     showToast(t("requestInbox_rejected"));
+    setRejectRow(null);
+    setRejectReason("");
     await load();
   }
 
@@ -231,6 +247,9 @@ export default function RequestInboxPage() {
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[r.status] || ""}`}>
                       {r.status === "approved" ? t("requestInbox_sentStatus") : r.status}
                     </span>
+                    {(r as any).rejected_reason && (
+                      <div className="text-[10px] text-red-600 mt-0.5">{(r as any).rejected_reason}</div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{r.requested_by || "-"}</td>
                   <td className="px-3 py-2 text-right space-x-3">
@@ -240,7 +259,7 @@ export default function RequestInboxPage() {
                           className="text-blue-600 text-xs font-medium disabled:text-slate-300">
                           {t("requestInbox_send")}
                         </button>
-                        <button onClick={() => rejectRequest(r)} className="text-red-600 text-xs font-medium">
+                        <button onClick={() => { setRejectRow(r); setRejectReason(""); }} className="text-red-600 text-xs font-medium">
                           {t("returns_reject")}
                         </button>
                       </>
@@ -289,6 +308,34 @@ export default function RequestInboxPage() {
               <button onClick={sendStock} disabled={sending}
                 className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
                 {sending ? "..." : t("requestInbox_send")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("returns_reject")}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {rejectRow.displayName} → {rejectRow.store_id}
+            </p>
+            <label className="text-sm text-slate-600">
+              {t("returns_rejectReason")} <span className="text-red-600">*</span>
+            </label>
+            <textarea rows={3} autoFocus
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              placeholder={t("requestInbox_rejectPlaceholder")}
+              value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+            <div className="flex gap-2">
+              <button onClick={() => setRejectRow(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={submitReject} disabled={!rejectReason.trim()}
+                className="flex-1 py-2.5 bg-red-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {t("returns_reject")}
               </button>
             </div>
           </div>
