@@ -113,86 +113,112 @@ export default function AdminStoresPage() {
     }
   }
 
-  const mergeTargets = stores.filter((s) => s.is_active && s.id !== mergeSource?.id);
+  // Merging a shop into a warehouse (or vice versa) would corrupt the stock model,
+  // so only same-type locations can be combined.
+  const mergeTargets = stores.filter(
+    (s) => s.is_active && s.id !== mergeSource?.id && s.is_warehouse === mergeSource?.is_warehouse
+  );
+
+  function openNew(asWarehouse: boolean) {
+    setId("");
+    setName("");
+    setRegion("");
+    setIsWarehouse(asWarehouse);
+    setShowForm(true);
+  }
+
+  const retailList = stores.filter((s) => !s.is_warehouse);
+  const warehouseList = stores.filter((s) => s.is_warehouse);
+
+  const renderTable = (list: StoreRow[], isWh: boolean) => (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
+      <table className="w-full text-sm min-w-[680px]">
+        <thead className="bg-slate-50 text-slate-500">
+          <tr>
+            <th className="text-left px-4 py-2">ID</th>
+            <th className="text-left px-4 py-2">{t("customers_name")}</th>
+            <th className="text-left px-4 py-2">{t("admin_storeRegion")}</th>
+            <th className="text-left px-4 py-2">{t("admin_active")}</th>
+            <th className="text-left px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading && <tr><td colSpan={5} className="text-center text-slate-400 py-8">...</td></tr>}
+          {!loading && list.map((s) => (
+            <tr key={s.id} className={`border-t border-slate-100 ${!s.is_active ? "opacity-50 bg-slate-50" : ""}`}>
+              <td className="px-4 py-2 font-mono text-xs">{s.id}</td>
+              <td className="px-4 py-2 font-medium">{isWh && "🏭 "}{s.name}</td>
+              <td className="px-4 py-2 text-slate-500">{s.region || "-"}</td>
+              <td className="px-4 py-2">{s.is_active ? "🟢" : "⚪"}</td>
+              <td className="px-4 py-2 text-right space-x-3">
+                {s.is_active && (
+                  <button onClick={() => { setMergeSource(s); setMergeTarget(""); }}
+                    className="text-blue-600 text-xs font-medium">
+                    {t("admin_storeMerge")}
+                  </button>
+                )}
+                <button onClick={() => toggleActive(s)}
+                  className={`text-xs font-medium ${s.is_active ? "text-red-600" : "text-green-600"}`}>
+                  {s.is_active ? t("admin_storeArchive") : t("products_restore")}
+                </button>
+              </td>
+            </tr>
+          ))}
+          {!loading && list.length === 0 && (
+            <tr><td colSpan={5} className="text-center text-slate-400 py-8">-</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <div className="pt-4">
       <div className="flex justify-between items-center mb-1">
-        <h2 className="font-semibold text-lg">{t("admin_stores_title")}</h2>
-        <button onClick={() => setShowForm(true)} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
+        <h2 className="font-semibold text-lg">🏬 {t("admin_storesSection")}</h2>
+        <button onClick={() => openNew(false)} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
           {t("admin_storeAddNew")}
         </button>
       </div>
-      <p className="text-xs text-slate-400 mb-4">{t("admin_storeNote")}</p>
+      <p className="text-xs text-slate-400 mb-3">{t("admin_storesSectionNote")}</p>
+      {renderTable(retailList, false)}
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="text-left px-4 py-2">ID</th>
-              <th className="text-left px-4 py-2">{t("customers_name")}</th>
-              <th className="text-left px-4 py-2">{t("admin_storeRegion")}</th>
-              <th className="text-left px-4 py-2">{t("admin_storeType")}</th>
-              <th className="text-left px-4 py-2">{t("admin_active")}</th>
-              <th className="text-left px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={6} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && stores.map((s) => (
-              <tr key={s.id} className={`border-t border-slate-100 ${!s.is_active ? "opacity-50 bg-slate-50" : ""}`}>
-                <td className="px-4 py-2 font-mono text-xs">{s.id}</td>
-                <td className="px-4 py-2 font-medium">
-                  {s.is_warehouse && "🏭 "}{s.name}
-                </td>
-                <td className="px-4 py-2 text-slate-500">{s.region || "-"}</td>
-                <td className="px-4 py-2 text-xs text-slate-500">
-                  {s.is_warehouse ? t("admin_storeWarehouse") : t("admin_storeRetail")}
-                </td>
-                <td className="px-4 py-2">{s.is_active ? "🟢" : "⚪"}</td>
-                <td className="px-4 py-2 text-right space-x-3">
-                  {s.is_active && !s.is_warehouse && (
-                    <button onClick={() => { setMergeSource(s); setMergeTarget(""); }}
-                      className="text-blue-600 text-xs font-medium">
-                      {t("admin_storeMerge")}
-                    </button>
-                  )}
-                  {!s.is_warehouse && (
-                    <button onClick={() => toggleActive(s)}
-                      className={`text-xs font-medium ${s.is_active ? "text-red-600" : "text-green-600"}`}>
-                      {s.is_active ? t("admin_storeArchive") : t("products_restore")}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex justify-between items-center mb-1">
+        <h2 className="font-semibold text-lg">🏭 {t("admin_warehousesSection")}</h2>
+        <button onClick={() => openNew(true)} className="bg-slate-700 text-white text-sm px-4 py-2 rounded-lg font-medium">
+          {t("admin_warehouseAddNew")}
+        </button>
       </div>
+      <p className="text-xs text-slate-400 mb-3">{t("admin_warehousesSectionNote")}</p>
+      {renderTable(warehouseList, true)}
+
 
       {showForm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <form onSubmit={handleCreate} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
-            <h3 className="font-semibold text-lg mb-4">{t("admin_storeAddNew")}</h3>
+            <h3 className="font-semibold text-lg mb-1">
+              {isWarehouse ? t("admin_warehouseAddNew") : t("admin_storeAddNew")}
+            </h3>
+            <p className={`text-xs mb-4 px-2 py-1 rounded inline-block ${
+              isWarehouse ? "bg-slate-100 text-slate-600" : "bg-blue-50 text-blue-700"
+            }`}>
+              {isWarehouse ? `🏭 ${t("admin_storeWarehouse")}` : `🏬 ${t("admin_storeRetail")}`}
+            </p>
 
             <label className="text-sm text-slate-600">{t("admin_storeId")}</label>
             <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-1 font-mono"
-              value={id} onChange={(e) => setId(e.target.value)} placeholder="MDY-SHOWROOM" required />
+              value={id} onChange={(e) => setId(e.target.value)} placeholder={isWarehouse ? "MDY-WH" : "MDY-SHOWROOM"} required />
             <p className="text-xs text-slate-400 mb-3">{t("admin_storeIdHint")}</p>
 
             <label className="text-sm text-slate-600">{t("customers_name")}</label>
             <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={name} onChange={(e) => setName(e.target.value)} placeholder="Mandalay Showroom" required />
+              value={name} onChange={(e) => setName(e.target.value)} placeholder={isWarehouse ? "Mandalay Warehouse" : "Mandalay Showroom"} required />
 
             <label className="text-sm text-slate-600">{t("admin_storeRegion")}</label>
             <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-1"
               value={region} onChange={(e) => setRegion(e.target.value)} placeholder="Mandalay" />
             <p className="text-xs text-slate-400 mb-3">{t("admin_storeRegionHint")}</p>
 
-            <label className="flex items-center gap-2 text-sm mb-4">
-              <input type="checkbox" checked={isWarehouse} onChange={(e) => setIsWarehouse(e.target.checked)} />
-              {t("admin_storeIsWarehouse")}
-            </label>
 
             <div className="flex gap-2">
               <button type="button" onClick={() => setShowForm(false)}

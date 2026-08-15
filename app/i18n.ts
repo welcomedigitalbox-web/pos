@@ -2,6 +2,11 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    admin_storesSection: "ဆိုင်များ",
+    admin_storesSectionNote: "အရောင်းဆိုင် / Showroom / Online — POS နှင့် Sale Order တွင် ရွေးနိုင်သည်",
+    admin_warehousesSection: "ဂိုဒေါင်များ",
+    admin_warehousesSectionNote: "ကုန်ဝင်လက်ခံပြီး ဆိုင်များသို့ ခွဲဝေပေးသည့် နေရာ — POS တွင် မပေါ်ပါ",
+    admin_warehouseAddNew: "+ ဂိုဒေါင် အသစ်",
     po_receiveInto: "လက်ခံမည့် ဂိုဒေါင်",
     admin_storeAddNew: "+ Location အသစ်",
     admin_storeNote: "Location ကို ဖျက်မည့်အစား Archive လုပ်ပါသည် — မှတ်တမ်းများ မပျက်စီးစေရန်။ နောက်ပိုင်း ပေါင်းစည်း (Merge) လည်း လုပ်နိုင်ပါသည်",
@@ -571,6 +576,11 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    admin_storesSection: "Stores",
+    admin_storesSectionNote: "Retail / showroom / online outlets — selectable in POS and Sale Order",
+    admin_warehousesSection: "Warehouses",
+    admin_warehousesSectionNote: "Receive goods and distribute to stores — never shown in POS",
+    admin_warehouseAddNew: "+ New Warehouse",
     po_receiveInto: "Receive into",
     admin_storeAddNew: "+ New Location",
     admin_storeNote: "Locations are archived rather than deleted so history stays intact. They can also be merged later",
