@@ -79,12 +79,29 @@ export default function ProductDetailPage() {
       .select("qty, line_total, line_cogs, sales!inner(store_id, subtotal, discount_amount)")
       .eq("product_id", id)
       .eq("sales.store_id", storeId);
+    const { data: returnRows } = await supabase
+      .from("sale_return_items")
+      .select("qty, unit_price, unit_cogs, sale_returns!inner(store_id, status)")
+      .eq("product_id", id)
+      .eq("sale_returns.status", "approved")
+      .eq("sale_returns.store_id", storeId);
+
+    const returned = ((returnRows as any[]) || []).reduce(
+      (acc, r) => ({
+        qty: acc.qty + Number(r.qty),
+        value: acc.value + Number(r.qty) * Number(r.unit_price),
+        cogs: acc.cogs + Number(r.qty) * Number(r.unit_cogs),
+      }),
+      { qty: 0, value: 0, cogs: 0 }
+    );
+
     const rows = (items as any[]) || [];
-    const sold = rows.reduce((s, i) => s + Number(i.qty), 0);
+    const sold = rows.reduce((s, i) => s + Number(i.qty), 0) - returned.qty;
     const sale = rows.reduce(
-      (s, i) => s + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount), 0);
+      (s, i) => s + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount), 0) - returned.value;
     const margin = rows.reduce(
-      (s, i) => s + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount) - Number(i.line_cogs), 0);
+      (s, i) => s + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount) - Number(i.line_cogs), 0)
+      - (returned.value - returned.cogs);
     setSoldQty(sold);
     setTotalSale(sale);
     setTotalMargin(margin);

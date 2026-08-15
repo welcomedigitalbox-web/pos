@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    admin_storeUpdated: "✅ ပြင်ဆင်ပြီးပါပြီ",
     history_managerSubtitle: "ဆိုင်/ကာလ/cashier အလိုက် အရောင်းနှင့် ပြန်အမ်းမှု မှတ်တမ်း",
     history_cashierSubtitle: "ယနေ့ ဤဆိုင်၏ အရောင်းမှတ်တမ်း",
     history_currentStore: "လက်ရှိဆိုင်",
@@ -634,6 +635,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    admin_storeUpdated: "✅ Updated",
     history_managerSubtitle: "Sales and refunds by store, period and cashier",
     history_cashierSubtitle: "Today's sales for this store",
     history_currentStore: "Current store",

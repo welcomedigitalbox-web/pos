@@ -181,8 +181,35 @@ export default function LedgerPage() {
       periodDays = dates.length ? Math.max(1, Math.ceil((Date.now() - Math.min(...dates)) / 86400000)) : 0;
     }
 
+    // Approved returns must come back out of sales, cost and units — otherwise
+    // every report overstates what was actually sold.
+    let returnQuery = supabase
+      .from("sale_return_items")
+      .select("product_id, variant_id, qty, unit_price, unit_cogs, sale_returns!inner(store_id, status, created_at)")
+      .eq("sale_returns.status", "approved");
+    if (isWarehouseView) {
+      if (suppliedStoreIds.length) returnQuery = returnQuery.in("sale_returns.store_id", suppliedStoreIds);
+    } else {
+      returnQuery = returnQuery.eq("sale_returns.store_id", storeId);
+    }
+    if (from) returnQuery = returnQuery.gte("sale_returns.created_at", from.toISOString());
+    if (to) returnQuery = returnQuery.lte("sale_returns.created_at", to.toISOString());
+    const { data: returnRows } = await returnQuery;
+
+    for (const r of (returnRows as any[]) || []) {
+      const k = keyOf(r.product_id, r.variant_id);
+      const cur = agg.get(k) || { qty: 0, total: 0, cogs: 0 };
+      cur.qty -= Number(r.qty);
+      cur.total -= Number(r.qty) * Number(r.unit_price);
+      cur.cogs -= Number(r.qty) * Number(r.unit_cogs);
+      agg.set(k, cur);
+    }
+
+    const returnedTotal = ((returnRows as any[]) || []).reduce(
+      (sum, r) => sum + Number(r.qty) * Number(r.unit_price), 0);
+
     const periodSalesTotal = ((saleRows as any[]) || []).reduce(
-      (sum, r) => sum + netLineTotal(r.line_total, r.sales?.subtotal, r.sales?.discount_amount), 0);
+      (sum, r) => sum + netLineTotal(r.line_total, r.sales?.subtotal, r.sales?.discount_amount), 0) - returnedTotal;
 
     // Remaining stock split by expiry, so one SKU with several expiry dates
     // can be shown as separate lines instead of a single lump

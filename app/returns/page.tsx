@@ -102,15 +102,19 @@ export default function ReturnsPage() {
     const q = orderSearch.trim().toLowerCase();
     if (!q) return;
 
+    // Not restricted to the current store: an order may have been rung up
+    // elsewhere, and the return is recorded against the sale's own store.
     const { data: sales } = await supabase
       .from("sales")
       .select("*")
-      .eq("store_id", storeId)
       .order("created_at", { ascending: false })
-      .limit(300);
+      .limit(2000);
 
     const sale = ((sales as any[]) || []).find(
-      (s) => s.id.toLowerCase().includes(q) || s.id.slice(0, 8).toLowerCase() === q
+      (s) =>
+        s.id.toLowerCase() === q ||
+        s.id.toLowerCase().startsWith(q) ||
+        (s.customer_name || "").toLowerCase() === q
     );
     if (!sale) {
       setFoundSale(null);
@@ -175,7 +179,7 @@ export default function ReturnsPage() {
         .insert({
           return_number: returnNumber,
           original_sale_id: foundSale.id,
-          store_id: storeId,
+          store_id: foundSale.store_id,
           customer_id: foundSale.customer_id,
           customer_name: foundSale.customer_name,
           refund_method: refundMethod,
@@ -201,7 +205,7 @@ export default function ReturnsPage() {
       );
 
       if (voucherFile) {
-        const path = await uploadReturnVoucher(voucherFile, storeId, created.id);
+        const path = await uploadReturnVoucher(voucherFile, foundSale.store_id, created.id);
         await supabase.from("sale_returns").update({ voucher_url: path }).eq("id", created.id);
       }
 
@@ -415,7 +419,7 @@ export default function ReturnsPage() {
             {foundSale && (
               <>
                 <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 mb-3">
-                  {new Date(foundSale.created_at).toLocaleString()} · {foundSale.customer_name || "-"} ·{" "}
+                  {new Date(foundSale.created_at).toLocaleString()} · {foundSale.store_id} · {foundSale.customer_name || "-"} ·{" "}
                   {t("pos_total")}: {fmt(foundSale.total)}
                 </div>
 

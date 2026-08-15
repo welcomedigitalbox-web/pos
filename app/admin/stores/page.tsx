@@ -24,6 +24,7 @@ export default function AdminStoresPage() {
 
   const [mergeSource, setMergeSource] = useState<StoreRow | null>(null);
   const [supplyWh, setSupplyWh] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [mergeTarget, setMergeTarget] = useState("");
   const [merging, setMerging] = useState(false);
 
@@ -50,17 +51,23 @@ export default function AdminStoresPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const { error } = await supabase.from("stores").insert({
-        id: id.trim().toUpperCase(),
+      const payload = {
         name: name.trim(),
         region: region.trim() || null,
-        is_warehouse: isWarehouse,
         supply_warehouse_id: isWarehouse ? null : supplyWh || null,
-      });
+      };
+      // The ID is the key every historical record points at, so it stays fixed
+      const { error } = editingId
+        ? await supabase.from("stores").update(payload).eq("id", editingId)
+        : await supabase.from("stores").insert({
+            ...payload,
+            id: id.trim().toUpperCase(),
+            is_warehouse: isWarehouse,
+          });
       if (error) throw error;
-      showToast(t("admin_storeCreated"));
+      showToast(t(editingId ? "admin_storeUpdated" : "admin_storeCreated"));
       setShowForm(false);
-      setId(""); setName(""); setRegion(""); setIsWarehouse(false);
+      setEditingId(null); setId(""); setName(""); setRegion(""); setIsWarehouse(false);
       await load();
       await refreshStores();
     } catch (err) {
@@ -133,11 +140,22 @@ export default function AdminStoresPage() {
   }
 
   function openNew(asWarehouse: boolean) {
+    setEditingId(null);
     setId("");
     setName("");
     setRegion("");
     setIsWarehouse(asWarehouse);
     setSupplyWh("");
+    setShowForm(true);
+  }
+
+  function openEdit(row: StoreRow) {
+    setEditingId(row.id);
+    setId(row.id);
+    setName(row.name);
+    setRegion(row.region || "");
+    setIsWarehouse(row.is_warehouse);
+    setSupplyWh(row.supply_warehouse_id || "");
     setShowForm(true);
   }
 
@@ -180,6 +198,9 @@ export default function AdminStoresPage() {
               )}
               <td className="px-4 py-2">{s.is_active ? "🟢" : "⚪"}</td>
               <td className="px-4 py-2 text-right space-x-3">
+                <button onClick={() => openEdit(s)} className="text-blue-600 text-xs font-medium">
+                  {t("products_edit")}
+                </button>
                 {s.is_active && (
                   <button onClick={() => { setMergeSource(s); setMergeTarget(""); }}
                     className="text-blue-600 text-xs font-medium">
@@ -236,7 +257,7 @@ export default function AdminStoresPage() {
 
             <label className="text-sm text-slate-600">{t("admin_storeId")}</label>
             <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-1 font-mono"
-              value={id} onChange={(e) => setId(e.target.value)} placeholder={isWarehouse ? "MDY-WH" : "MDY-SHOWROOM"} required />
+              value={id} onChange={(e) => setId(e.target.value)} disabled={!!editingId} placeholder={isWarehouse ? "MDY-WH" : "MDY-SHOWROOM"} required />
             <p className="text-xs text-slate-400 mb-3">{t("admin_storeIdHint")}</p>
 
             <label className="text-sm text-slate-600">{t("customers_name")}</label>

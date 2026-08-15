@@ -57,8 +57,13 @@ export default function StockTransferPage() {
 
   // Only offer the stores this warehouse supplies. Unassigned stores stay listed
   // so a half-configured setup never blocks a transfer.
+  // Warehouses live in the same table, so they must be excluded explicitly —
+  // otherwise they slip through the "unmapped" fallback below.
   const retailStores = stores.filter(
-    (s) => s.id !== whId && (s.supply_warehouse_id === whId || !s.supply_warehouse_id)
+    (s) =>
+      !s.is_warehouse &&
+      s.is_active &&
+      (s.supply_warehouse_id === whId || !s.supply_warehouse_id)
   );
 
   useEffect(() => {
