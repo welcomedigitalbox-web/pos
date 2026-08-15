@@ -2,6 +2,9 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    ledger_noExpiry: "သက်တမ်းမရှိ",
+    productDetail_viewing: "ကြည့်နေသည့် နေရာ",
+    ledger_expiryBatches: "သက်တမ်းအလိုက် ခွဲခြမ်း",
     admin_storesSection: "ဆိုင်များ",
     admin_storesSectionNote: "အရောင်းဆိုင် / Showroom / Online — POS နှင့် Sale Order တွင် ရွေးနိုင်သည်",
     admin_warehousesSection: "ဂိုဒေါင်များ",
@@ -576,6 +579,9 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    ledger_noExpiry: "No expiry",
+    productDetail_viewing: "Viewing Location",
+    ledger_expiryBatches: "Expiry breakdown",
     admin_storesSection: "Stores",
     admin_storesSectionNote: "Retail / showroom / online outlets — selectable in POS and Sale Order",
     admin_warehousesSection: "Warehouses",

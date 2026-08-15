@@ -24,6 +24,7 @@ type Row = SellableItem & {
   coverDays: number | null;  // how many more days current stock lasts
   suggestedReorder: number;  // qty needed to reach the cover target
   reorderEstimated: boolean; // true when based on all-time rate, not the period
+  batches: { expiry: string | null; qty: number }[]; // remaining stock split by expiry
   stockValue: number;
   rank: number;
 };
@@ -175,6 +176,25 @@ export default function LedgerPage() {
 
     const periodSalesTotal = ((saleRows as any[]) || []).reduce((sum, r) => sum + Number(r.line_total), 0);
 
+    // Remaining stock split by expiry, so one SKU with several expiry dates
+    // can be shown as separate lines instead of a single lump
+    const { data: batchRows } = await supabase
+      .from("stock_purchases")
+      .select("product_id, variant_id, expiry_date, remaining_qty")
+      .eq("store_id", storeId)
+      .gt("remaining_qty", 0)
+      .order("expiry_date", { ascending: true, nullsFirst: false });
+
+    const batchMap = new Map<string, { expiry: string | null; qty: number }[]>();
+    for (const b of (batchRows as any[]) || []) {
+      const k = keyOf(b.product_id, b.variant_id);
+      const list = batchMap.get(k) || [];
+      const existing = list.find((e) => e.expiry === b.expiry_date);
+      if (existing) existing.qty += Number(b.remaining_qty);
+      else list.push({ expiry: b.expiry_date, qty: Number(b.remaining_qty) });
+      batchMap.set(k, list);
+    }
+
     const allAgg = new Map<string, number>();
     let earliestAll = Date.now();
     for (const r of (allTimeRows as any[]) || []) {
@@ -203,6 +223,7 @@ export default function LedgerPage() {
         coverDays,
         suggestedReorder,
         reorderEstimated,
+        batches: batchMap.get(keyOf(i.product_id, i.variant_id)) || [],
         ...i,
         soldQty: a.qty,
         salesValue: a.total,
@@ -488,6 +509,40 @@ export default function LedgerPage() {
                       </button>
                     </td>
                   </tr>
+                  {r.batches.length > 1 && (
+                    <tr key={`${r.key}-exp`} className="bg-amber-50/40">
+                      <td></td>
+                      <td colSpan={12} className="px-3 pb-2">
+                        <div className="text-[10px] text-slate-400 uppercase mb-1">{t("ledger_expiryBatches")}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {r.batches.map((b, bi) => {
+                            const expired = b.expiry ? new Date(b.expiry).getTime() < Date.now() : false;
+                            const soon =
+                              b.expiry && !expired
+                                ? new Date(b.expiry).getTime() - Date.now() < 30 * 86400000
+                                : false;
+                            return (
+                              <span
+                                key={bi}
+                                className={`text-xs px-2 py-1 rounded border ${
+                                  expired
+                                    ? "border-red-200 bg-red-50 text-red-700"
+                                    : soon
+                                    ? "border-orange-200 bg-orange-50 text-orange-700"
+                                    : "border-slate-200 bg-white text-slate-600"
+                                }`}
+                              >
+                                {b.expiry || t("ledger_noExpiry")} · <strong>{b.qty.toLocaleString()}</strong>
+                                {expired && " ⚠️"}
+                                {soon && " ⏰"}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
                   {open && (
                     <tr key={`${r.key}-mov`} className="bg-slate-50">
                       <td colSpan={14} className="px-3 py-3">

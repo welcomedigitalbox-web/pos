@@ -27,7 +27,8 @@ export default function ProductDetailPage() {
   const id = params.id as string;
   const router = useRouter();
   const { profile } = useAuth();
-  const { storeId } = useStore();
+  const { stores, defaultWarehouseId } = useStore();
+  const [storeId, setStoreId] = useState("");
   const { t } = useLanguage();
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -51,9 +52,13 @@ export default function ProductDetailPage() {
   }, [profile]);
 
   useEffect(() => {
-    if (id) load();
+    if (id && storeId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, storeId]);
+
+  useEffect(() => {
+    if (!storeId && defaultWarehouseId) setStoreId(defaultWarehouseId);
+  }, [defaultWarehouseId, storeId]);
 
   if (!profile || !hasPermission(profile, "products")) return null;
 
@@ -193,8 +198,18 @@ export default function ProductDetailPage() {
               <div className="mt-1">{fmt(product.price)}</div>
             </div>
             <div>
-              <div className="text-xs text-slate-400 uppercase">{t("admin_store")}</div>
-              <div className="mt-1">{product.store_id}</div>
+              <div className="text-xs text-slate-400 uppercase">{t("productDetail_viewing")}</div>
+              <select
+                className="mt-1 border border-slate-200 rounded-lg px-2 py-1 text-sm w-full"
+                value={storeId}
+                onChange={(e) => setStoreId(e.target.value)}
+              >
+                {stores.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.is_warehouse ? `🏭 ${st.name}` : st.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <div className="text-xs text-slate-400 uppercase">{t("stockIn_currentStock")}</div>
