@@ -13,7 +13,7 @@ function fmt(n: number) {
 }
 
 export default function BarcodePage() {
-  const { storeId } = useStore();
+  const { storeId, stores } = useStore();
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -79,7 +79,6 @@ export default function BarcodePage() {
       .from("stock_purchases")
       .select("*")
       .eq("product_id", prod.product_id)
-      .eq("store_id", storeId)
       .gt("remaining_qty", 0);
     batchQuery = prod.variant_id
       ? batchQuery.eq("variant_id", prod.variant_id)
@@ -92,7 +91,7 @@ export default function BarcodePage() {
     // Stock breakdown across ALL stores (not just the current one)
     let invQuery = supabase
       .from("store_inventory")
-      .select("store_id, stock_qty, avg_cost, stores(name, is_warehouse)")
+      .select("store_id, stock_qty, avg_cost")
       .eq("product_id", prod.product_id);
     invQuery = prod.variant_id
       ? invQuery.eq("variant_id", prod.variant_id)
@@ -125,8 +124,8 @@ export default function BarcodePage() {
     const breakdown = ((inventoryRows as any[]) || [])
       .map((row) => ({
         storeId: row.store_id,
-        storeName: row.stores?.name || row.store_id,
-        isWarehouse: !!row.stores?.is_warehouse,
+        storeName: stores.find((st) => st.id === row.store_id)?.name || row.store_id,
+        isWarehouse: !!stores.find((st) => st.id === row.store_id)?.is_warehouse,
         stockQty: Number(row.stock_qty),
         avgCost: Number(row.avg_cost),
         batches: batchByStore.get(row.store_id) || [],
@@ -294,6 +293,10 @@ export default function BarcodePage() {
                     b.expiry_date && !isExpired && new Date(b.expiry_date).getTime() - now < thirtyDays;
                   return (
                     <tr key={b.id} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-500">
+                        {stores.find((st) => st.id === (b as any).store_id)?.is_warehouse ? "🏭 " : ""}
+                        {stores.find((st) => st.id === (b as any).store_id)?.name || (b as any).store_id}
+                      </td>
                       <td
                         className={`px-3 py-2 ${
                           isExpired ? "text-red-600 font-semibold" : isSoon ? "text-orange-600 font-medium" : ""
@@ -312,7 +315,7 @@ export default function BarcodePage() {
                 })}
                 {batches.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="text-center text-slate-400 py-6">
+                    <td colSpan={5} className="text-center text-slate-400 py-6">
                       {t("barcode_noBatch")}
                     </td>
                   </tr>

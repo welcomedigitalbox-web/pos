@@ -73,13 +73,15 @@ export default function ProductDetailPage() {
     // Stock now comes from every location, so the page can show a full picture
     const { data: invRows } = await supabase
       .from("store_inventory")
-      .select("store_id, variant_id, stock_qty, avg_cost, stores(name, is_warehouse)")
+      .select("store_id, variant_id, stock_qty, avg_cost")
       .eq("product_id", id);
 
     const byLocation = new Map<string, { qty: number; value: number; name: string; wh: boolean }>();
     for (const r of (invRows as any[]) || []) {
+      // store_id is plain text with no FK, so names come from context, not a join
+      const loc = stores.find((st) => st.id === r.store_id);
       const cur = byLocation.get(r.store_id) || {
-        qty: 0, value: 0, name: r.stores?.name || r.store_id, wh: !!r.stores?.is_warehouse,
+        qty: 0, value: 0, name: loc?.name || r.store_id, wh: !!loc?.is_warehouse,
       };
       cur.qty += Number(r.stock_qty);
       cur.value += Number(r.stock_qty) * Number(r.avg_cost);
