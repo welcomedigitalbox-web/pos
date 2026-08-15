@@ -35,3 +35,8 @@ alter table sale_items add column if not exists line_cogs numeric not null defau
 -- Note: Moving average ကို app code ထဲက (stock-in form submit လုပ်တဲ့အခါ) တွက်ပါတယ်
 -- Formula: new_avg_cost = (stock_qty * avg_cost + purchase_qty * unit_cost) / (stock_qty + purchase_qty)
 -- ============================================
+
+-- ============================================
+-- Previous avg cost tracking (products table ထဲ ထပ်ထည့်)
+-- ============================================
+alter table products add column if not exists previous_avg_cost numeric not null default 0;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, SellableItem, CENTRAL_WAREHOUSE_ID, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -29,8 +29,9 @@ type PurchaseRow = {
 };
 
 export default function StockInPage() {
-  const { storeId: navStoreId } = useStore();
-  const storeId = CENTRAL_WAREHOUSE_ID; // Stock-In always goes to the central warehouse pool
+  const { warehouses, defaultWarehouseId } = useStore();
+  // Stock-In lands in a warehouse, not a shop; which one is selectable
+  const [storeId, setStoreId] = useState("");
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -68,6 +69,10 @@ export default function StockInPage() {
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
+
+  useEffect(() => {
+    if (!storeId && defaultWarehouseId) setStoreId(defaultWarehouseId);
+  }, [defaultWarehouseId, storeId]);
 
   if (!profile || !hasPermission(profile, "stock-in")) return null;
 
@@ -285,7 +290,15 @@ export default function StockInPage() {
   return (
     <div className="pt-4">
       <div className="flex justify-between items-center mb-3">
-        <h2 className="font-semibold text-lg">{t("stockIn_historyTitle")}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold text-lg">{t("stockIn_historyTitle")}</h2>
+          {warehouses.length > 1 && (
+            <select className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+              value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+              {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
+            </select>
+          )}
+        </div>
         <button
           onClick={openNew}
           className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium"

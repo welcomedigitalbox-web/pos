@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, CENTRAL_WAREHOUSE_ID } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useStore } from "../store-context";
 import { hasPermission } from "../permissions";
@@ -318,7 +318,7 @@ export default function WarehouseHistoryPage() {
                 return (
                   <tr key={`${r.storeId}:${r.productId}:${r.variantId || "base"}`} className="border-t border-slate-100">
                     <td className="px-3 py-2">
-                      {r.storeId === CENTRAL_WAREHOUSE_ID ? `🏭 ${r.storeId}` : r.storeId}
+                      {stores.find((s) => s.id === r.storeId)?.is_warehouse ? `🏭 ${r.storeId}` : r.storeId}
                     </td>
                     <td className="px-3 py-2">{r.name}</td>
                     <td className="px-3 py-2 text-slate-400">{r.sku || "-"}</td>

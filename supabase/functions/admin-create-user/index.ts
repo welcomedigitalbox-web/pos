@@ -57,6 +57,36 @@ serve(async (req) => {
     }
 
     const body = await req.json();
+    const { action } = body;
+
+    if (action === "delete") {
+      const { user_id } = body;
+      if (!user_id) {
+        return new Response(JSON.stringify({ error: "Missing user_id" }), {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+      if (user_id === userData.user.id) {
+        return new Response(JSON.stringify({ error: "Cannot delete your own account" }), {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+      const { error: deleteErr } = await adminClient.auth.admin.deleteUser(user_id);
+      if (deleteErr) {
+        return new Response(JSON.stringify({ error: deleteErr.message }), {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // default action: create
     const { email, password, role, store_id, permissions } = body;
 
     if (!email || !password || !role) {

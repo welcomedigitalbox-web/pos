@@ -5,9 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   supabase, SellableItem, PurchaseOrder, PurchaseOrderItem, PoPayment, PoStatus,
-  CENTRAL_WAREHOUSE_ID, ActivityLog, fetchSellableItems, receivePoItem, logActivity,
+  ActivityLog, fetchSellableItems, receivePoItem, logActivity,
 } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
+import { useStore } from "../../store-context";
 import { useLanguage } from "../../language-context";
 import { hasPermission } from "../../permissions";
 
@@ -22,6 +23,8 @@ export default function PoDetailPage() {
   const id = params.id as string;
   const router = useRouter();
   const { profile } = useAuth();
+  const { warehouses, defaultWarehouseId } = useStore();
+  const [receiveWhId, setReceiveWhId] = useState("");
   const { t } = useLanguage();
 
   const [po, setPo] = useState<PurchaseOrder | null>(null);
@@ -79,7 +82,7 @@ export default function PoDetailPage() {
     setPo(poData as PurchaseOrder);
     setSupplierName((poData as any).suppliers?.name || "-");
 
-    const all = await fetchSellableItems(CENTRAL_WAREHOUSE_ID, true);
+    const all = await fetchSellableItems(receiveWhId || defaultWarehouseId, true);
     setSellables(all);
 
     const { data: itemData } = await supabase
@@ -196,7 +199,7 @@ export default function PoDetailPage() {
     try {
       // Goods are received into the central pool; Warehouse distributes from there
       await receivePoItem({
-        storeId: CENTRAL_WAREHOUSE_ID,
+        storeId: receiveWhId || defaultWarehouseId,
         productId: receiveRow.product_id,
         variantId: receiveRow.variant_id,
         qty: q,
@@ -602,6 +605,17 @@ export default function PoDetailPage() {
             <p className="text-sm text-slate-500 mb-4">
               {receiveRow.display_name} · {t("po_remaining")}: {receiveRow.qty - receiveRow.received_qty}
             </p>
+
+            {warehouses.length > 1 && (
+              <>
+                <label className="text-sm text-slate-600">{t("po_receiveInto")}</label>
+                <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+                  value={receiveWhId || defaultWarehouseId}
+                  onChange={(e) => setReceiveWhId(e.target.value)}>
+                  {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
+                </select>
+              </>
+            )}
 
             <label className="text-sm text-slate-600">{t("po_receivedQty")}</label>
             <input type="number" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"

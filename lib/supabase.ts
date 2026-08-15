@@ -106,6 +106,8 @@ export type StoreRow = {
   id: string;
   name: string;
   is_warehouse: boolean;
+  is_active: boolean;
+  region: string | null;
   created_at: string;
 };
 

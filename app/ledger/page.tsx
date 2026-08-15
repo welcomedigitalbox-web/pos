@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, CENTRAL_WAREHOUSE_ID, SellableItem, fetchSellableItems } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -83,12 +83,12 @@ function stockLevel(r: Row) {
 }
 
 export default function LedgerPage() {
-  const { stores } = useStore();
+  const { stores, defaultWarehouseId } = useStore();
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
 
-  const [storeId, setStoreId] = useState(CENTRAL_WAREHOUSE_ID);
+  const [storeId, setStoreId] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -113,6 +113,10 @@ export default function LedgerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId, period, customFrom, customTo, channel]);
 
+  useEffect(() => {
+    if (!storeId && defaultWarehouseId) setStoreId(defaultWarehouseId);
+  }, [defaultWarehouseId, storeId]);
+
   if (!profile || !hasPermission(profile, "ledger")) return null;
 
   async function load() {
@@ -128,23 +132,28 @@ export default function LedgerPage() {
       return q.eq("sales.channel", channel);
     };
 
+    const isWarehouseView = !!stores.find((s) => s.id === storeId)?.is_warehouse;
+
     let saleQuery = applyChannel(
       supabase
         .from("sale_items")
         .select("product_id, variant_id, qty, line_total, line_cogs, created_at, sales!inner(store_id, order_type, channel)")
-        .eq("sales.store_id", storeId)
     );
+    // Stock sits in the warehouse but demand comes from the shops, so the warehouse
+    // view aggregates every store's sales instead of its own (which are always zero).
+    if (!isWarehouseView) saleQuery = saleQuery.eq("sales.store_id", storeId);
     if (from) saleQuery = saleQuery.gte("created_at", from.toISOString());
     if (to) saleQuery = saleQuery.lte("created_at", to.toISOString());
     const { data: saleRows } = await saleQuery;
 
     // A quiet period shouldn't hide a reorder need, so keep an all-time rate to fall back on
-    const { data: allTimeRows } = await applyChannel(
+    let allTimeQuery = applyChannel(
       supabase
         .from("sale_items")
         .select("product_id, variant_id, qty, created_at, sales!inner(store_id, order_type, channel)")
-        .eq("sales.store_id", storeId)
     );
+    if (!isWarehouseView) allTimeQuery = allTimeQuery.eq("sales.store_id", storeId);
+    const { data: allTimeRows } = await allTimeQuery;
 
     const keyOf = (pid: string, vid: string | null) => `${pid}:${vid || "base"}`;
     const agg = new Map<string, { qty: number; total: number; cogs: number }>();
@@ -246,7 +255,7 @@ export default function LedgerPage() {
         .eq("product_id", r.product_id)
     ).order("created_at", { ascending: true });
 
-    const isWarehouse = storeId === CENTRAL_WAREHOUSE_ID;
+    const isWarehouse = !!stores.find((s) => s.id === storeId)?.is_warehouse;
     const combined = [
       ...(purchases || []).map((p: any) => ({
         date: p.created_at, type: "in", qty: Number(p.qty),
@@ -314,7 +323,9 @@ export default function LedgerPage() {
   return (
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-1">{t("ledger_title")}</h2>
-      <p className="text-sm text-slate-500 mb-4">{t("ledger_perfSubtitle")}</p>
+      <p className="text-sm text-slate-500 mb-4">
+        {stores.find((s) => s.id === storeId)?.is_warehouse ? t("ledger_warehouseSubtitle") : t("ledger_perfSubtitle")}
+      </p>
 
       <div className="flex flex-wrap gap-2 mb-4">
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
