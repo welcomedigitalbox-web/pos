@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  supabase, CENTRAL_WAREHOUSE_ID, SellableItem,
+  supabase, SellableItem,
   fetchSellableItems, upsertStoreInventory, logActivity,
 } from "@/lib/supabase";
 import { useStore } from "../store-context";
@@ -35,7 +35,8 @@ const statusColor: Record<string, string> = {
 };
 
 export default function StockTransferPage() {
-  const { stores } = useStore();
+  const { stores, warehouses, defaultWarehouseId } = useStore();
+  const [whId, setWhId] = useState("");
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -54,7 +55,7 @@ export default function StockTransferPage() {
   const [transferToStore, setTransferToStore] = useState("");
   const [sending, setSending] = useState(false);
 
-  const retailStores = stores.filter((s) => !s.is_warehouse);
+  const retailStores = stores.filter((s) => s.id !== whId);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "stock-transfer")) router.replace("/");
@@ -62,21 +63,26 @@ export default function StockTransferPage() {
   }, [profile]);
 
   useEffect(() => {
-    load();
+    if (!whId && defaultWarehouseId) setWhId(defaultWarehouseId);
+  }, [defaultWarehouseId, whId]);
+
+  useEffect(() => {
+    if (whId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [whId]);
 
   if (!profile || !hasPermission(profile, "stock-transfer")) return null;
 
   async function load() {
     setLoading(true);
     // Only stock physically available in the central warehouse can be sent
-    const all = await fetchSellableItems(CENTRAL_WAREHOUSE_ID, true);
+    const all = await fetchSellableItems(whId, true);
     setItems(all.filter((i) => i.stock_qty > 0));
 
     const { data } = await supabase
       .from("stock_transfers")
       .select("*, products(name), product_variants(variant_name)")
+      .eq("from_store_id", whId)
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -111,7 +117,7 @@ export default function StockTransferPage() {
 
     setSending(true);
     try {
-      await upsertStoreInventory(CENTRAL_WAREHOUSE_ID, transferItem.product_id, transferItem.variant_id, {
+      await upsertStoreInventory(whId, transferItem.product_id, transferItem.variant_id, {
         stock_qty: transferItem.stock_qty - qty,
       });
 
@@ -120,6 +126,7 @@ export default function StockTransferPage() {
         .insert({
           product_id: transferItem.product_id,
           variant_id: transferItem.variant_id,
+          from_store_id: whId,
           to_store_id: transferToStore,
           qty,
           status: "in_transit",
@@ -172,6 +179,13 @@ export default function StockTransferPage() {
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-1">{t("nav_stockTransfer")}</h2>
       <p className="text-sm text-slate-500 mb-4">{t("stockTransfer_subtitle")}</p>
+
+      {warehouses.length > 1 && (
+        <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+          value={whId} onChange={(e) => setWhId(e.target.value)}>
+          {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
+        </select>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
