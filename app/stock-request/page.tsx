@@ -22,6 +22,7 @@ type RequestRow = {
   approved_by: string | null;
   created_at: string;
   requested_warehouse_id: string | null;
+  request_no: string | null;
   rejected_reason: string | null;
   products: { name: string; sku: string | null } | null;
   product_variants: { variant_name: string; sku: string | null } | null;
@@ -32,6 +33,7 @@ function fmt(n: number) {
 }
 
 const statusColor: Record<string, string> = {
+  awaiting_approval: "bg-yellow-100 text-yellow-700",
   pending: "bg-slate-100 text-slate-600",
   received: "bg-green-100 text-green-700",
   mismatch: "bg-orange-100 text-orange-700",
@@ -53,6 +55,7 @@ export default function StockRequestPage() {
   const [itemKey, setItemKey] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
   const [requestedQty, setRequestedQty] = useState("");
+  const [draftLines, setDraftLines] = useState<{ key: string; qty: number }[]>([]);
   const [note, setNote] = useState("");
 
   const [approveRow, setApproveRow] = useState<RequestRow | null>(null);
@@ -134,20 +137,53 @@ export default function StockRequestPage() {
     }
   }
 
+  function addDraftLine() {
+    const item = items.find((i) => i.key === itemKey);
+    const qty = Number(requestedQty);
+    if (!item || !qty || qty <= 0) return showToast(t("stockRequest_qtyInvalid"));
+    setDraftLines((prev) =>
+      prev.find((l) => l.key === item.key)
+        ? prev.map((l) => (l.key === item.key ? { ...l, qty: l.qty + qty } : l))
+        : [...prev, { key: item.key, qty }]
+    );
+    setItemKey("");
+    setRequestedQty("");
+    setBarcodeInput("");
+  }
+
   async function submitRequest(e: React.FormEvent) {
     e.preventDefault();
-    const item = items.find((i) => i.key === itemKey);
-    if (!item || !requestedQty) return;
-    const { error } = await supabase.from("stock_requests").insert({
-      store_id: storeId,
-      product_id: item.product_id,
-      variant_id: item.variant_id,
-      requested_warehouse_id: supplyWarehouseId,
-      status: canApproveRequest ? "pending" : "awaiting_approval",
-      requested_qty: Number(requestedQty),
-      note: note.trim() || null,
-      requested_by: profile?.email || null,
-    });
+    // Anything still typed into the picker counts as a line, so the user does not
+    // have to press "add" before submitting a single-item request
+    const pending = items.find((i) => i.key === itemKey);
+    const pendingQty = Number(requestedQty);
+    const lines = [...draftLines];
+    if (pending && pendingQty > 0 && !lines.find((l) => l.key === pending.key)) {
+      lines.push({ key: pending.key, qty: pendingQty });
+    }
+    if (!lines.length) return showToast(t("stockRequest_noLines"));
+
+    // One request number ties the lines together, the way a PO does
+    const requestNo = `SR-${Date.now().toString().slice(-8)}`;
+    const rows = lines
+      .map((l) => {
+        const it = items.find((i) => i.key === l.key);
+        if (!it) return null;
+        return {
+          store_id: storeId,
+          product_id: it.product_id,
+          variant_id: it.variant_id,
+          requested_warehouse_id: supplyWarehouseId,
+          request_no: requestNo,
+          status: canApproveRequest ? "pending" : "awaiting_approval",
+          requested_qty: l.qty,
+          note: note.trim() || null,
+          requested_by: profile?.email || null,
+        };
+      })
+      .filter(Boolean);
+
+    const { error } = await supabase.from("stock_requests").insert(rows as any[]);
     if (error) {
       showToast("❌ " + error.message);
       return;
@@ -157,6 +193,7 @@ export default function StockRequestPage() {
     setItemKey("");
     setRequestedQty("");
     setNote("");
+    setDraftLines([]);
     await loadRequests();
   }
 
@@ -264,7 +301,12 @@ export default function StockRequestPage() {
           <tbody>
             {requests.map((r) => (
               <tr key={r.id} className="border-t border-slate-100">
-                <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
+                <td className="px-3 py-2">
+                  {new Date(r.created_at).toLocaleString()}
+                  {r.request_no && (
+                    <div className="text-[10px] text-slate-400 font-mono">{r.request_no}</div>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   {r.products?.name || "-"}
                   {r.product_variants?.variant_name && (
@@ -365,8 +407,44 @@ export default function StockRequestPage() {
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={requestedQty}
               onChange={(e) => setRequestedQty(e.target.value)}
-              required
             />
+
+            <button type="button" onClick={addDraftLine}
+              className="w-full py-2 border border-slate-300 rounded-lg text-sm font-medium mb-3">
+              + {t("stockRequest_addLine")}
+            </button>
+
+            {draftLines.length > 0 && (
+              <div className="border border-slate-200 rounded-lg p-2 mb-3 space-y-1">
+                {draftLines.map((l) => {
+                  const it = items.find((i) => i.key === l.key);
+                  if (!it) return null;
+                  return (
+                    <div key={l.key} className="flex items-center gap-2 text-sm bg-slate-50 rounded px-2 py-1.5">
+                      <span className="flex-1 min-w-0 truncate">
+                        {it.display_name}
+                        {it.sku && <span className="text-slate-400 text-xs"> · {it.sku}</span>}
+                      </span>
+                      <input type="number" min={1}
+                        className="w-16 border border-slate-200 rounded px-2 py-1 text-sm"
+                        value={l.qty}
+                        onChange={(e) =>
+                          setDraftLines((prev) =>
+                            prev.map((x) => (x.key === l.key ? { ...x, qty: Number(e.target.value) } : x))
+                          )
+                        } />
+                      <button type="button" className="text-red-500"
+                        onClick={() => setDraftLines((prev) => prev.filter((x) => x.key !== l.key))}>
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+                <div className="text-xs text-slate-500 px-2 pt-1">
+                  {t("po_items")}: {draftLines.length}
+                </div>
+              </div>
+            )}
 
             <label className="text-sm text-slate-600">{t("pos_note")}</label>
             <textarea

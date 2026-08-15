@@ -551,3 +551,19 @@ export async function getVoucherUrl(path: string) {
   const { data } = await supabase.storage.from("return-vouchers").createSignedUrl(path, 3600);
   return data?.signedUrl || null;
 }
+
+export async function uploadTransferPhoto(file: File, storeId: string, transferId: string) {
+  const compressed = await compressImage(file);
+  const now = new Date();
+  const path = `${storeId}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${transferId}.jpg`;
+  const { error } = await supabase.storage
+    .from("transfer-photos")
+    .upload(path, compressed, { contentType: "image/jpeg", upsert: true });
+  if (error) throw error;
+  return path;
+}
+
+export async function getTransferPhotoUrl(path: string) {
+  const { data } = await supabase.storage.from("transfer-photos").createSignedUrl(path, 3600);
+  return data?.signedUrl || null;
+}

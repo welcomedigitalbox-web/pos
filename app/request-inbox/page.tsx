@@ -41,7 +41,7 @@ export default function RequestInboxPage() {
   const [whId, setWhId] = useState("");
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("pending");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [toast, setToast] = useState("");
 
   const [sendRow, setSendRow] = useState<RequestRow | null>(null);

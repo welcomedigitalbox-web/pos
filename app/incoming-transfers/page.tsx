@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, upsertStoreInventory, logActivity } from "@/lib/supabase";
+import { supabase, upsertStoreInventory, logActivity, uploadTransferPhoto, getTransferPhotoUrl } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -34,6 +34,9 @@ const statusColor: Record<string, string> = {
 export default function IncomingTransfersPage() {
   const { storeId, stores } = useStore();
   const { profile } = useAuth();
+  const isManagerLevel =
+    profile?.role === "sale_manager" || profile?.role === "manager" ||
+    profile?.role === "owner" || profile?.role === "admin";
   const { t } = useLanguage();
   const router = useRouter();
 
@@ -45,6 +48,9 @@ export default function IncomingTransfersPage() {
   const [actualQty, setActualQty] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [approvalPin, setApprovalPin] = useState("");
+  const [photoLink, setPhotoLink] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "incoming-transfers")) router.replace("/");
@@ -60,12 +66,15 @@ export default function IncomingTransfersPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
+    // Managers work across stores, so pinning this to the nav-selected store made
+    // arrivals look like they had vanished. Cashiers still see only their own.
+    let query = supabase
       .from("stock_transfers")
       .select("*, products(name, sku), product_variants(variant_name, sku)")
-      .eq("to_store_id", storeId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(200);
+    if (!isManagerLevel) query = query.eq("to_store_id", storeId);
+    const { data } = await query;
 
     setRows(
       ((data as any[]) || []).map((r) => ({
@@ -88,6 +97,8 @@ export default function IncomingTransfersPage() {
     setConfirmRow(row);
     setActualQty(String(row.qty));
     setNote("");
+    setPhotoFile(null);
+    setApprovalPin("");
   }
 
   async function submitConfirm() {
@@ -97,9 +108,30 @@ export default function IncomingTransfersPage() {
 
     const mismatch = actual !== confirmRow.qty;
     if (mismatch && !note.trim()) return showToast(t("transferIn_noteRequired"));
+    if (mismatch && !photoFile) return showToast(t("transferIn_photoRequired"));
+    if (mismatch && !isManagerLevel && !approvalPin.trim())
+      return showToast(t("transferIn_pinRequired"));
 
     setSaving(true);
     try {
+      // A discrepancy writes off stock, so a manager must authorise it
+      let approvedBy = isManagerLevel ? profile?.email || null : null;
+      if (mismatch && !isManagerLevel) {
+        const { data: verify, error: verifyErr } = await supabase.functions.invoke(
+          "verify-discount-approver",
+          { body: { pin: approvalPin.trim() } }
+        );
+        if (verifyErr) throw verifyErr;
+        if (!verify?.approved) {
+          setSaving(false);
+          return showToast("❌ " + (verify?.error || t("returns_pinInvalid")));
+        }
+        approvedBy = verify.approver_email;
+      }
+
+      let photoPath: string | null = null;
+      if (photoFile) photoPath = await uploadTransferPhoto(photoFile, storeId, confirmRow.id);
+
       // Credit the store with what actually arrived, not what was sent
       const { data: existing } = await (confirmRow.variant_id
         ? supabase.from("store_inventory").select("*")
@@ -131,6 +163,8 @@ export default function IncomingTransfersPage() {
           received_by: profile?.email || null,
           received_at: new Date().toISOString(),
           discrepancy_note: mismatch ? note.trim() : null,
+          photo_url: photoPath,
+          discrepancy_approved_by: mismatch ? approvedBy : null,
         })
         .eq("id", confirmRow.id);
       if (error) throw error;
@@ -168,6 +202,7 @@ export default function IncomingTransfersPage() {
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
+              {isManagerLevel && <th className="text-left px-3 py-2">{t("stockTransfer_toStore")}</th>}
               <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_sent")}</th>
@@ -179,12 +214,13 @@ export default function IncomingTransfersPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={10} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && rows.map((r) => {
               const diff = r.received_qty === null ? null : r.received_qty - r.qty;
               return (
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
+                  {isManagerLevel && <td className="px-3 py-2 font-medium">{r.to_store_id}</td>}
                   <td className="px-3 py-2">{r.display_name}</td>
                   <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                   <td className="px-3 py-2">{r.qty}</td>
@@ -199,6 +235,19 @@ export default function IncomingTransfersPage() {
                     {r.discrepancy_note && (
                       <div className="text-[10px] text-red-600 mt-0.5">{r.discrepancy_note}</div>
                     )}
+                    {(r as any).discrepancy_approved_by && (
+                      <div className="text-[10px] text-slate-400">
+                        {t("returns_approve")}: {(r as any).discrepancy_approved_by}
+                      </div>
+                    )}
+                    {(r as any).photo_url && (
+                      <button
+                        onClick={async () => setPhotoLink(await getTransferPhotoUrl((r as any).photo_url))}
+                        className="text-[10px] text-blue-600 font-medium"
+                      >
+                        📎 {t("transferIn_viewPhoto")}
+                      </button>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{r.received_by || "-"}</td>
                   <td className="px-3 py-2 text-right">
@@ -212,7 +261,7 @@ export default function IncomingTransfersPage() {
               );
             })}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={10} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
@@ -244,12 +293,31 @@ export default function IncomingTransfersPage() {
                   {t("transferIn_note")} <span className="text-red-600">*</span>
                 </label>
                 <textarea
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
                   rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder={t("transferIn_notePlaceholder")}
                 />
+
+                <label className="text-sm text-slate-600">
+                  {t("transferIn_photo")} <span className="text-red-600">*</span>
+                </label>
+                <input type="file" accept="image/*" capture="environment"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs mt-1 mb-3"
+                  onChange={(e) => setPhotoFile(e.target.files?.[0] || null)} />
+
+                {!isManagerLevel && (
+                  <>
+                    <label className="text-sm text-slate-600">
+                      {t("returns_managerPin")} <span className="text-red-600">*</span>
+                    </label>
+                    <input type="password" inputMode="numeric"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4 tracking-widest text-center"
+                      placeholder="••••"
+                      value={approvalPin} onChange={(e) => setApprovalPin(e.target.value)} />
+                  </>
+                )}
               </>
             )}
 
@@ -264,6 +332,13 @@ export default function IncomingTransfersPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {photoLink && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setPhotoLink(null)}>
+          <img src={photoLink} alt="" className="max-h-[80vh] max-w-full rounded-lg" />
         </div>
       )}
 

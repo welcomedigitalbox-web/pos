@@ -2,6 +2,12 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    transferIn_photo: "ပစ္စည်း အခြေအနေ ဓာတ်ပုံ",
+    transferIn_photoRequired: "⚠️ ကွာဟမှုရှိလျှင် ဓာတ်ပုံ တင်ရပါမည်",
+    transferIn_pinRequired: "⚠️ Manager PIN ဖြည့်ပါ",
+    transferIn_viewPhoto: "ဓာတ်ပုံ ကြည့်ရန်",
+    stockRequest_addLine: "ပစ္စည်း ထပ်ထည့်ရန်",
+    stockRequest_noLines: "⚠️ ပစ္စည်း အနည်းဆုံး တစ်ခု ထည့်ပါ",
     stockRequest_noWarehouse: "⚠️ ဤဆိုင်အတွက် ပေးသွင်းသည့် ဂိုဒေါင် မသတ်မှတ်ရသေးပါ",
     stockRequest_needsApproval: "🔒 အတည်ပြုရန်",
     stockRequest_approveTitle: "တောင်းခံမှု အတည်ပြုခြင်း",
@@ -673,6 +679,12 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    transferIn_photo: "Photo of the goods",
+    transferIn_photoRequired: "⚠️ A photo is required when quantities don't match",
+    transferIn_pinRequired: "⚠️ Manager PIN required",
+    transferIn_viewPhoto: "View photo",
+    stockRequest_addLine: "Add item",
+    stockRequest_noLines: "⚠️ Add at least one item",
     stockRequest_noWarehouse: "⚠️ No supplying warehouse set for this store",
     stockRequest_needsApproval: "🔒 Needs approval",
     stockRequest_approveTitle: "Approve Request",
