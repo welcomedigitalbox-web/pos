@@ -22,6 +22,7 @@ export type PageKey =
   | "warehouse-history"
   | "dashboard"
   | "sales-report"
+  | "campaigns"
   | "my-pin"
   | "product-category"
   | "product-variant"
@@ -70,6 +71,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
+  { key: "campaigns", href: "/campaigns", labelKey: "nav_campaigns", group: "reports" },
   { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "reports" },
   { key: "ai-agent", href: "/ai-agent", labelKey: "nav_aiAgent", group: "ai-agent" },
   { key: "profile", href: "/profile", labelKey: "nav_profile", group: "profile" },
@@ -116,6 +118,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "warehouse-history",
     "dashboard",
     "sales-report",
+    "campaigns",
     "my-pin",
     "product-category",
     "product-variant",

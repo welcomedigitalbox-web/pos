@@ -567,3 +567,32 @@ export async function getTransferPhotoUrl(path: string) {
   const { data } = await supabase.storage.from("transfer-photos").createSignedUrl(path, 3600);
   return data?.signedUrl || null;
 }
+
+export type AdPlatform = "meta" | "tiktok" | "other";
+
+export type AdCampaign = {
+  id: string;
+  ad_account_id: string | null;
+  platform: AdPlatform;
+  external_id: string | null;
+  name: string;
+  objective: string | null;
+  start_date: string;
+  end_date: string | null;
+  budget: number;
+  coupon_code: string | null;
+  store_id: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type AdDailyStat = {
+  id: string;
+  campaign_id: string;
+  stat_date: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  reach: number;
+};
