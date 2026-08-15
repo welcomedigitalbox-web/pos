@@ -478,7 +478,7 @@ export function netLineTotal(
   return Number(lineTotal) - discount * share;
 }
 
-export type RefundMethod = "cash" | "exchange" | "store_credit";
+export type RefundMethod = "cash" | "exchange";
 export type ReturnStatus = "pending" | "approved" | "rejected";
 export type ItemCondition = "good" | "damaged";
 
@@ -491,6 +491,7 @@ export type SaleReturn = {
   customer_name: string | null;
   refund_method: RefundMethod;
   refund_payment_method: string | null;
+  exchange_sale_id: string | null;
   refund_amount: number;
   status: ReturnStatus;
   reason: string | null;
@@ -512,6 +513,7 @@ export type SaleReturnItem = {
   unit_price: number;
   unit_cogs: number;
   condition: ItemCondition;
+  line_type: "return" | "exchange";
   created_at: string;
 };
 

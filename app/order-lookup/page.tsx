@@ -58,6 +58,8 @@ export default function OrderLookupPage() {
   const [selected, setSelected] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [returnedItems, setReturnedItems] = useState<any[]>([]);
+  const [refundTotal, setRefundTotal] = useState(0);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "order-lookup")) router.replace("/");
@@ -100,6 +102,29 @@ export default function OrderLookupPage() {
       .eq("sale_id", o.id)
       .order("created_at");
     setItems((data as OrderItem[]) || []);
+
+    // Approved returns against this order, so the totals below reflect what the
+    // shop actually kept rather than what was originally rung up
+    const { data: rets } = await supabase
+      .from("sale_returns")
+      .select("id, refund_amount")
+      .eq("original_sale_id", o.id)
+      .eq("status", "approved");
+
+    const retIds = ((rets as any[]) || []).map((r) => r.id);
+    setRefundTotal(((rets as any[]) || []).reduce((sum, r) => sum + Number(r.refund_amount), 0));
+
+    if (retIds.length) {
+      const { data: retItems } = await supabase
+        .from("sale_return_items")
+        .select("product_id, variant_id, product_name, qty, unit_price, unit_cogs, line_type")
+        .in("return_id", retIds)
+        .eq("line_type", "return");
+      setReturnedItems((retItems as any[]) || []);
+    } else {
+      setReturnedItems([]);
+    }
+
     setItemsLoading(false);
   }
 
@@ -120,7 +145,9 @@ export default function OrderLookupPage() {
 
   // This order's own discount is already known, so apply it directly
   const grossGp = items.reduce((s, i) => s + (Number(i.line_total) - Number(i.line_cogs || 0)), 0);
-  const gp = grossGp - Number(selected?.discount_amount || 0);
+  const returnedMargin = returnedItems.reduce(
+    (sum, r) => sum + Number(r.qty) * (Number(r.unit_price) - Number(r.unit_cogs)), 0);
+  const gp = grossGp - Number(selected?.discount_amount || 0) - returnedMargin;
 
   return (
     <div className="pt-4">
@@ -228,14 +255,26 @@ export default function OrderLookupPage() {
                 </thead>
                 <tbody>
                   {itemsLoading && <tr><td colSpan={4} className="text-center text-slate-400 py-4">...</td></tr>}
-                  {!itemsLoading && items.map((i) => (
+                  {!itemsLoading && items.map((i) => {
+                    const returnedQty = returnedItems
+                      .filter((r) => r.product_id === (i as any).product_id)
+                      .reduce((sum, r) => sum + Number(r.qty), 0);
+                    return (
                     <tr key={i.id} className="border-t border-slate-100">
-                      <td className="px-3 py-2">{i.product_name}</td>
+                      <td className="px-3 py-2">
+                        {i.product_name}
+                        {returnedQty > 0 && (
+                          <span className="ml-1 text-[10px] text-red-600">
+                            ({t("returns_returnedBadge")} {returnedQty})
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">{i.qty}</td>
                       <td className="px-3 py-2">{fmt(i.unit_price)}</td>
                       <td className="px-3 py-2 font-medium">{fmt(i.line_total)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -268,6 +307,17 @@ export default function OrderLookupPage() {
                 <div className="flex justify-between text-orange-600 font-medium">
                   <span>{t("pos_balanceDue")}</span><span>{fmt(selected.balance_due)}</span>
                 </div>
+              )}
+              {refundTotal > 0 && (
+                <>
+                  <div className="flex justify-between text-red-600 font-medium">
+                    <span>{t("orderLookup_returned")}</span><span>-{fmt(refundTotal)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-base border-t border-slate-200 pt-2">
+                    <span>{t("orderLookup_netTotal")}</span>
+                    <span>{fmt(Number(selected.total) - refundTotal)}</span>
+                  </div>
+                </>
               )}
               {!itemsLoading && (
                 <div className="flex justify-between text-green-700 font-medium border-t border-slate-100 pt-2 mt-2">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase, SellableItem, fetchSellableItems, fetchSellableItem, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -234,9 +235,12 @@ export default function StockRequestPage() {
                 </td>
                 <td className="px-3 py-2 text-right">
                   {r.status === "pending" && (
-                    <button onClick={() => openReceive(r)} className="text-blue-600 text-xs font-medium">
-                      {t("stockRequest_receive")}
-                    </button>
+                    <span className="text-xs text-slate-400">{t("stockRequest_awaitingWarehouse")}</span>
+                  )}
+                  {r.status === "approved" && (
+                    <Link href="/incoming-transfers" className="text-blue-600 text-xs font-medium">
+                      {t("stockRequest_confirmInTransfers")}
+                    </Link>
                   )}
                   {r.status === "mismatch" && canApprove && (
                     <button onClick={() => approveMismatch(r.id)} className="text-orange-600 text-xs font-medium">

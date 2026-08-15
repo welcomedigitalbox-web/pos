@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  supabase, SaleReturn, RefundMethod, ItemCondition,
+  supabase, SaleReturn, RefundMethod, ItemCondition, SellableItem, fetchSellableItems,
   netLineTotal, uploadReturnVoucher, getVoucherUrl, upsertStoreInventory, logActivity,
 } from "@/lib/supabase";
 import { useStore } from "../store-context";
@@ -55,6 +55,9 @@ export default function ReturnsPage() {
   const [refundMethod, setRefundMethod] = useState<RefundMethod>("cash");
   const [refundPaymentMethod, setRefundPaymentMethod] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<{ code: string; name: string }[]>([]);
+  const [stockItems, setStockItems] = useState<SellableItem[]>([]);
+  const [exchangeLines, setExchangeLines] = useState<{ key: string; qty: number }[]>([]);
+  const [exchangeSearch, setExchangeSearch] = useState("");
   const [reason, setReason] = useState("");
   const [voucherFile, setVoucherFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -162,6 +165,8 @@ export default function ReturnsPage() {
     }
 
     setFoundSale(sale);
+    setStockItems(await fetchSellableItems(sale.store_id));
+    setExchangeLines([]);
     setOrderItems(
       ((items as any[]) || []).map((i) => {
         const net = netLineTotal(i.line_total, sale.subtotal, sale.discount_amount);
@@ -176,10 +181,18 @@ export default function ReturnsPage() {
     setDraft({});
   }
 
-  const refundTotal = orderItems.reduce((sum, i) => {
+  const returnedTotal = orderItems.reduce((sum, i) => {
     const q = Number(draft[i.id]?.qty || 0);
     return sum + q * i.netUnitPrice;
   }, 0);
+
+  const exchangeTotal = exchangeLines.reduce((sum, l) => {
+    const item = stockItems.find((s) => s.key === l.key);
+    return sum + (item ? item.price * l.qty : 0);
+  }, 0);
+
+  // Positive → the shop owes the customer; negative → the customer owes the shop
+  const refundTotal = refundMethod === "exchange" ? returnedTotal - exchangeTotal : returnedTotal;
 
   async function submitReturn() {
     const lines = orderItems
@@ -188,6 +201,8 @@ export default function ReturnsPage() {
 
     if (!lines.length) return showToast(t("returns_selectItems"));
     if (!voucherFile) return showToast(t("returns_voucherRequired"));
+    if (refundMethod === "exchange" && exchangeLines.every((l) => l.qty <= 0))
+      return showToast(t("returns_exchangeItemsRequired"));
     for (const l of lines) {
       if (l.qty > l.item.qty - l.item.alreadyReturned) {
         return showToast(`${t("returns_qtyTooHigh")} — ${l.item.product_name}`);
@@ -236,18 +251,37 @@ export default function ReturnsPage() {
         .single();
       if (error) throw error;
 
-      await supabase.from("sale_return_items").insert(
-        lines.map((l) => ({
-          return_id: created.id,
-          product_id: l.item.product_id,
-          variant_id: l.item.variant_id,
-          product_name: l.item.product_name,
-          qty: l.qty,
-          unit_price: l.item.netUnitPrice,
-          unit_cogs: Number(l.item.qty) > 0 ? Number(l.item.line_cogs) / Number(l.item.qty) : 0,
-          condition: l.condition,
-        }))
-      );
+      const returnRows = lines.map((l) => ({
+        return_id: created.id,
+        product_id: l.item.product_id,
+        variant_id: l.item.variant_id,
+        product_name: l.item.product_name,
+        qty: l.qty,
+        unit_price: l.item.netUnitPrice,
+        unit_cogs: Number(l.item.qty) > 0 ? Number(l.item.line_cogs) / Number(l.item.qty) : 0,
+        condition: l.condition,
+        line_type: "return",
+      }));
+
+      const exchangeRows = exchangeLines
+        .map((l) => {
+          const it = stockItems.find((s) => s.key === l.key);
+          if (!it || l.qty <= 0) return null;
+          return {
+            return_id: created.id,
+            product_id: it.product_id,
+            variant_id: it.variant_id,
+            product_name: it.display_name,
+            qty: l.qty,
+            unit_price: it.price,
+            unit_cogs: it.avg_cost,
+            condition: "good",
+            line_type: "exchange",
+          };
+        })
+        .filter(Boolean);
+
+      await supabase.from("sale_return_items").insert([...returnRows, ...(exchangeRows as any[])]);
 
       if (voucherFile) {
         const path = await uploadReturnVoucher(voucherFile, foundSale.store_id, created.id);
@@ -269,6 +303,7 @@ export default function ReturnsPage() {
       setDraft({});
       setVoucherFile(null);
       setReason("");
+      setExchangeLines([]);
       await load();
       // Open the approval step immediately — the customer is still at the counter
       await openReview({ ...(created as SaleReturn), refund_amount: refundTotal });
@@ -292,7 +327,7 @@ export default function ReturnsPage() {
     const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
-      for (const item of reviewItems) {
+      for (const item of reviewItems.filter((i) => i.line_type !== "exchange")) {
         if (item.condition === "good") {
           // Sellable again — put it back on the shelf at its original cost
           const { data: inv } = await (item.variant_id
@@ -317,13 +352,54 @@ export default function ReturnsPage() {
         }
       }
 
-      if (reviewRow.refund_method === "store_credit" && reviewRow.customer_id) {
-        const { data: cust } = await supabase
-          .from("customers").select("store_credit").eq("id", reviewRow.customer_id).maybeSingle();
-        await supabase
-          .from("customers")
-          .update({ store_credit: Number(cust?.store_credit || 0) + Number(reviewRow.refund_amount) })
-          .eq("id", reviewRow.customer_id);
+      // Replacement goods are a real sale: booking one keeps stock, COGS and
+      // every downstream report correct without special-casing exchanges.
+      const outLines = reviewItems.filter((i) => i.line_type === "exchange");
+      if (outLines.length) {
+        const exchangeTotal = outLines.reduce((sum, i) => sum + Number(i.qty) * Number(i.unit_price), 0);
+        const { data: exSale, error: exErr } = await supabase
+          .from("sales")
+          .insert({
+            store_id: reviewRow.store_id,
+            subtotal: exchangeTotal,
+            total: exchangeTotal,
+            payment_method: "exchange",
+            order_type: "pos",
+            customer_id: reviewRow.customer_id,
+            customer_name: reviewRow.customer_name,
+            cashier_email: reviewRow.requested_by,
+            note: `Exchange for ${reviewRow.return_number}`,
+          })
+          .select()
+          .single();
+        if (exErr) throw exErr;
+
+        await supabase.from("sale_items").insert(
+          outLines.map((i) => ({
+            sale_id: exSale.id,
+            product_id: i.product_id,
+            variant_id: i.variant_id,
+            product_name: i.product_name,
+            qty: i.qty,
+            unit_price: i.unit_price,
+            line_total: Number(i.qty) * Number(i.unit_price),
+            unit_cost: i.unit_cogs,
+            line_cogs: Number(i.qty) * Number(i.unit_cogs),
+          }))
+        );
+
+        for (const i of outLines) {
+          const { data: inv } = await (i.variant_id
+            ? supabase.from("store_inventory").select("*").eq("store_id", reviewRow.store_id)
+                .eq("product_id", i.product_id).eq("variant_id", i.variant_id).maybeSingle()
+            : supabase.from("store_inventory").select("*").eq("store_id", reviewRow.store_id)
+                .eq("product_id", i.product_id).is("variant_id", null).maybeSingle());
+          await upsertStoreInventory(reviewRow.store_id, i.product_id, i.variant_id, {
+            stock_qty: Number(inv?.stock_qty || 0) - Number(i.qty),
+          });
+        }
+
+        await supabase.from("sale_returns").update({ exchange_sale_id: exSale.id }).eq("id", reviewRow.id);
       }
 
       await supabase
@@ -546,6 +622,78 @@ export default function ReturnsPage() {
                   </table>
                 </div>
 
+                {refundMethod === "exchange" && (
+                  <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-3 mb-3">
+                    <div className="text-sm font-medium mb-2">🔁 {t("returns_exchangeItems")}</div>
+
+                    <input
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2"
+                      placeholder={t("returns_exchangeSearch")}
+                      value={exchangeSearch}
+                      onChange={(e) => setExchangeSearch(e.target.value)}
+                    />
+
+                    {exchangeSearch.trim() && (
+                      <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white mb-2">
+                        {stockItems
+                          .filter((it) => {
+                            const q = exchangeSearch.trim().toLowerCase();
+                            return (
+                              it.display_name.toLowerCase().includes(q) ||
+                              (it.sku || "").toLowerCase().includes(q)
+                            );
+                          })
+                          .slice(0, 20)
+                          .map((it) => (
+                            <button
+                              key={it.key}
+                              type="button"
+                              onClick={() => {
+                                setExchangeLines((prev) =>
+                                  prev.find((l) => l.key === it.key)
+                                    ? prev.map((l) => (l.key === it.key ? { ...l, qty: l.qty + 1 } : l))
+                                    : [...prev, { key: it.key, qty: 1 }]
+                                );
+                                setExchangeSearch("");
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100"
+                            >
+                              {it.display_name}
+                              <span className="text-slate-400 text-xs"> · {fmt(it.price)} · {t("barcode_balanceStock")}: {it.stock_qty}</span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+
+                    {exchangeLines.map((l) => {
+                      const it = stockItems.find((s) => s.key === l.key);
+                      if (!it) return null;
+                      return (
+                        <div key={l.key} className="flex items-center gap-2 text-sm bg-white rounded px-2 py-1.5 mb-1">
+                          <span className="flex-1 min-w-0 truncate">{it.display_name}</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={it.stock_qty}
+                            className="w-16 border border-slate-200 rounded px-2 py-1 text-sm"
+                            value={l.qty}
+                            onChange={(e) =>
+                              setExchangeLines((prev) =>
+                                prev.map((x) => (x.key === l.key ? { ...x, qty: Number(e.target.value) } : x))
+                              )
+                            }
+                          />
+                          <span className="w-28 text-right font-medium">{fmt(it.price * l.qty)}</span>
+                          <button type="button" className="text-red-500"
+                            onClick={() => setExchangeLines((prev) => prev.filter((x) => x.key !== l.key))}>
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="text-sm text-slate-600">{t("returns_refundMethod")}</label>
@@ -553,7 +701,6 @@ export default function ReturnsPage() {
                       value={refundMethod} onChange={(e) => setRefundMethod(e.target.value as RefundMethod)}>
                       <option value="cash">{t("returns_method_cash")}</option>
                       <option value="exchange">{t("returns_method_exchange")}</option>
-                      <option value="store_credit">{t("returns_method_store_credit")}</option>
                     </select>
                   </div>
                   {refundMethod === "cash" && (
@@ -582,9 +729,25 @@ export default function ReturnsPage() {
                 <textarea className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3" rows={2}
                   value={reason} onChange={(e) => setReason(e.target.value)} />
 
-                <div className="flex justify-between items-center font-bold mb-4 border-t border-slate-200 pt-3">
-                  <span>{t("returns_refundAmount")}</span>
-                  <span>{fmt(refundTotal)}</span>
+                <div className="border-t border-slate-200 pt-3 mb-4 space-y-1 text-sm">
+                  <div className="flex justify-between text-slate-500">
+                    <span>{t("returns_returnedValue")}</span>
+                    <span>{fmt(returnedTotal)}</span>
+                  </div>
+                  {refundMethod === "exchange" && (
+                    <div className="flex justify-between text-slate-500">
+                      <span>{t("returns_exchangeValue")}</span>
+                      <span>-{fmt(exchangeTotal)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-base pt-1">
+                    <span>
+                      {refundTotal >= 0 ? t("returns_refundAmount") : t("returns_customerPays")}
+                    </span>
+                    <span className={refundTotal >= 0 ? "" : "text-orange-600"}>
+                      {fmt(Math.abs(refundTotal))}
+                    </span>
+                  </div>
                 </div>
               </>
             )}
@@ -594,7 +757,7 @@ export default function ReturnsPage() {
                 className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
                 {t("products_cancel")}
               </button>
-              <button onClick={submitReturn} disabled={saving || !foundSale || refundTotal <= 0 || !voucherFile}
+              <button onClick={submitReturn} disabled={saving || !foundSale || !voucherFile || (refundMethod === "cash" && refundTotal <= 0)}
                 className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
                 {saving ? "..." : t("returns_submit")}
               </button>

@@ -78,7 +78,7 @@ export default function HistoryPage() {
 
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [refunds, setRefunds] = useState<RefundRow[]>([]);
-  const [returnedSaleIds, setReturnedSaleIds] = useState<Set<string>>(new Set());
+  const [refundBySale, setRefundBySale] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState<PeriodKey>("today");
@@ -137,11 +137,14 @@ export default function HistoryPage() {
     // Mark which orders have an approved return so staff can spot them at a glance
     const { data: returnedSales } = await supabase
       .from("sale_returns")
-      .select("original_sale_id")
+      .select("original_sale_id, refund_amount")
       .eq("status", "approved");
-    setReturnedSaleIds(
-      new Set(((returnedSales as any[]) || []).map((r) => r.original_sale_id).filter(Boolean))
-    );
+    const refundMap = new Map<string, number>();
+    for (const r of (returnedSales as any[]) || []) {
+      if (!r.original_sale_id) continue;
+      refundMap.set(r.original_sale_id, (refundMap.get(r.original_sale_id) || 0) + Number(r.refund_amount));
+    }
+    setRefundBySale(refundMap);
     setRefunds((refundData as RefundRow[]) || []);
     setLoading(false);
   }
@@ -271,7 +274,7 @@ export default function HistoryPage() {
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">
                   {s.id.slice(0, 8).toUpperCase()}
-                  {returnedSaleIds.has(s.id) && (
+                  {refundBySale.has(s.id) && (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700 font-medium">
                       {t("returns_returnedBadge")}
                     </span>
@@ -283,7 +286,18 @@ export default function HistoryPage() {
                 <td className="px-3 py-2 text-slate-500 text-xs">{s.cashier_email || "-"}</td>
                 <td className="px-3 py-2 text-slate-500">{s.sale_rep_name || "-"}</td>
                 <td className="px-3 py-2 text-xs">{s.payment_method || "-"}</td>
-                <td className="px-3 py-2 font-medium">{fmt(s.total)}</td>
+                <td className="px-3 py-2 font-medium">
+                  {refundBySale.has(s.id) ? (
+                    <>
+                      <span className="line-through text-slate-300">{fmt(s.total)}</span>
+                      <div className="text-green-700">
+                        {fmt(Number(s.total) - (refundBySale.get(s.id) || 0))}
+                      </div>
+                    </>
+                  ) : (
+                    fmt(s.total)
+                  )}
+                </td>
               </tr>
             ))}
             {!loading && filteredSales.length === 0 && (
