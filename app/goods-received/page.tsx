@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { supabase, CENTRAL_WAREHOUSE_ID, Supplier } from "@/lib/supabase";
+import { supabase, Supplier } from "@/lib/supabase";
+import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
@@ -28,6 +29,8 @@ type ReceiptRow = {
 };
 
 export default function GoodsReceivedPage() {
+  const { warehouses, defaultWarehouseId } = useStore();
+  const [whId, setWhId] = useState("");
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -47,9 +50,13 @@ export default function GoodsReceivedPage() {
   }, [profile]);
 
   useEffect(() => {
-    load();
+    if (!whId && defaultWarehouseId) setWhId(defaultWarehouseId);
+  }, [defaultWarehouseId, whId]);
+
+  useEffect(() => {
+    if (whId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [whId]);
 
   if (!profile || !hasPermission(profile, "goods-received")) return null;
 
@@ -63,7 +70,7 @@ export default function GoodsReceivedPage() {
     const { data } = await supabase
       .from("stock_purchases")
       .select("*, products(name), product_variants(variant_name), purchase_orders(po_number)")
-      .eq("store_id", CENTRAL_WAREHOUSE_ID)
+      .eq("store_id", whId)
       .order("created_at", { ascending: false })
       .limit(300);
 
@@ -113,6 +120,13 @@ export default function GoodsReceivedPage() {
       <p className="text-sm text-slate-500 mb-4">{t("goodsReceived_subtitle")}</p>
 
       <div className="flex flex-wrap gap-2 mb-4">
+        {warehouses.length > 1 && (
+          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            value={whId} onChange={(e) => setWhId(e.target.value)}>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
+          </select>
+        )}
+
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)}>
           <option value="all">{t("goodsReceived_allSuppliers")}</option>
