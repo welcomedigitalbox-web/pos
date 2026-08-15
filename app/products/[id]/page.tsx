@@ -76,8 +76,9 @@ export default function ProductDetailPage() {
 
     const { data: items } = await supabase
       .from("sale_items")
-      .select("qty, line_total, line_cogs")
-      .eq("product_id", id);
+      .select("qty, line_total, line_cogs, sales!inner(store_id)")
+      .eq("product_id", id)
+      .eq("sales.store_id", storeId);
     const sold = (items || []).reduce((s, i) => s + Number(i.qty), 0);
     const sale = (items || []).reduce((s, i) => s + Number(i.line_total), 0);
     const margin = (items || []).reduce((s, i) => s + (Number(i.line_total) - Number(i.line_cogs)), 0);
@@ -117,7 +118,35 @@ export default function ProductDetailPage() {
       .eq("store_id", storeId)
       .order("created_at", { ascending: true });
 
+    const { data: transferRows } = await supabase
+      .from("stock_transfers")
+      .select("qty, received_qty, created_at, from_store_id, to_store_id, status")
+      .eq("product_id", id)
+      .order("created_at", { ascending: true });
+
+    const isWarehouse = !!stores.find((st) => st.id === storeId)?.is_warehouse;
+    const transferMoves: LedgerRow[] = ((transferRows as any[]) || [])
+      .filter((tr) => (tr.from_store_id === storeId ? true : tr.to_store_id === storeId))
+      // Stock only lands in the destination once the store confirms receipt
+      .filter((tr) => tr.from_store_id === storeId || tr.status !== "in_transit")
+      .map((tr) =>
+        tr.from_store_id === storeId
+          ? {
+              date: tr.created_at,
+              type: "out" as const,
+              qty: Number(tr.qty),
+              reference: `Transfer → ${tr.to_store_id}`,
+            }
+          : {
+              date: tr.created_at,
+              type: "in" as const,
+              qty: Number(tr.received_qty ?? tr.qty),
+              reference: `Transfer ← ${tr.from_store_id || "WH"}`,
+            }
+      );
+
     const combined: LedgerRow[] = [
+      ...transferMoves,
       ...(purchases || []).map((p) => ({
         date: p.created_at,
         type: "in" as const,
