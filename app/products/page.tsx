@@ -28,7 +28,7 @@ type FormState = {
 const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "", category_id: "", is_consignment: false, requires_expiry: false };
 
 export default function ProductsPage() {
-  const { storeId } = useStore();
+  const { storeId, stores } = useStore();
   const { profile } = useAuth();
   const { t } = useLanguage();
   const router = useRouter();
@@ -64,7 +64,31 @@ export default function ProductsPage() {
     const { data: raw } = await supabase.from("products").select("*").order("name");
     setRawProducts((raw as Product[]) || []);
     const data = await fetchSellableItems(storeId, true);
-    setItems(data);
+
+    // Stock lives per location; the catalog view shows the company-wide total
+    const { data: invRows } = await supabase
+      .from("store_inventory")
+      .select("product_id, variant_id, stock_qty, avg_cost");
+
+    const key = (p: string, v: string | null) => `${p}:${v || "base"}`;
+    const totals = new Map<string, { qty: number; value: number }>();
+    for (const r of (invRows as any[]) || []) {
+      const k = key(r.product_id, r.variant_id);
+      const cur = totals.get(k) || { qty: 0, value: 0 };
+      cur.qty += Number(r.stock_qty);
+      cur.value += Number(r.stock_qty) * Number(r.avg_cost);
+      totals.set(k, cur);
+    }
+
+    const merged = data.map((i) => {
+      const agg = totals.get(key(i.product_id, i.variant_id)) || { qty: 0, value: 0 };
+      return {
+        ...i,
+        stock_qty: agg.qty,
+        avg_cost: agg.qty > 0 ? agg.value / agg.qty : 0,
+      };
+    });
+    setItems(merged);
   }
 
   async function loadCategories() {
@@ -276,7 +300,7 @@ export default function ProductsPage() {
   return (
     <div className="pt-4">
       <div className="flex justify-between items-center mb-3">
-        <h2 className="font-semibold text-lg">{t("products_title")} ({storeId})</h2>
+        <h2 className="font-semibold text-lg">{t("products_title")}</h2>
         <button
           onClick={openNew}
           className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium"
@@ -293,7 +317,7 @@ export default function ProductsPage() {
               <th className="text-left px-4 py-2">{t("products_sku")}</th>
               <th className="text-left px-4 py-2">{t("products_price")}</th>
               <th className="text-left px-4 py-2">{t("products_avgCost")}</th>
-              <th className="text-left px-4 py-2">{t("products_stock")}</th>
+              <th className="text-left px-4 py-2">{t("productDetail_totalStock")}</th>
               <th className="text-left px-4 py-2"></th>
             </tr>
           </thead>
@@ -448,7 +472,12 @@ export default function ProductsPage() {
 
             {editingVariants.length === 0 ? (
               <>
-                <label className="text-sm text-slate-600">{t("products_stockQty")}</label>
+                <label className="text-sm text-slate-600">
+                  {t("products_stockQty")}
+                  <span className="text-slate-400 text-xs">
+                    {" "}({stores.find((st) => st.id === storeId)?.name || storeId})
+                  </span>
+                </label>
                 <input
                   type="number"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
@@ -481,7 +510,12 @@ export default function ProductsPage() {
                     <div className="flex items-center gap-1 text-[10px] text-slate-400 px-2">
                       <span className="flex-1">{t("productVariant_variantName")}</span>
                       <span className="w-24">{t("products_price")}</span>
-                      <span className="w-20">{t("products_stockQty")}</span>
+                      <span className="w-20">
+                        {t("products_stockQty")}
+                        <span className="block text-[9px] text-slate-300 leading-none">
+                          {stores.find((st) => st.id === storeId)?.name || storeId}
+                        </span>
+                      </span>
                       <span className="w-4"></span>
                     </div>
                     {editingVariants.map((v) => (
