@@ -63,6 +63,8 @@ export default function ReturnsPage() {
   const [voucherLink, setVoucherLink] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [approvalPin, setApprovalPin] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
   const canApprove =
     profile?.role === "sale_manager" || profile?.role === "owner" || profile?.role === "admin";
@@ -234,8 +236,9 @@ export default function ReturnsPage() {
     setReviewItems((data as any[]) || []);
   }
 
-  async function approveReturn() {
+  async function approveReturn(approver?: string) {
     if (!reviewRow) return;
+    const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
       for (const item of reviewItems) {
@@ -274,7 +277,7 @@ export default function ReturnsPage() {
 
       await supabase
         .from("sale_returns")
-        .update({ status: "approved", approved_by: profile?.email || null, approved_at: new Date().toISOString() })
+        .update({ status: "approved", approved_by: approvedBy, approved_at: new Date().toISOString() })
         .eq("id", reviewRow.id);
 
       await logActivity({
@@ -282,7 +285,7 @@ export default function ReturnsPage() {
         entityId: reviewRow.id,
         action: "approved",
         detail: `${reviewRow.return_number} · ${fmt(Number(reviewRow.refund_amount))}`,
-        actor: profile?.email,
+        actor: approvedBy,
       });
 
       showToast(t("returns_approved"));
@@ -292,6 +295,27 @@ export default function ReturnsPage() {
       showToast("❌ " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setProcessing(false);
+    }
+  }
+
+  async function approveWithPin() {
+    if (!approvalPin.trim()) return showToast(t("returns_pinRequired"));
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
+        body: { pin: approvalPin.trim() },
+      });
+      if (error) throw error;
+      if (!data?.approved) {
+        showToast("❌ " + (data?.error || t("returns_pinInvalid")));
+        return;
+      }
+      setApprovalPin("");
+      await approveReturn(data.approver_email);
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -359,7 +383,7 @@ export default function ReturnsPage() {
                 <td className="px-3 py-2 text-slate-500 text-xs">{r.requested_by || "-"}</td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => openReview(r)} className="text-blue-600 text-xs font-medium">
-                    {r.status === "pending" && canApprove ? t("returns_review") : t("products_view")}
+                    {r.status === "pending" ? t("returns_review") : t("products_view")}
                   </button>
                 </td>
               </tr>
@@ -541,6 +565,35 @@ export default function ReturnsPage() {
               </a>
             )}
 
+            {reviewRow.status === "pending" && !canApprove && (
+              <>
+                <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3">
+                  {t("returns_pinHint")}
+                </p>
+                <label className="text-sm text-slate-600">{t("returns_managerPin")}</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3 tracking-widest text-center"
+                  placeholder="••••"
+                  value={approvalPin}
+                  onChange={(e) => setApprovalPin(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && approveWithPin()}
+                />
+                <div className="flex gap-2">
+                  <button onClick={() => setReviewRow(null)}
+                    className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                    {t("products_cancel")}
+                  </button>
+                  <button onClick={approveWithPin} disabled={verifying || processing}
+                    className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                    {verifying || processing ? "..." : t("returns_approveWithPin")}
+                  </button>
+                </div>
+              </>
+            )}
+
             {reviewRow.status === "pending" && canApprove ? (
               <>
                 <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3">
@@ -554,18 +607,18 @@ export default function ReturnsPage() {
                     className="flex-1 py-2.5 border border-red-200 text-red-600 rounded-lg text-sm font-medium">
                     {t("returns_reject")}
                   </button>
-                  <button onClick={approveReturn} disabled={processing}
+                  <button onClick={() => approveReturn()} disabled={processing}
                     className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
                     {processing ? "..." : t("returns_approve")}
                   </button>
                 </div>
               </>
-            ) : (
+            ) : reviewRow.status !== "pending" ? (
               <button onClick={() => setReviewRow(null)}
                 className="w-full py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
                 {t("products_cancel")}
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       )}

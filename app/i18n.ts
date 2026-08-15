@@ -2,6 +2,11 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    returns_managerPin: "Manager PIN",
+    returns_approveWithPin: "PIN ဖြင့် အတည်ပြု",
+    returns_pinHint: "Sale Manager သို့မဟုတ် Owner ၏ PIN ရိုက်ထည့်၍ ချက်ချင်း အတည်ပြုနိုင်ပါသည်",
+    returns_pinRequired: "⚠️ PIN ဖြည့်ပါ",
+    returns_pinInvalid: "PIN မှားနေပါသည်",
     nav_returns: "အရောင်းပြန်အမ်း",
     returns_new: "+ ပြန်အမ်းမှု အသစ်",
     returns_number: "Return နံပါတ်",
@@ -620,6 +625,11 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    returns_managerPin: "Manager PIN",
+    returns_approveWithPin: "Approve with PIN",
+    returns_pinHint: "A Sale Manager or Owner can enter their PIN to approve on the spot",
+    returns_pinRequired: "⚠️ Enter a PIN",
+    returns_pinInvalid: "Incorrect PIN",
     nav_returns: "Sale Returns",
     returns_new: "+ New Return",
     returns_number: "Return No.",
