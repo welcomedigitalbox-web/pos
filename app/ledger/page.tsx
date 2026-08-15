@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems, netLineTotal } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -138,11 +138,17 @@ export default function LedgerPage() {
     let saleQuery = applyChannel(
       supabase
         .from("sale_items")
-        .select("product_id, variant_id, qty, line_total, line_cogs, created_at, sales!inner(store_id, order_type, channel)")
+        .select("product_id, variant_id, qty, line_total, line_cogs, created_at, sales!inner(store_id, order_type, channel, subtotal, discount_amount)")
     );
     // Stock sits in the warehouse but demand comes from the shops, so the warehouse
     // view aggregates every store's sales instead of its own (which are always zero).
+    // A warehouse's demand is what the stores IT SUPPLIES sell, not every store
+    const suppliedStoreIds = stores
+      .filter((st) => st.supply_warehouse_id === storeId || (!st.is_warehouse && !st.supply_warehouse_id))
+      .map((st) => st.id);
+
     if (!isWarehouseView) saleQuery = saleQuery.eq("sales.store_id", storeId);
+    else if (suppliedStoreIds.length) saleQuery = saleQuery.in("sales.store_id", suppliedStoreIds);
     if (from) saleQuery = saleQuery.gte("created_at", from.toISOString());
     if (to) saleQuery = saleQuery.lte("created_at", to.toISOString());
     const { data: saleRows } = await saleQuery;
@@ -154,6 +160,7 @@ export default function LedgerPage() {
         .select("product_id, variant_id, qty, created_at, sales!inner(store_id, order_type, channel)")
     );
     if (!isWarehouseView) allTimeQuery = allTimeQuery.eq("sales.store_id", storeId);
+    else if (suppliedStoreIds.length) allTimeQuery = allTimeQuery.in("sales.store_id", suppliedStoreIds);
     const { data: allTimeRows } = await allTimeQuery;
 
     const keyOf = (pid: string, vid: string | null) => `${pid}:${vid || "base"}`;
@@ -162,7 +169,7 @@ export default function LedgerPage() {
       const k = keyOf(r.product_id, r.variant_id);
       const cur = agg.get(k) || { qty: 0, total: 0, cogs: 0 };
       cur.qty += Number(r.qty);
-      cur.total += Number(r.line_total);
+      cur.total += netLineTotal(r.line_total, r.sales?.subtotal, r.sales?.discount_amount);
       cur.cogs += Number(r.line_cogs || 0);
       agg.set(k, cur);
     }
@@ -174,7 +181,8 @@ export default function LedgerPage() {
       periodDays = dates.length ? Math.max(1, Math.ceil((Date.now() - Math.min(...dates)) / 86400000)) : 0;
     }
 
-    const periodSalesTotal = ((saleRows as any[]) || []).reduce((sum, r) => sum + Number(r.line_total), 0);
+    const periodSalesTotal = ((saleRows as any[]) || []).reduce(
+      (sum, r) => sum + netLineTotal(r.line_total, r.sales?.subtotal, r.sales?.discount_amount), 0);
 
     // Remaining stock split by expiry, so one SKU with several expiry dates
     // can be shown as separate lines instead of a single lump

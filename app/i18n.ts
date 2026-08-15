@@ -2,6 +2,11 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    admin_supplyWarehouse: "ပေးသွင်းသည့် ဂိုဒေါင်",
+    admin_supplyWarehouseNone: "— မသတ်မှတ်ရသေး —",
+    admin_supplyWarehouseHint: "ဤဆိုင်သို့ ပစ္စည်းပို့ပေးမည့် ဂိုဒေါင်",
+    admin_supplyWarehouseSaved: "✅ ဂိုဒေါင် သတ်မှတ်ပြီးပါပြီ",
+    stockTransfer_unassignedNote: "ℹ️ ဂိုဒေါင် မသတ်မှတ်ရသေးသော ဆိုင်များလည်း ပါဝင်ပါသည်",
     ledger_noExpiry: "သက်တမ်းမရှိ",
     productDetail_viewing: "ကြည့်နေသည့် နေရာ",
     ledger_expiryBatches: "သက်တမ်းအလိုက် ခွဲခြမ်း",
@@ -579,6 +584,11 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    admin_supplyWarehouse: "Supplied By",
+    admin_supplyWarehouseNone: "— Not set —",
+    admin_supplyWarehouseHint: "The warehouse that ships stock to this store",
+    admin_supplyWarehouseSaved: "✅ Supplying warehouse saved",
+    stockTransfer_unassignedNote: "ℹ️ Stores with no warehouse assigned are also listed",
     ledger_noExpiry: "No expiry",
     productDetail_viewing: "Viewing Location",
     ledger_expiryBatches: "Expiry breakdown",

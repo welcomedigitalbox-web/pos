@@ -23,6 +23,7 @@ export default function AdminStoresPage() {
   const [saving, setSaving] = useState(false);
 
   const [mergeSource, setMergeSource] = useState<StoreRow | null>(null);
+  const [supplyWh, setSupplyWh] = useState("");
   const [mergeTarget, setMergeTarget] = useState("");
   const [merging, setMerging] = useState(false);
 
@@ -54,6 +55,7 @@ export default function AdminStoresPage() {
         name: name.trim(),
         region: region.trim() || null,
         is_warehouse: isWarehouse,
+        supply_warehouse_id: isWarehouse ? null : supplyWh || null,
       });
       if (error) throw error;
       showToast(t("admin_storeCreated"));
@@ -119,11 +121,23 @@ export default function AdminStoresPage() {
     (s) => s.is_active && s.id !== mergeSource?.id && s.is_warehouse === mergeSource?.is_warehouse
   );
 
+  async function setSupplyWarehouse(storeId: string, warehouseId: string) {
+    const { error } = await supabase
+      .from("stores")
+      .update({ supply_warehouse_id: warehouseId || null })
+      .eq("id", storeId);
+    if (error) return showToast("❌ " + error.message);
+    showToast(t("admin_supplyWarehouseSaved"));
+    await load();
+    await refreshStores();
+  }
+
   function openNew(asWarehouse: boolean) {
     setId("");
     setName("");
     setRegion("");
     setIsWarehouse(asWarehouse);
+    setSupplyWh("");
     setShowForm(true);
   }
 
@@ -138,17 +152,32 @@ export default function AdminStoresPage() {
             <th className="text-left px-4 py-2">ID</th>
             <th className="text-left px-4 py-2">{t("customers_name")}</th>
             <th className="text-left px-4 py-2">{t("admin_storeRegion")}</th>
+            {!isWh && <th className="text-left px-4 py-2">{t("admin_supplyWarehouse")}</th>}
             <th className="text-left px-4 py-2">{t("admin_active")}</th>
             <th className="text-left px-4 py-2"></th>
           </tr>
         </thead>
         <tbody>
-          {loading && <tr><td colSpan={5} className="text-center text-slate-400 py-8">...</td></tr>}
+          {loading && <tr><td colSpan={6} className="text-center text-slate-400 py-8">...</td></tr>}
           {!loading && list.map((s) => (
             <tr key={s.id} className={`border-t border-slate-100 ${!s.is_active ? "opacity-50 bg-slate-50" : ""}`}>
               <td className="px-4 py-2 font-mono text-xs">{s.id}</td>
               <td className="px-4 py-2 font-medium">{isWh && "🏭 "}{s.name}</td>
               <td className="px-4 py-2 text-slate-500">{s.region || "-"}</td>
+              {!isWh && (
+                <td className="px-4 py-2">
+                  <select
+                    className="border border-slate-200 rounded px-2 py-1 text-xs"
+                    value={s.supply_warehouse_id || ""}
+                    onChange={(e) => setSupplyWarehouse(s.id, e.target.value)}
+                  >
+                    <option value="">{t("admin_supplyWarehouseNone")}</option>
+                    {stores.filter((w) => w.is_warehouse && w.is_active).map((w) => (
+                      <option key={w.id} value={w.id}>🏭 {w.name}</option>
+                    ))}
+                  </select>
+                </td>
+              )}
               <td className="px-4 py-2">{s.is_active ? "🟢" : "⚪"}</td>
               <td className="px-4 py-2 text-right space-x-3">
                 {s.is_active && (
@@ -165,7 +194,7 @@ export default function AdminStoresPage() {
             </tr>
           ))}
           {!loading && list.length === 0 && (
-            <tr><td colSpan={5} className="text-center text-slate-400 py-8">-</td></tr>
+            <tr><td colSpan={6} className="text-center text-slate-400 py-8">-</td></tr>
           )}
         </tbody>
       </table>
@@ -219,6 +248,20 @@ export default function AdminStoresPage() {
               value={region} onChange={(e) => setRegion(e.target.value)} placeholder="Mandalay" />
             <p className="text-xs text-slate-400 mb-3">{t("admin_storeRegionHint")}</p>
 
+
+            {!isWarehouse && (
+              <>
+                <label className="text-sm text-slate-600">{t("admin_supplyWarehouse")}</label>
+                <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-1"
+                  value={supplyWh} onChange={(e) => setSupplyWh(e.target.value)}>
+                  <option value="">{t("admin_supplyWarehouseNone")}</option>
+                  {stores.filter((w) => w.is_warehouse && w.is_active).map((w) => (
+                    <option key={w.id} value={w.id}>🏭 {w.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-400 mb-4">{t("admin_supplyWarehouseHint")}</p>
+              </>
+            )}
 
             <div className="flex gap-2">
               <button type="button" onClick={() => setShowForm(false)}

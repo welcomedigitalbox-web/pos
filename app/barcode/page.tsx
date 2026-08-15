@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, SellableItem, StockBatch, fetchSellableItems } from "@/lib/supabase";
+import { supabase, SellableItem, StockBatch, fetchSellableItems, netLineTotal } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -54,7 +54,7 @@ export default function BarcodePage() {
 
     let saleQuery = supabase
       .from("sale_items")
-      .select("qty, line_total, line_cogs")
+      .select("qty, line_total, line_cogs, sales!inner(subtotal, discount_amount)")
       .eq("product_id", prod.product_id);
     saleQuery = prod.variant_id
       ? saleQuery.eq("variant_id", prod.variant_id)
@@ -62,8 +62,11 @@ export default function BarcodePage() {
     const { data: items } = await saleQuery;
 
     const sold = (items || []).reduce((sum, i) => sum + Number(i.qty), 0);
-    const sale = (items || []).reduce((sum, i) => sum + Number(i.line_total), 0);
-    const margin = (items || []).reduce((sum, i) => sum + (Number(i.line_total) - Number(i.line_cogs)), 0);
+    const rows = (items as any[]) || [];
+    const sale = rows.reduce(
+      (sum, i) => sum + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount), 0);
+    const margin = rows.reduce(
+      (sum, i) => sum + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount) - Number(i.line_cogs), 0);
     setSoldQty(sold);
     setTotalSale(sale);
     setTotalMargin(margin);

@@ -55,7 +55,11 @@ export default function StockTransferPage() {
   const [transferToStore, setTransferToStore] = useState("");
   const [sending, setSending] = useState(false);
 
-  const retailStores = stores.filter((s) => s.id !== whId);
+  // Only offer the stores this warehouse supplies. Unassigned stores stay listed
+  // so a half-configured setup never blocks a transfer.
+  const retailStores = stores.filter(
+    (s) => s.id !== whId && (s.supply_warehouse_id === whId || !s.supply_warehouse_id)
+  );
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "stock-transfer")) router.replace("/");
@@ -185,6 +189,10 @@ export default function StockTransferPage() {
           value={whId} onChange={(e) => setWhId(e.target.value)}>
           {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
         </select>
+      )}
+
+      {retailStores.some((s) => !s.supply_warehouse_id) && (
+        <p className="text-xs text-slate-400 mb-3">{t("stockTransfer_unassignedNote")}</p>
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">

@@ -108,6 +108,7 @@ export type StoreRow = {
   is_warehouse: boolean;
   is_active: boolean;
   region: string | null;
+  supply_warehouse_id: string | null;
   created_at: string;
 };
 
@@ -459,4 +460,20 @@ export async function logActivity(params: {
   } catch {
     // swallow — logging is best-effort
   }
+}
+
+// Order-level discounts live on `sales`, not on each line, so summing
+// sale_items.line_total overstates revenue whenever a discount was given.
+// Spreading the discount across lines in proportion to their value gives the
+// amount actually collected for that product.
+export function netLineTotal(
+  lineTotal: number,
+  saleSubtotal: number | null | undefined,
+  saleDiscount: number | null | undefined
+): number {
+  const subtotal = Number(saleSubtotal || 0);
+  const discount = Number(saleDiscount || 0);
+  if (subtotal <= 0 || discount <= 0) return Number(lineTotal);
+  const share = Number(lineTotal) / subtotal;
+  return Number(lineTotal) - discount * share;
 }

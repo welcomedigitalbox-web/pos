@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase, Customer } from "@/lib/supabase";
+import { supabase, Customer , netLineTotal } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useLanguage } from "../../language-context";
 import { hasPermission } from "../../permissions";
@@ -84,7 +84,7 @@ export default function CustomerDetailPage() {
     const saleIds = sales.map((s) => s.id);
     const { data: items } = await supabase
       .from("sale_items")
-      .select("sale_id, product_name, qty, line_total")
+      .select("sale_id, product_name, qty, line_total, sales!inner(subtotal, discount_amount)")
       .in("sale_id", saleIds);
 
     const itemsBySale = new Map<string, string[]>();
@@ -97,7 +97,7 @@ export default function CustomerDetailPage() {
 
       const agg = productAgg.get(item.product_name) || { qty: 0, spent: 0 };
       agg.qty += Number(item.qty);
-      agg.spent += Number(item.line_total);
+      agg.spent += netLineTotal(item.line_total, (item as any).sales?.subtotal, (item as any).sales?.discount_amount);
       productAgg.set(item.product_name, agg);
     }
 

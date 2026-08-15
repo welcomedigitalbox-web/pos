@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase, Product, SellableItem, StockBatch, fetchSellableItems } from "@/lib/supabase";
+import { supabase, Product, SellableItem, StockBatch, fetchSellableItems, netLineTotal } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
 import { useLanguage } from "../../language-context";
@@ -76,12 +76,15 @@ export default function ProductDetailPage() {
 
     const { data: items } = await supabase
       .from("sale_items")
-      .select("qty, line_total, line_cogs, sales!inner(store_id)")
+      .select("qty, line_total, line_cogs, sales!inner(store_id, subtotal, discount_amount)")
       .eq("product_id", id)
       .eq("sales.store_id", storeId);
-    const sold = (items || []).reduce((s, i) => s + Number(i.qty), 0);
-    const sale = (items || []).reduce((s, i) => s + Number(i.line_total), 0);
-    const margin = (items || []).reduce((s, i) => s + (Number(i.line_total) - Number(i.line_cogs)), 0);
+    const rows = (items as any[]) || [];
+    const sold = rows.reduce((s, i) => s + Number(i.qty), 0);
+    const sale = rows.reduce(
+      (s, i) => s + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount), 0);
+    const margin = rows.reduce(
+      (s, i) => s + netLineTotal(i.line_total, i.sales?.subtotal, i.sales?.discount_amount) - Number(i.line_cogs), 0);
     setSoldQty(sold);
     setTotalSale(sale);
     setTotalMargin(margin);

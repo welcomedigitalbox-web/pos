@@ -108,7 +108,9 @@ export default function OrderLookupPage() {
       })
     : orders;
 
-  const gp = items.reduce((s, i) => s + (Number(i.line_total) - Number(i.line_cogs || 0)), 0);
+  // This order's own discount is already known, so apply it directly
+  const grossGp = items.reduce((s, i) => s + (Number(i.line_total) - Number(i.line_cogs || 0)), 0);
+  const gp = grossGp - Number(selected?.discount_amount || 0);
 
   return (
     <div className="pt-4">
