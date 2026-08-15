@@ -490,6 +490,7 @@ export type SaleReturn = {
   customer_id: string | null;
   customer_name: string | null;
   refund_method: RefundMethod;
+  refund_payment_method: string | null;
   refund_amount: number;
   status: ReturnStatus;
   reason: string | null;

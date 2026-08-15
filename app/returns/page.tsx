@@ -53,6 +53,8 @@ export default function ReturnsPage() {
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [draft, setDraft] = useState<Record<string, DraftLine>>({});
   const [refundMethod, setRefundMethod] = useState<RefundMethod>("cash");
+  const [refundPaymentMethod, setRefundPaymentMethod] = useState("");
+  const [paymentMethods, setPaymentMethods] = useState<{ code: string; name: string }[]>([]);
   const [reason, setReason] = useState("");
   const [voucherFile, setVoucherFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -64,6 +66,7 @@ export default function ReturnsPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [processing, setProcessing] = useState(false);
   const [approvalPin, setApprovalPin] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [verifying, setVerifying] = useState(false);
 
   const canApprove =
@@ -83,13 +86,23 @@ export default function ReturnsPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
+    // Returns are filed against the store the ORIGINAL SALE belongs to, which is
+    // not always the store currently selected in the nav. Managers therefore see
+    // every store, and cashiers see their own — otherwise records "disappear".
+    let listQuery = supabase
       .from("sale_returns")
       .select("*")
-      .eq("store_id", storeId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(200);
+    if (!canApprove) listQuery = listQuery.eq("store_id", storeId);
+    const { data } = await listQuery;
     setReturns((data as SaleReturn[]) || []);
+
+    const { data: pm } = await supabase
+      .from("payment_methods").select("code, name").eq("is_active", true).order("name");
+    setPaymentMethods((pm as any[]) || []);
+    if (!refundPaymentMethod && pm?.length) setRefundPaymentMethod(pm[0].code);
+
     setLoading(false);
   }
 
@@ -102,13 +115,15 @@ export default function ReturnsPage() {
     const q = orderSearch.trim().toLowerCase();
     if (!q) return;
 
-    // Not restricted to the current store: an order may have been rung up
-    // elsewhere, and the return is recorded against the sale's own store.
-    const { data: sales } = await supabase
+    // Any cashier can handle a colleague's sale from their own store; looking up
+    // another store's order is a manager-level action.
+    let lookupQuery = supabase
       .from("sales")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(2000);
+    if (!canApprove) lookupQuery = lookupQuery.eq("store_id", storeId);
+    const { data: sales } = await lookupQuery;
 
     const sale = ((sales as any[]) || []).find(
       (s) =>
@@ -119,21 +134,28 @@ export default function ReturnsPage() {
     if (!sale) {
       setFoundSale(null);
       setOrderItems([]);
-      return showToast(t("returns_orderNotFound"));
+      return showToast(canApprove ? t("returns_orderNotFound") : t("returns_orderNotFoundStore"));
     }
 
     const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
 
     // Anything already returned can't be returned twice
+    // Query the items directly rather than through a nested select, so a missing
+    // relationship can never silently allow the same item to be returned twice.
     const { data: prevReturns } = await supabase
       .from("sale_returns")
-      .select("id, status, sale_return_items(product_id, variant_id, qty)")
+      .select("id")
       .eq("original_sale_id", sale.id)
       .neq("status", "rejected");
 
     const returnedMap = new Map<string, number>();
-    for (const r of (prevReturns as any[]) || []) {
-      for (const ri of r.sale_return_items || []) {
+    const prevIds = ((prevReturns as any[]) || []).map((r) => r.id);
+    if (prevIds.length) {
+      const { data: prevItems } = await supabase
+        .from("sale_return_items")
+        .select("product_id, variant_id, qty")
+        .in("return_id", prevIds);
+      for (const ri of (prevItems as any[]) || []) {
         const k = `${ri.product_id}:${ri.variant_id || "base"}`;
         returnedMap.set(k, (returnedMap.get(k) || 0) + Number(ri.qty));
       }
@@ -165,6 +187,7 @@ export default function ReturnsPage() {
       .filter((l) => l.qty > 0);
 
     if (!lines.length) return showToast(t("returns_selectItems"));
+    if (!voucherFile) return showToast(t("returns_voucherRequired"));
     for (const l of lines) {
       if (l.qty > l.item.qty - l.item.alreadyReturned) {
         return showToast(`${t("returns_qtyTooHigh")} — ${l.item.product_name}`);
@@ -173,6 +196,27 @@ export default function ReturnsPage() {
 
     setSaving(true);
     try {
+      // Re-verify now: the screen may have been open while someone else filed a return
+      const { data: freshReturns } = await supabase
+        .from("sale_returns").select("id").eq("original_sale_id", foundSale.id).neq("status", "rejected");
+      const freshIds = ((freshReturns as any[]) || []).map((r) => r.id);
+      if (freshIds.length) {
+        const { data: freshItems } = await supabase
+          .from("sale_return_items").select("product_id, variant_id, qty").in("return_id", freshIds);
+        const freshMap = new Map<string, number>();
+        for (const ri of (freshItems as any[]) || []) {
+          const k = `${ri.product_id}:${ri.variant_id || "base"}`;
+          freshMap.set(k, (freshMap.get(k) || 0) + Number(ri.qty));
+        }
+        for (const l of lines) {
+          const k = `${l.item.product_id}:${l.item.variant_id || "base"}`;
+          if (l.qty + (freshMap.get(k) || 0) > l.item.qty) {
+            setSaving(false);
+            return showToast(`${t("returns_qtyTooHigh")} — ${l.item.product_name}`);
+          }
+        }
+      }
+
       const returnNumber = `RT-${Date.now().toString().slice(-8)}`;
       const { data: created, error } = await supabase
         .from("sale_returns")
@@ -183,6 +227,7 @@ export default function ReturnsPage() {
           customer_id: foundSale.customer_id,
           customer_name: foundSale.customer_name,
           refund_method: refundMethod,
+          refund_payment_method: refundMethod === "cash" ? refundPaymentMethod || null : null,
           refund_amount: refundTotal,
           reason: reason.trim() || null,
           requested_by: profile?.email || null,
@@ -225,6 +270,8 @@ export default function ReturnsPage() {
       setVoucherFile(null);
       setReason("");
       await load();
+      // Open the approval step immediately — the customer is still at the counter
+      await openReview({ ...(created as SaleReturn), refund_amount: refundTotal });
     } catch (err) {
       showToast("❌ " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -339,6 +386,8 @@ export default function ReturnsPage() {
   }
 
   const pending = returns.filter((r) => r.status === "pending").length;
+  const visibleReturns =
+    statusFilter === "all" ? returns : returns.filter((r) => r.status === statusFilter);
 
   return (
     <div className="pt-4">
@@ -349,9 +398,17 @@ export default function ReturnsPage() {
           {t("returns_new")}
         </button>
       </div>
-      <p className="text-sm text-slate-500 mb-4">
+      <p className="text-sm text-slate-500 mb-3">
         {t("returns_pending")}: <span className="font-semibold text-orange-600">{pending}</span>
       </p>
+
+      <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+        value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <option value="all">{t("warehouse_allStock")}</option>
+        <option value="pending">{t("returns_status_pending")}</option>
+        <option value="approved">{t("returns_status_approved")}</option>
+        <option value="rejected">{t("returns_status_rejected")}</option>
+      </select>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[860px]">
@@ -359,6 +416,7 @@ export default function ReturnsPage() {
             <tr>
               <th className="text-left px-3 py-2">{t("returns_number")}</th>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
+              {canApprove && <th className="text-left px-3 py-2">{t("admin_store")}</th>}
               <th className="text-left px-3 py-2">{t("pos_customer")}</th>
               <th className="text-left px-3 py-2">{t("returns_refundMethod")}</th>
               <th className="text-left px-3 py-2">{t("returns_refundAmount")}</th>
@@ -368,13 +426,19 @@ export default function ReturnsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && returns.map((r) => (
-              <tr key={r.id} className="border-t border-slate-100">
+            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
+            {!loading && visibleReturns.map((r) => (
+              <tr key={r.id} className={`border-t border-slate-100 ${r.status === "pending" ? "bg-yellow-50" : ""}`}>
                 <td className="px-3 py-2 font-mono text-xs">{r.return_number}</td>
                 <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
+                {canApprove && <td className="px-3 py-2 text-slate-500">{r.store_id}</td>}
                 <td className="px-3 py-2">{r.customer_name || "-"}</td>
-                <td className="px-3 py-2 text-xs">{t(`returns_method_${r.refund_method}` as any)}</td>
+                <td className="px-3 py-2 text-xs">
+                  {t(`returns_method_${r.refund_method}` as any)}
+                  {r.refund_payment_method && (
+                    <span className="text-slate-400"> · {r.refund_payment_method}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 font-medium">{fmt(Number(r.refund_amount))}</td>
                 <td className="px-3 py-2">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[r.status]}`}>
@@ -392,8 +456,8 @@ export default function ReturnsPage() {
                 </td>
               </tr>
             ))}
-            {!loading && returns.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
+            {!loading && visibleReturns.length === 0 && (
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
@@ -419,9 +483,16 @@ export default function ReturnsPage() {
             {foundSale && (
               <>
                 <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 mb-3">
-                  {new Date(foundSale.created_at).toLocaleString()} · {foundSale.store_id} · {foundSale.customer_name || "-"} ·{" "}
+                  {new Date(foundSale.created_at).toLocaleString()} · {foundSale.store_id} · {foundSale.customer_name || "-"}
+                  {foundSale.cashier_email ? ` · ${t("pos_cashier")}: ${foundSale.cashier_email}` : ""} ·{" "}
                   {t("pos_total")}: {fmt(foundSale.total)}
                 </div>
+
+                {orderItems.every((i) => i.qty - i.alreadyReturned <= 0) && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 mb-3">
+                    ⚠️ {t("returns_fullyReturned")}
+                  </div>
+                )}
 
                 <div className="border border-slate-200 rounded-lg overflow-x-auto mb-3">
                   <table className="w-full text-sm min-w-[520px]">
@@ -485,11 +556,25 @@ export default function ReturnsPage() {
                       <option value="store_credit">{t("returns_method_store_credit")}</option>
                     </select>
                   </div>
+                  {refundMethod === "cash" && (
+                    <div>
+                      <label className="text-sm text-slate-600">{t("returns_refundVia")}</label>
+                      <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1"
+                        value={refundPaymentMethod} onChange={(e) => setRefundPaymentMethod(e.target.value)}>
+                        {paymentMethods.map((m) => (
+                          <option key={m.code} value={m.code}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div>
-                    <label className="text-sm text-slate-600">{t("returns_voucher")}</label>
+                    <label className="text-sm text-slate-600">
+                      {t("returns_voucher")} <span className="text-red-600">*</span>
+                    </label>
                     <input type="file" accept="image/*"
                       className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs mt-1"
-                      onChange={(e) => setVoucherFile(e.target.files?.[0] || null)} />
+                      onChange={(e) => setVoucherFile(e.target.files?.[0] || null)} required />
                   </div>
                 </div>
 
@@ -509,7 +594,7 @@ export default function ReturnsPage() {
                 className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
                 {t("products_cancel")}
               </button>
-              <button onClick={submitReturn} disabled={saving || !foundSale || refundTotal <= 0}
+              <button onClick={submitReturn} disabled={saving || !foundSale || refundTotal <= 0 || !voucherFile}
                 className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
                 {saving ? "..." : t("returns_submit")}
               </button>
@@ -523,8 +608,13 @@ export default function ReturnsPage() {
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-lg my-8">
             <h3 className="font-semibold text-lg mb-1 font-mono">{reviewRow.return_number}</h3>
+            <p className="text-xs text-slate-500 mb-1">
+              {t("returns_requestedBy")}: <span className="font-medium text-slate-700">{reviewRow.requested_by || "-"}</span>
+              {" · "}{reviewRow.store_id}
+            </p>
             <p className="text-sm text-slate-500 mb-4">
-              {reviewRow.customer_name || "-"} · {t(`returns_method_${reviewRow.refund_method}` as any)} ·{" "}
+              {reviewRow.customer_name || "-"} · {t(`returns_method_${reviewRow.refund_method}` as any)}
+              {reviewRow.refund_payment_method ? ` (${reviewRow.refund_payment_method})` : ""} ·{" "}
               {fmt(Number(reviewRow.refund_amount))}
             </p>
 

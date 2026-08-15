@@ -78,6 +78,7 @@ export default function HistoryPage() {
 
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [refunds, setRefunds] = useState<RefundRow[]>([]);
+  const [returnedSaleIds, setReturnedSaleIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState<PeriodKey>("today");
@@ -132,6 +133,15 @@ export default function HistoryPage() {
 
     const [{ data: saleData }, { data: refundData }] = await Promise.all([saleQuery, refundQuery]);
     setSales((saleData as SaleRow[]) || []);
+
+    // Mark which orders have an approved return so staff can spot them at a glance
+    const { data: returnedSales } = await supabase
+      .from("sale_returns")
+      .select("original_sale_id")
+      .eq("status", "approved");
+    setReturnedSaleIds(
+      new Set(((returnedSales as any[]) || []).map((r) => r.original_sale_id).filter(Boolean))
+    );
     setRefunds((refundData as RefundRow[]) || []);
     setLoading(false);
   }
@@ -259,7 +269,14 @@ export default function HistoryPage() {
             {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filteredSales.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-mono text-xs">{s.id.slice(0, 8).toUpperCase()}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {s.id.slice(0, 8).toUpperCase()}
+                  {returnedSaleIds.has(s.id) && (
+                    <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700 font-medium">
+                      {t("returns_returnedBadge")}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2">{new Date(s.created_at).toLocaleString()}</td>
                 {isManagerLevel && <td className="px-3 py-2 text-slate-500">{s.store_id}</td>}
                 <td className="px-3 py-2">{s.customer_name || "-"}</td>

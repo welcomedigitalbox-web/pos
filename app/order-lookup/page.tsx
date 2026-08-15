@@ -54,6 +54,7 @@ export default function OrderLookupPage() {
   const [search, setSearch] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [returnedSaleIds, setReturnedSaleIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -78,6 +79,15 @@ export default function OrderLookupPage() {
       .order("created_at", { ascending: false })
       .limit(200);
     setOrders((data as Order[]) || []);
+
+    const { data: returned } = await supabase
+      .from("sale_returns")
+      .select("original_sale_id")
+      .eq("status", "approved");
+    setReturnedSaleIds(
+      new Set(((returned as any[]) || []).map((r) => r.original_sale_id).filter(Boolean))
+    );
+
     setLoading(false);
   }
 
@@ -143,7 +153,14 @@ export default function OrderLookupPage() {
             {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filtered.map((o) => (
               <tr key={o.id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-mono text-xs">{o.id.slice(0, 8).toUpperCase()}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {o.id.slice(0, 8).toUpperCase()}
+                  {returnedSaleIds.has(o.id) && (
+                    <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700 font-medium">
+                      {t("returns_returnedBadge")}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2">{new Date(o.created_at).toLocaleString()}</td>
                 <td className="px-3 py-2 text-slate-500">{o.store_id}</td>
                 <td className="px-3 py-2">{o.customer_name || "-"}</td>

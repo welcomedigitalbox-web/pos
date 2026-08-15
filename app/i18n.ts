@@ -2,6 +2,12 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    returns_orderNotFoundStore: "⚠️ ဤဆိုင်တွင် အဆိုပါအော်ဒါ မတွေ့ပါ",
+    returns_fullyReturned: "ဤအော်ဒါ၏ ပစ္စည်းအားလုံး ပြန်အမ်းပြီးဖြစ်သည်",
+    returns_voucherRequired: "⚠️ ပြေစာ/ဗောင်ချာ ပုံ မဖြစ်မနေ တင်ရပါမည်",
+    returns_returnedBadge: "ပြန်အမ်းပြီး",
+    returns_partialBadge: "တစ်စိတ်တစ်ပိုင်း ပြန်အမ်း",
+    returns_refundVia: "ငွေထုတ်ပေးမည့် နည်းလမ်း",
     admin_storeUpdated: "✅ ပြင်ဆင်ပြီးပါပြီ",
     history_managerSubtitle: "ဆိုင်/ကာလ/cashier အလိုက် အရောင်းနှင့် ပြန်အမ်းမှု မှတ်တမ်း",
     history_cashierSubtitle: "ယနေ့ ဤဆိုင်၏ အရောင်းမှတ်တမ်း",
@@ -635,6 +641,12 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    returns_orderNotFoundStore: "⚠️ No such order in this store",
+    returns_fullyReturned: "Every item on this order has already been returned",
+    returns_voucherRequired: "⚠️ A voucher photo is required",
+    returns_returnedBadge: "Returned",
+    returns_partialBadge: "Partly returned",
+    returns_refundVia: "Refund via",
     admin_storeUpdated: "✅ Updated",
     history_managerSubtitle: "Sales and refunds by store, period and cashier",
     history_cashierSubtitle: "Today's sales for this store",
