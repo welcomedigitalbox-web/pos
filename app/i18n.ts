@@ -2,6 +2,11 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    transferIn_status_pending_approval: "Manager အတည်ပြုရန်",
+    transferIn_awaitingApproval: "⏳ Manager အတည်ပြုရန် စောင့်ဆိုင်းဆဲ — အတည်ပြုမှ stock ဝင်ပါမည်",
+    transferIn_awaitingManager: "Manager စောင့်ဆိုင်းဆဲ",
+    transferIn_approveConfirm: "ဤကွာဟမှုကို အတည်ပြုပြီး stock ထည့်မည်လား",
+    transferIn_pinOptional: "PIN ဖြည့်လျှင် ချက်ချင်းအတည်ပြု၊ မဖြည့်လျှင် Manager ထံ ပို့ပါမည်",
     transferIn_photo: "ပစ္စည်း အခြေအနေ ဓာတ်ပုံ",
     transferIn_photoRequired: "⚠️ ကွာဟမှုရှိလျှင် ဓာတ်ပုံ တင်ရပါမည်",
     transferIn_pinRequired: "⚠️ Manager PIN ဖြည့်ပါ",
@@ -679,6 +684,11 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    transferIn_status_pending_approval: "Awaiting manager",
+    transferIn_awaitingApproval: "⏳ Waiting for manager approval — stock is added once approved",
+    transferIn_awaitingManager: "Awaiting manager",
+    transferIn_approveConfirm: "Approve this discrepancy and add the stock?",
+    transferIn_pinOptional: "Enter a PIN to approve now, or leave blank to send it to a manager",
     transferIn_photo: "Photo of the goods",
     transferIn_photoRequired: "⚠️ A photo is required when quantities don't match",
     transferIn_pinRequired: "⚠️ Manager PIN required",

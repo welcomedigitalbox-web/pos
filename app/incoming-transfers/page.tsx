@@ -15,7 +15,7 @@ type TransferRow = {
   to_store_id: string;
   qty: number;
   received_qty: number | null;
-  status: "in_transit" | "received" | "discrepancy";
+  status: "in_transit" | "received" | "discrepancy" | "pending_approval";
   transferred_by: string | null;
   received_by: string | null;
   received_at: string | null;
@@ -27,6 +27,7 @@ type TransferRow = {
 
 const statusColor: Record<string, string> = {
   in_transit: "bg-yellow-100 text-yellow-700",
+  pending_approval: "bg-orange-100 text-orange-700",
   received: "bg-green-100 text-green-700",
   discrepancy: "bg-red-100 text-red-700",
 };
@@ -109,14 +110,13 @@ export default function IncomingTransfersPage() {
     const mismatch = actual !== confirmRow.qty;
     if (mismatch && !note.trim()) return showToast(t("transferIn_noteRequired"));
     if (mismatch && !photoFile) return showToast(t("transferIn_photoRequired"));
-    if (mismatch && !isManagerLevel && !approvalPin.trim())
-      return showToast(t("transferIn_pinRequired"));
-
     setSaving(true);
     try {
-      // A discrepancy writes off stock, so a manager must authorise it
-      let approvedBy = isManagerLevel ? profile?.email || null : null;
-      if (mismatch && !isManagerLevel) {
+      // A discrepancy writes off stock, so it needs a manager. Either they enter a
+      // PIN here, or it waits in pending_approval for them to approve from their
+      // own account — same two paths as a sale return.
+      let approvedBy: string | null = isManagerLevel ? profile?.email || null : null;
+      if (mismatch && !isManagerLevel && approvalPin.trim()) {
         const { data: verify, error: verifyErr } = await supabase.functions.invoke(
           "verify-discount-approver",
           { body: { pin: approvalPin.trim() } }
@@ -128,6 +128,8 @@ export default function IncomingTransfersPage() {
         }
         approvedBy = verify.approver_email;
       }
+
+      const needsApproval = mismatch && !approvedBy;
 
       let photoPath: string | null = null;
       if (photoFile) photoPath = await uploadTransferPhoto(photoFile, storeId, confirmRow.id);
@@ -150,16 +152,18 @@ export default function IncomingTransfersPage() {
             .eq("store_id", "CENTRAL-WH").eq("product_id", confirmRow.product_id)
             .is("variant_id", null).maybeSingle());
 
-      await upsertStoreInventory(storeId, confirmRow.product_id, confirmRow.variant_id, {
-        stock_qty: (existing?.stock_qty || 0) + actual,
-        avg_cost: centralInv?.avg_cost ?? existing?.avg_cost ?? 0,
-      });
+      if (!needsApproval) {
+        await upsertStoreInventory(storeId, confirmRow.product_id, confirmRow.variant_id, {
+          stock_qty: (existing?.stock_qty || 0) + actual,
+          avg_cost: centralInv?.avg_cost ?? existing?.avg_cost ?? 0,
+        });
+      }
 
       const { error } = await supabase
         .from("stock_transfers")
         .update({
           received_qty: actual,
-          status: mismatch ? "discrepancy" : "received",
+          status: needsApproval ? "pending_approval" : mismatch ? "discrepancy" : "received",
           received_by: profile?.email || null,
           received_at: new Date().toISOString(),
           discrepancy_note: mismatch ? note.trim() : null,
@@ -177,13 +181,52 @@ export default function IncomingTransfersPage() {
         actor: profile?.email,
       });
 
-      showToast(mismatch ? t("transferIn_discrepancyLogged") : t("transferIn_confirmed"));
+      showToast(
+        needsApproval
+          ? t("transferIn_awaitingApproval")
+          : mismatch
+          ? t("transferIn_discrepancyLogged")
+          : t("transferIn_confirmed")
+      );
       setConfirmRow(null);
       await load();
     } catch (err) {
       showToast("❌ " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function approveDiscrepancy(r: TransferRow) {
+    if (!confirm(t("transferIn_approveConfirm"))) return;
+    try {
+      const { data: existing } = await (r.variant_id
+        ? supabase.from("store_inventory").select("*").eq("store_id", r.to_store_id)
+            .eq("product_id", r.product_id).eq("variant_id", r.variant_id).maybeSingle()
+        : supabase.from("store_inventory").select("*").eq("store_id", r.to_store_id)
+            .eq("product_id", r.product_id).is("variant_id", null).maybeSingle());
+
+      await upsertStoreInventory(r.to_store_id, r.product_id, r.variant_id, {
+        stock_qty: Number(existing?.stock_qty || 0) + Number(r.received_qty ?? 0),
+      });
+
+      await supabase
+        .from("stock_transfers")
+        .update({ status: "discrepancy", discrepancy_approved_by: profile?.email || null })
+        .eq("id", r.id);
+
+      await logActivity({
+        entityType: "stock_transfer",
+        entityId: r.id,
+        action: "discrepancy_approved",
+        detail: `${r.display_name}: ${t("transferIn_sent")} ${r.qty} → ${t("transferIn_actual")} ${r.received_qty}`,
+        actor: profile?.email,
+      });
+
+      showToast(t("transferIn_discrepancyLogged"));
+      await load();
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -256,6 +299,15 @@ export default function IncomingTransfersPage() {
                         {t("transferIn_confirm")}
                       </button>
                     )}
+                    {r.status === "pending_approval" && (
+                      isManagerLevel ? (
+                        <button onClick={() => approveDiscrepancy(r)} className="text-green-600 text-xs font-medium">
+                          {t("returns_approve")}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">{t("transferIn_awaitingManager")}</span>
+                      )
+                    )}
                   </td>
                 </tr>
               );
@@ -309,9 +361,8 @@ export default function IncomingTransfersPage() {
 
                 {!isManagerLevel && (
                   <>
-                    <label className="text-sm text-slate-600">
-                      {t("returns_managerPin")} <span className="text-red-600">*</span>
-                    </label>
+                    <label className="text-sm text-slate-600">{t("returns_managerPin")}</label>
+                    <p className="text-[10px] text-slate-400">{t("transferIn_pinOptional")}</p>
                     <input type="password" inputMode="numeric"
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4 tracking-widest text-center"
                       placeholder="••••"
