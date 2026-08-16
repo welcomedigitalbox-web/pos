@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    nav_salesPerformance: "ရောင်းအား ခွဲခြမ်းစိတ်ဖြာချက်",
     products_availability: "ဆိုင်အလိုက် ရောင်းချမှု",
     products_availabilityHint: "အမှန်ခြစ်ဖြုတ်ထားသော ဆိုင်တွင် ဤပစ္စည်း POS နှင့် Sale Order တွင် မပေါ်တော့ပါ",
     po_supplier: "ကုန်သည်",
@@ -739,6 +740,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    nav_salesPerformance: "Sales Performance",
     products_availability: "Store availability",
     products_availabilityHint: "Unticked stores won't see this product in POS or Sale Order",
     po_supplier: "Supplier",

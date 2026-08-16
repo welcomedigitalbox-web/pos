@@ -15,6 +15,7 @@ export type PageKey =
   | "incoming-transfers"
   | "barcode"
   | "ledger"
+  | "sales-performance"
   | "warehouse"
   | "stock-transfer"
   | "request-inbox"
@@ -52,6 +53,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
   { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "sale" },
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
+  { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "sale" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
   { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
@@ -93,9 +95,9 @@ const ALL_KEYS: PageKey[] = [...ALL_KEYS_EXCEPT_ADMIN, "admin"];
 const COMMON_ALL_ROLES: PageKey[] = ["ai-agent", "profile"];
 
 export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> = {
-  cashier: ["pos", "inventory", "history", "returns", "customers", ...COMMON_ALL_ROLES],
-  online_sale: ["sale-order", "history", "customers", ...COMMON_ALL_ROLES],
-  wholesale: ["sale-order", "history", "customers", ...COMMON_ALL_ROLES],
+  cashier: ["pos", "inventory", "history", "returns", "customers", "sales-performance", ...COMMON_ALL_ROLES],
+  online_sale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
+  wholesale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
   sale_manager: [
     "pos",
     "sale-order",
@@ -103,6 +105,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
         "customers",
     "sales-reps",
     "loyalty-tiers",
+    "sales-performance",
     "products",
     "inventory",
     "stock-in",
@@ -111,6 +114,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "incoming-transfers",
     "barcode",
     "ledger",
+    "sales-performance",
     "warehouse",
     "stock-transfer",
     "request-inbox",
@@ -140,6 +144,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "incoming-transfers",
     "barcode",
     "ledger",
+    "sales-performance",
     "warehouse",
     "stock-transfer",
     "request-inbox",

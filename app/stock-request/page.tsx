@@ -391,7 +391,6 @@ export default function StockRequestPage() {
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={itemKey}
               onChange={(e) => setItemKey(e.target.value)}
-              required
             >
               <option value="">{t("stockIn_selectPlaceholder")}</option>
               {items.map((i) => (

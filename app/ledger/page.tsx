@@ -89,6 +89,12 @@ export default function LedgerPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
+  // Cost and margin are commercially sensitive, so shop-floor staff see the
+  // sales side only — the same page, with those columns withheld.
+  const canSeeCost =
+    profile?.role === "sale_manager" || profile?.role === "manager" ||
+    profile?.role === "owner" || profile?.role === "admin";
+
   const [storeId, setStoreId] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +110,8 @@ export default function LedgerPage() {
   const [movLoading, setMovLoading] = useState(false);
 
   useEffect(() => {
-    if (profile && !hasPermission(profile, "ledger")) router.replace("/");
+    if (profile && !hasPermission(profile, "ledger") && !hasPermission(profile, "sales-performance"))
+      router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
@@ -118,7 +125,8 @@ export default function LedgerPage() {
     if (!storeId && defaultWarehouseId) setStoreId(defaultWarehouseId);
   }, [defaultWarehouseId, storeId]);
 
-  if (!profile || !hasPermission(profile, "ledger")) return null;
+  if (!profile || (!hasPermission(profile, "ledger") && !hasPermission(profile, "sales-performance")))
+    return null;
 
   async function load() {
     setLoading(true);
@@ -426,8 +434,8 @@ export default function LedgerPage() {
           value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
           <option value="sold">{t("ledger_sortSold")}</option>
           <option value="share">{t("ledger_sortShare")}</option>
-          <option value="gp">{t("ledger_sortGp")}</option>
-          <option value="margin">{t("ledger_sortMargin")}</option>
+          {canSeeCost && <option value="gp">{t("ledger_sortGp")}</option>}
+          {canSeeCost && <option value="margin">{t("ledger_sortMargin")}</option>}
           <option value="stock">{t("ledger_sortStock")}</option>
           <option value="cover">{t("ledger_sortCover")}</option>
           <option value="name">{t("warehouse_sortName")}</option>
@@ -451,14 +459,18 @@ export default function LedgerPage() {
           <div className="text-xs text-slate-500 uppercase">{t("barcode_totalSale")}</div>
           <div className="text-lg font-bold mt-1">{fmt(totals.sales)}</div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("dashboard_gp")}</div>
-          <div className="text-lg font-bold mt-1 text-green-700">{fmt(totals.gp)}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("dashboard_gpMargin")}</div>
-          <div className="text-lg font-bold mt-1 text-green-700">{overallMargin.toFixed(1)}%</div>
-        </div>
+        {canSeeCost && (
+          <>
+            <div className="bg-white border border-slate-200 rounded-xl p-3">
+              <div className="text-xs text-slate-500 uppercase">{t("dashboard_gp")}</div>
+              <div className="text-lg font-bold mt-1 text-green-700">{fmt(totals.gp)}</div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-3">
+              <div className="text-xs text-slate-500 uppercase">{t("dashboard_gpMargin")}</div>
+              <div className="text-lg font-bold mt-1 text-green-700">{overallMargin.toFixed(1)}%</div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
@@ -476,8 +488,8 @@ export default function LedgerPage() {
               <th className="text-left px-3 py-2">{t("ledger_stockLevel")}</th>
               <th className="text-left px-3 py-2">{t("barcode_totalSale")}</th>
               <th className="text-left px-3 py-2">{t("ledger_salesShare")}</th>
-              <th className="text-left px-3 py-2">{t("dashboard_gp")}</th>
-              <th className="text-left px-3 py-2">{t("dashboard_gpMargin")}</th>
+              {canSeeCost && <th className="text-left px-3 py-2">{t("dashboard_gp")}</th>}
+              {canSeeCost && <th className="text-left px-3 py-2">{t("dashboard_gpMargin")}</th>}
               <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
@@ -534,10 +546,14 @@ export default function LedgerPage() {
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
-                    <td className={`px-3 py-2 font-medium ${r.gp >= 0 ? "text-green-700" : "text-red-600"}`}>
-                      {fmt(r.gp)}
-                    </td>
-                    <td className="px-3 py-2">{r.salesValue > 0 ? `${r.gpMargin.toFixed(1)}%` : "-"}</td>
+                    {canSeeCost && (
+                      <td className={`px-3 py-2 font-medium ${r.gp >= 0 ? "text-green-700" : "text-red-600"}`}>
+                        {fmt(r.gp)}
+                      </td>
+                    )}
+                    {canSeeCost && (
+                      <td className="px-3 py-2">{r.salesValue > 0 ? `${r.gpMargin.toFixed(1)}%` : "-"}</td>
+                    )}
                     <td className="px-3 py-2 text-right">
                       <button onClick={() => toggleMovements(r)} className="text-blue-600 text-xs font-medium">
                         {open ? t("ledger_hideMovement") : t("ledger_showMovement")}
