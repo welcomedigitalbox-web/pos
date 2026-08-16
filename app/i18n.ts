@@ -2,6 +2,16 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    po_updated: "✅ ပြင်ဆင်ပြီးပါပြီ",
+    po_approved: "✅ အတည်ပြုပြီးပါပြီ",
+    po_qtyBelowReceived: "⚠️ လက်ခံပြီးသား အရေအတွက်ထက် နည်း၍ မရပါ",
+    po_invalidQtyCost: "⚠️ အရေအတွက်/ဈေးနှုန်း မမှန်ပါ",
+    po_itemUpdated: "✅ ပြင်ဆင်ပြီးပါပြီ",
+    po_approveTitle: "PO အတည်ပြုခြင်း",
+    po_approveHint: "အတည်ပြုပြီးမှသာ ပစ္စည်း လက်ခံနိုင်ပါမည်",
+    po_mustApproveFirst: "🔒 အရင် အတည်ပြုပါ",
+    po_printPdf: "🖨 PDF / ပရင့်",
+    po_searchPlaceholder: "PO နံပါတ် / ကုန်သည် ရှာပါ...",
     products_hasVariants: "Variant များ ရှိသည် (Size/Color စသည်)",
     products_hasVariantsHint: "အမှန်ခြစ်လျှင် ဤပစ္စည်းသည် အုပ်စုသာဖြစ်ပြီး၊ လက်ကျန်နှင့် ဈေးနှုန်းကို variant တစ်ခုချင်းစီတွင် ထားပါမည်",
     products_variationTheme: "ဘာအလိုက် ခွဲမလဲ",
@@ -724,6 +734,16 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    po_updated: "✅ Updated",
+    po_approved: "✅ Approved",
+    po_qtyBelowReceived: "⚠️ Cannot go below what has already been received",
+    po_invalidQtyCost: "⚠️ Invalid quantity or cost",
+    po_itemUpdated: "✅ Item updated",
+    po_approveTitle: "Approve Purchase Order",
+    po_approveHint: "Goods can only be received after approval",
+    po_mustApproveFirst: "🔒 Approve first",
+    po_printPdf: "🖨 Print / PDF",
+    po_searchPlaceholder: "Search PO number or supplier...",
     products_hasVariants: "This product has variants (Size, Color, etc.)",
     products_hasVariantsHint: "The parent becomes a grouping only — stock and price live on each variant",
     products_variationTheme: "Vary by",

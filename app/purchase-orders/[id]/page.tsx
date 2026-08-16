@@ -25,6 +25,19 @@ export default function PoDetailPage() {
   const { profile } = useAuth();
   const { warehouses, defaultWarehouseId } = useStore();
   const [receiveWhId, setReceiveWhId] = useState("");
+  const [showApprove, setShowApprove] = useState(false);
+  const [approvalPin, setApprovalPin] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [editRow, setEditRow] = useState<any | null>(null);
+  const [showHeaderEdit, setShowHeaderEdit] = useState(false);
+  const [hdrExpected, setHdrExpected] = useState("");
+  const [hdrTerm, setHdrTerm] = useState("credit");
+  const [hdrNote, setHdrNote] = useState("");
+  const [itemQty, setItemQty] = useState("");
+  const [itemCost, setItemCost] = useState("");
+  const [editQty, setEditQty] = useState("");
+  const [editCost, setEditCost] = useState("");
   const { t } = useLanguage();
 
   const [po, setPo] = useState<PurchaseOrder | null>(null);
@@ -241,6 +254,102 @@ export default function PoDetailPage() {
     }
   }
 
+  const canApprovePo =
+    profile?.role === "manager" || profile?.role === "owner" || profile?.role === "admin";
+
+  function openHeaderEdit() {
+    if (!po) return;
+    setHdrExpected(po.expected_date || "");
+    setHdrTerm(po.payment_term || "credit");
+    setHdrNote((po as any).note || "");
+    setShowHeaderEdit(true);
+  }
+
+  async function saveHeaderEdit() {
+    if (!po) return;
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({
+        expected_date: hdrExpected || null,
+        payment_term: hdrTerm,
+        note: hdrNote.trim() || null,
+      })
+      .eq("id", po.id);
+    if (error) return showToast("❌ " + error.message);
+
+    await logActivity({
+      entityType: "purchase_order", entityId: po.id, action: "updated",
+      detail: `${t("po_expectedDate")}: ${hdrExpected || "-"} · ${hdrTerm}`,
+      actor: profile?.email,
+    });
+
+    showToast(t("po_updated"));
+    setShowHeaderEdit(false);
+    await load();
+  }
+
+  async function approvePo(approver?: string) {
+    setApproving(true);
+    try {
+      const approvedBy = approver || profile?.email || null;
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ status: "approved", approved_by: approvedBy, approved_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+      await logActivity({
+        entityType: "purchase_order", entityId: id, action: "approved",
+        detail: po?.po_number || "", actor: approvedBy,
+      });
+      showToast(t("po_approved"));
+      setShowApprove(false);
+      setApprovalPin("");
+      await load();
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function approveWithPin() {
+    if (!approvalPin.trim()) return showToast(t("returns_pinRequired"));
+    setApproving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
+        body: { pin: approvalPin.trim() },
+      });
+      if (error) throw error;
+      if (!data?.approved) return showToast("❌ " + (data?.error || t("returns_pinInvalid")));
+      await approvePo(data.approver_email);
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function saveItemEdit() {
+    if (!editRow) return;
+    const qty = Number(itemQty);
+    const cost = Number(itemCost);
+    if (!qty || qty <= 0 || isNaN(cost) || cost < 0) return showToast(t("stockRequest_qtyInvalid"));
+    if (qty < Number(editRow.received_qty || 0)) return showToast(t("po_qtyBelowReceived"));
+
+    const { error } = await supabase
+      .from("purchase_order_items")
+      .update({ qty, unit_cost: cost })
+      .eq("id", editRow.id);
+    if (error) return showToast("❌ " + error.message);
+
+    await logActivity({
+      entityType: "purchase_order", entityId: id, action: "item_edited",
+      detail: `${editRow.product_name} × ${qty} @ ${cost}`, actor: profile?.email,
+    });
+    setEditRow(null);
+    await load();
+  }
+
   async function cancelPo() {
     // Once goods are received, stock and cost have already moved — cancelling
     // would leave the books out of sync, so it has to be blocked.
@@ -314,9 +423,11 @@ export default function PoDetailPage() {
   const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
   const balance = total - paid;
   const editable = po.status !== "received" && po.status !== "cancelled";
+  // Goods can only be booked in once someone has signed the order off
+  const canReceive = po.status !== "draft" && po.status !== "cancelled";
 
   return (
-    <div className="pt-4">
+    <div className="pt-4 po-print">
       <Link href="/purchase-orders" className="text-sm text-blue-600 mb-2 inline-block">
         ← {t("nav_purchaseOrders")}
       </Link>
@@ -336,6 +447,13 @@ export default function PoDetailPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
+        {editable && (
+          <button onClick={openHeaderEdit}
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium">
+            {t("products_edit")}
+          </button>
+        )}
+
         {po.status !== "cancelled" && po.status !== "received" && !items.some((i) => i.received_qty > 0) && (
           <button onClick={cancelPo}
             className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium">
@@ -359,6 +477,12 @@ export default function PoDetailPage() {
         {items.some((i) => i.received_qty > 0) && po.status !== "cancelled" && (
           <span className="text-xs text-slate-400 self-center">{t("po_cannotCancelReceived")}</span>
         )}
+        <button
+          onClick={() => window.print()}
+          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium print:hidden"
+        >
+          {t("po_printPdf")}
+        </button>
         <span className="text-xs text-slate-400 self-center ml-1">{t("po_autoSaveNote")}</span>
       </div>
 

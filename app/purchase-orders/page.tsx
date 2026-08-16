@@ -40,6 +40,7 @@ export default function PurchaseOrdersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
 
   const [showForm, setShowForm] = useState(false);
@@ -121,6 +122,15 @@ export default function PurchaseOrdersPage() {
 
   const filtered = statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter);
 
+  const q = search.trim().toLowerCase();
+  const visibleRows = q
+    ? rows.filter(
+        (po) =>
+          po.po_number.toLowerCase().includes(q) ||
+          (po.supplierName || "").toLowerCase().includes(q)
+      )
+    : rows;
+
   return (
     <div className="pt-4">
       <div className="flex justify-between items-center mb-3">
@@ -142,6 +152,13 @@ export default function PurchaseOrdersPage() {
         <option value="received">{t("po_status_received")}</option>
         <option value="cancelled">{t("po_status_cancelled")}</option>
       </select>
+
+      <input
+        className="w-full sm:w-96 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+        placeholder={t("po_searchPlaceholder")}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[800px]">

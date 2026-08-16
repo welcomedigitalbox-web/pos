@@ -429,10 +429,10 @@ export default function ProductsPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto">
           <form
             onSubmit={handleSave}
-            className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg"
+            className="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-lg my-4"
           >
             <h3 className="font-semibold text-lg mb-4">
               {form.id ? t("products_modalEditTitle") : t("products_modalNewTitle")}
@@ -533,17 +533,19 @@ export default function ProductsPage() {
                       <option value="Pack">Pack</option>
                     </select>
 
-                    <div className="grid grid-cols-[1fr_1.2fr_0.9fr_auto] gap-1 text-[10px] text-slate-400 uppercase mb-1">
-                      <span>{t("products_variantName")}</span>
-                      <span>{t("products_sku")}</span>
-                      <span>{t("products_price")}</span>
-                      <span></span>
-                    </div>
-
                     {draftVariants.map((v, idx) => (
-                      <div key={idx} className="grid grid-cols-[1fr_1.2fr_0.9fr_auto] gap-1 mb-1">
+                      <div key={idx} className="border border-slate-200 bg-white rounded-lg p-2 mb-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] text-slate-400 uppercase flex-1">
+                            {t("products_variantName")}
+                          </span>
+                          <button type="button" className="text-red-500 text-sm leading-none px-1"
+                            onClick={() => setDraftVariants(draftVariants.filter((_, i) => i !== idx))}>
+                            ✕
+                          </button>
+                        </div>
                         <input
-                          className="border border-slate-200 rounded px-2 py-1.5 text-sm"
+                          className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm mb-2"
                           placeholder="M"
                           value={v.name}
                           onChange={(e) => {
@@ -552,8 +554,9 @@ export default function ProductsPage() {
                             setDraftVariants(next);
                           }}
                         />
+                        <div className="text-[10px] text-slate-400 uppercase">{t("products_sku")}</div>
                         <input
-                          className="border border-slate-200 rounded px-2 py-1.5 text-sm"
+                          className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm mb-2"
                           placeholder={
                             v.name.trim()
                               ? `${form.sku}-${v.name.trim().toUpperCase()}`
@@ -566,9 +569,10 @@ export default function ProductsPage() {
                             setDraftVariants(next);
                           }}
                         />
+                        <div className="text-[10px] text-slate-400 uppercase">{t("products_price")}</div>
                         <input
                           type="number"
-                          className="border border-slate-200 rounded px-2 py-1.5 text-sm"
+                          className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm"
                           placeholder={form.price || "0"}
                           value={v.price}
                           onChange={(e) => {
@@ -577,10 +581,6 @@ export default function ProductsPage() {
                             setDraftVariants(next);
                           }}
                         />
-                        <button type="button" className="text-red-500 px-1"
-                          onClick={() => setDraftVariants(draftVariants.filter((_, i) => i !== idx))}>
-                          ✕
-                        </button>
                       </div>
                     ))}
 

@@ -56,3 +56,34 @@ body {
     margin: 0;
   }
 }
+
+/* A purchase order is a document the supplier keeps, so printing it should
+   produce a clean sheet: no app chrome, no action buttons. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .po-print,
+  .po-print * {
+    visibility: visible;
+  }
+  .po-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .print\:hidden,
+  nav,
+  aside,
+  button {
+    display: none !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+}
