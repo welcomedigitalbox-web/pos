@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    products_openingStockHint: "စတင်လက်ကျန်သာဖြစ်သည် — ပုံမှန်အားဖြင့် PO/Stock-In ကနေ ဝင်သင့်သည်",
     variant_skuAutoHint: "အလွတ်ထားလျှင် မူရင်း SKU နှင့် ပေါင်း၍ အလိုအလျောက် ထုတ်ပါမည် (ဥပမာ SKU-1001-M)",
     nav_campaigns: "ကြော်ငြာ Campaign",
     campaigns_new: "+ Campaign အသစ်",
@@ -716,6 +717,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    products_openingStockHint: "Opening stock only — normally this comes from a PO or Stock-In",
     variant_skuAutoHint: "Leave blank to generate from the parent SKU (e.g. SKU-1001-M)",
     nav_campaigns: "Ad Campaigns",
     campaigns_new: "+ New Campaign",

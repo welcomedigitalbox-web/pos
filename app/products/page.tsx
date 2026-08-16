@@ -133,9 +133,9 @@ export default function ProductsPage() {
   }
 
   function generateSku() {
-    // With no store selected the prefix would be empty, producing SKUs like "-0022"
-    const storePrefix =
-      storeId.replace(/[^A-Z0-9]/gi, "").slice(0, 4).toUpperCase() || "SKU";
+    // A product is shared across every location, so its barcode must be too —
+    // a store prefix would give the same item a different code per shop.
+    const storePrefix = "P";
     const timestampPart = Date.now().toString().slice(-6);
     const randomPart = Math.floor(Math.random() * 90 + 10); // 2-digit
     return `${storePrefix}-${timestampPart}${randomPart}`;
@@ -486,6 +486,7 @@ export default function ProductsPage() {
                     {" "}({stores.find((st) => st.id === storeId)?.name || storeId})
                   </span>
                 </label>
+                <p className="text-xs text-slate-400 mb-1">{t("products_openingStockHint")}</p>
                 <input
                   type="number"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
