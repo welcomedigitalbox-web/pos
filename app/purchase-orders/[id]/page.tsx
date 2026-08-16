@@ -145,6 +145,16 @@ export default function PoDetailPage() {
     setPayments((payData as PoPayment[]) || []);
   }
 
+  // Supabase returns plain objects, so String() would print "[object Object]"
+  function describeError(err: unknown) {
+    if (err instanceof Error) return err.message;
+    if (err && typeof err === "object") {
+      const e = err as { message?: string; details?: string; hint?: string };
+      return e.message || e.details || e.hint || JSON.stringify(err);
+    }
+    return String(err);
+  }
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
@@ -248,7 +258,7 @@ export default function PoDetailPage() {
       setReceiveRow(null);
       await load();
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + describeError(err));
     } finally {
       setReceiving(false);
     }
@@ -294,7 +304,7 @@ export default function PoDetailPage() {
       const approvedBy = approver || profile?.email || null;
       const { error } = await supabase
         .from("purchase_orders")
-        .update({ status: "approved", approved_by: approvedBy, approved_at: new Date().toISOString() })
+        .update({ status: "ordered", approved_by: approvedBy, approved_at: new Date().toISOString() })
         .eq("id", id);
       if (error) throw error;
       await logActivity({
@@ -306,7 +316,7 @@ export default function PoDetailPage() {
       setApprovalPin("");
       await load();
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + describeError(err));
     } finally {
       setApproving(false);
     }
@@ -323,7 +333,7 @@ export default function PoDetailPage() {
       if (!data?.approved) return showToast("❌ " + (data?.error || t("returns_pinInvalid")));
       await approvePo(data.approver_email);
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + describeError(err));
     } finally {
       setApproving(false);
     }
@@ -427,27 +437,7 @@ export default function PoDetailPage() {
   const canReceive = po.status !== "draft" && po.status !== "cancelled";
 
   return (
-    <div className="pt-4 po-print">
-      {/* Only meaningful on paper — the supplier keeps this copy */}
-      <div className="hidden print:block mb-6">
-        <h1 className="text-2xl font-bold">PURCHASE ORDER</h1>
-        <div className="grid grid-cols-2 gap-6 mt-4 text-sm">
-          <div>
-            <div className="text-slate-500 uppercase text-xs">{t("po_supplier")}</div>
-            <div className="font-medium">{(po as any).suppliers?.name || "-"}</div>
-            {(po as any).suppliers?.phone && <div>{(po as any).suppliers.phone}</div>}
-            {(po as any).suppliers?.address && <div>{(po as any).suppliers.address}</div>}
-          </div>
-          <div className="text-right">
-            <div><span className="text-slate-500">{t("po_number")}: </span>{po.po_number}</div>
-            <div><span className="text-slate-500">{t("po_orderDate")}: </span>{po.order_date}</div>
-            {po.expected_date && (
-              <div><span className="text-slate-500">{t("po_expectedDate")}: </span>{po.expected_date}</div>
-            )}
-            <div><span className="text-slate-500">{t("po_paymentTerm")}: </span>{t(`po_term_${po.payment_term}` as any)}</div>
-          </div>
-        </div>
-      </div>
+    <div className="pt-4">
       <Link href="/purchase-orders" className="text-sm text-blue-600 mb-2 inline-block">
         ← {t("nav_purchaseOrders")}
       </Link>
@@ -855,11 +845,83 @@ export default function PoDetailPage() {
         </div>
       )}
 
+      {/* Printed sheet: hidden on screen, and the only thing that prints */}
+      <div className="po-print hidden print:block text-black">
+        <h1 className="text-2xl font-bold mb-4">PURCHASE ORDER</h1>
+
+        <table className="w-full text-sm mb-6">
+          <tbody>
+            <tr>
+              <td className="align-top w-1/2 pr-4">
+                <div className="text-xs uppercase text-slate-500">{t("po_supplier")}</div>
+                <div className="font-semibold">{(po as any).suppliers?.name || "-"}</div>
+                {(po as any).suppliers?.phone && <div>{(po as any).suppliers.phone}</div>}
+                {(po as any).suppliers?.address && <div>{(po as any).suppliers.address}</div>}
+              </td>
+              <td className="align-top text-right">
+                <div><span className="text-slate-500">{t("po_number")}: </span><strong>{po.po_number}</strong></div>
+                <div><span className="text-slate-500">{t("po_orderDate")}: </span>{po.order_date}</div>
+                {po.expected_date && (
+                  <div><span className="text-slate-500">{t("po_expectedDate")}: </span>{po.expected_date}</div>
+                )}
+                <div><span className="text-slate-500">{t("po_paymentTerm")}: </span>{t(`po_term_${po.payment_term}` as any)}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table className="w-full text-sm border-collapse mb-6">
+          <thead>
+            <tr className="border-y border-slate-400">
+              <th className="text-left py-2">{t("stockIn_product")}</th>
+              <th className="text-right py-2 w-24">{t("po_orderQty")}</th>
+              <th className="text-right py-2 w-32">{t("stockIn_unitCost")}</th>
+              <th className="text-right py-2 w-32">{t("pos_total")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((i) => (
+              <tr key={i.id} className="border-b border-slate-200">
+                <td className="py-1.5">{i.display_name}</td>
+                <td className="py-1.5 text-right">{i.qty}</td>
+                <td className="py-1.5 text-right">{fmt(i.unit_cost)}</td>
+                <td className="py-1.5 text-right">{fmt(i.qty * i.unit_cost)}</td>
+              </tr>
+            ))}
+            <tr className="border-t border-slate-400 font-bold">
+              <td className="py-2" colSpan={3}>{t("pos_total")}</td>
+              <td className="py-2 text-right">{fmt(total)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {(po as any).note && (
+          <p className="text-sm mb-6">
+            <span className="text-slate-500">{t("pos_note")}: </span>{(po as any).note}
+          </p>
+        )}
+
+        <table className="w-full text-sm mt-16">
+          <tbody>
+            <tr>
+              <td className="w-1/2 pr-12">
+                <div className="border-t border-slate-400 pt-1">{t("po_preparedBy")}</div>
+                <div className="text-xs text-slate-500">{po.created_by || ""}</div>
+              </td>
+              <td className="pl-12">
+                <div className="border-t border-slate-400 pt-1">{t("po_approvedBy")}</div>
+                <div className="text-xs text-slate-500">{(po as any).approved_by || ""}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       {editRow && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
             <h3 className="font-semibold text-lg mb-1">{t("products_edit")}</h3>
-            <p className="text-sm text-slate-500 mb-4">{editRow.product_name}</p>
+            <p className="text-sm text-slate-500 mb-4">{editRow.display_name}</p>
 
             <label className="text-sm text-slate-600">{t("po_orderQty")}</label>
             <input type="number" autoFocus

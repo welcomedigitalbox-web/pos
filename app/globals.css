@@ -53,8 +53,8 @@ body {
   }
 }
 
-/* A purchase order is a document the supplier keeps, so printing it should
-   produce a clean sheet: no app chrome, no action buttons. */
+/* A purchase order is a document the supplier keeps, so printing renders a
+   dedicated sheet rather than the live screen. */
 @media print {
   @page {
     size: A4;
@@ -72,16 +72,6 @@ body {
     left: 0;
     top: 0;
     width: 100%;
-    padding: 0;
-  }
-  .print\:hidden,
-  nav,
-  aside,
-  button {
-    display: none !important;
-  }
-  table {
-    page-break-inside: auto;
   }
   tr {
     page-break-inside: avoid;
