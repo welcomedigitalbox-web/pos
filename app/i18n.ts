@@ -2,6 +2,9 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    po_supplier: "ကုန်သည်",
+    po_preparedBy: "ပြင်ဆင်သူ",
+    po_approvedBy: "အတည်ပြုသူ",
     po_updated: "✅ ပြင်ဆင်ပြီးပါပြီ",
     po_approved: "✅ အတည်ပြုပြီးပါပြီ",
     po_qtyBelowReceived: "⚠️ လက်ခံပြီးသား အရေအတွက်ထက် နည်း၍ မရပါ",
@@ -734,6 +737,9 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    po_supplier: "Supplier",
+    po_preparedBy: "Prepared by",
+    po_approvedBy: "Approved by",
     po_updated: "✅ Updated",
     po_approved: "✅ Approved",
     po_qtyBelowReceived: "⚠️ Cannot go below what has already been received",

@@ -85,7 +85,7 @@ export default function PoDetailPage() {
   async function load() {
     const { data: poData } = await supabase
       .from("purchase_orders")
-      .select("*, suppliers(name)")
+      .select("*, suppliers(name, phone, address)")
       .eq("id", id)
       .maybeSingle();
     if (!poData) {
@@ -428,6 +428,26 @@ export default function PoDetailPage() {
 
   return (
     <div className="pt-4 po-print">
+      {/* Only meaningful on paper — the supplier keeps this copy */}
+      <div className="hidden print:block mb-6">
+        <h1 className="text-2xl font-bold">PURCHASE ORDER</h1>
+        <div className="grid grid-cols-2 gap-6 mt-4 text-sm">
+          <div>
+            <div className="text-slate-500 uppercase text-xs">{t("po_supplier")}</div>
+            <div className="font-medium">{(po as any).suppliers?.name || "-"}</div>
+            {(po as any).suppliers?.phone && <div>{(po as any).suppliers.phone}</div>}
+            {(po as any).suppliers?.address && <div>{(po as any).suppliers.address}</div>}
+          </div>
+          <div className="text-right">
+            <div><span className="text-slate-500">{t("po_number")}: </span>{po.po_number}</div>
+            <div><span className="text-slate-500">{t("po_orderDate")}: </span>{po.order_date}</div>
+            {po.expected_date && (
+              <div><span className="text-slate-500">{t("po_expectedDate")}: </span>{po.expected_date}</div>
+            )}
+            <div><span className="text-slate-500">{t("po_paymentTerm")}: </span>{t(`po_term_${po.payment_term}` as any)}</div>
+          </div>
+        </div>
+      </div>
       <Link href="/purchase-orders" className="text-sm text-blue-600 mb-2 inline-block">
         ← {t("nav_purchaseOrders")}
       </Link>
@@ -447,13 +467,6 @@ export default function PoDetailPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {editable && (
-          <button onClick={openHeaderEdit}
-            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium">
-            {t("products_edit")}
-          </button>
-        )}
-
         {po.status !== "cancelled" && po.status !== "received" && !items.some((i) => i.received_qty > 0) && (
           <button onClick={cancelPo}
             className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium">
@@ -690,7 +703,7 @@ export default function PoDetailPage() {
       </div>
 
       {/* Activity log */}
-      <h3 className="font-semibold mt-6 mb-2">{t("po_activityLog")}</h3>
+      <h3 className="font-semibold mt-6 mb-2 print:hidden">{t("po_activityLog")}</h3>
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[560px]">
           <thead className="bg-slate-50 text-slate-500">
