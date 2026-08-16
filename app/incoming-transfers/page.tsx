@@ -12,6 +12,7 @@ type TransferRow = {
   id: string;
   product_id: string;
   variant_id: string | null;
+  from_store_id: string | null;
   to_store_id: string;
   qty: number;
   received_qty: number | null;
@@ -143,20 +144,77 @@ export default function IncomingTransfersPage() {
             .eq("store_id", storeId).eq("product_id", confirmRow.product_id)
             .is("variant_id", null).maybeSingle());
 
-      // Carry the sending location's cost across so COGS stays meaningful
-      const { data: centralInv } = await (confirmRow.variant_id
+      // Carry the SENDING location's cost across. This used to look at a
+      // hardcoded warehouse id, so any other warehouse produced a zero cost.
+      const sourceStore = confirmRow.from_store_id || "";
+      const { data: sourceInv } = await (confirmRow.variant_id
         ? supabase.from("store_inventory").select("avg_cost")
-            .eq("store_id", "CENTRAL-WH").eq("product_id", confirmRow.product_id)
+            .eq("store_id", sourceStore).eq("product_id", confirmRow.product_id)
             .eq("variant_id", confirmRow.variant_id).maybeSingle()
         : supabase.from("store_inventory").select("avg_cost")
-            .eq("store_id", "CENTRAL-WH").eq("product_id", confirmRow.product_id)
+            .eq("store_id", sourceStore).eq("product_id", confirmRow.product_id)
             .is("variant_id", null).maybeSingle());
 
       if (!needsApproval) {
+        // Weighted average, so receiving at a different cost doesn't overwrite
+        // what the store already holds
+        const incomingCost = Number(sourceInv?.avg_cost ?? existing?.avg_cost ?? 0);
+        const heldQty = Number(existing?.stock_qty || 0);
+        const heldCost = Number(existing?.avg_cost || 0);
+        const newQty = heldQty + actual;
+        const newAvg =
+          newQty > 0 ? (heldQty * heldCost + actual * incomingCost) / newQty : incomingCost;
+
         await upsertStoreInventory(storeId, confirmRow.product_id, confirmRow.variant_id, {
-          stock_qty: (existing?.stock_qty || 0) + actual,
-          avg_cost: centralInv?.avg_cost ?? existing?.avg_cost ?? 0,
+          stock_qty: newQty,
+          avg_cost: newAvg,
+          last_purchase_cost: incomingCost,
         });
+
+        // Batches carry the expiry dates, so they have to move with the goods —
+        // otherwise the receiving store shows stock with no expiry at all.
+        let batchQuery = supabase
+          .from("stock_purchases")
+          .select("*")
+          .eq("store_id", sourceStore)
+          .eq("product_id", confirmRow.product_id)
+          .gt("remaining_qty", 0);
+        batchQuery = confirmRow.variant_id
+          ? batchQuery.eq("variant_id", confirmRow.variant_id)
+          : batchQuery.is("variant_id", null);
+        const { data: sourceBatches } = await batchQuery.order("expiry_date", {
+          ascending: true,
+          nullsFirst: false,
+        });
+
+        // First to expire leaves first
+        let toMove = actual;
+        for (const b of (sourceBatches as any[]) || []) {
+          if (toMove <= 0) break;
+          const take = Math.min(toMove, Number(b.remaining_qty));
+
+          await supabase
+            .from("stock_purchases")
+            .update({ remaining_qty: Number(b.remaining_qty) - take })
+            .eq("id", b.id);
+
+          await supabase.from("stock_purchases").insert({
+            product_id: confirmRow.product_id,
+            variant_id: confirmRow.variant_id,
+            store_id: storeId,
+            supplier: b.supplier,
+            qty: take,
+            unit_cost: b.unit_cost,
+            total_cost: take * Number(b.unit_cost),
+            new_avg_cost: newAvg,
+            remaining_qty: take,
+            expiry_date: b.expiry_date,
+            received_by: profile?.email || null,
+            received_at: new Date().toISOString(),
+          });
+
+          toMove -= take;
+        }
       }
 
       const { error } = await supabase
