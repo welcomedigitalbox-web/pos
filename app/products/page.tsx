@@ -41,6 +41,11 @@ export default function ProductsPage() {
   const [newVariantSku, setNewVariantSku] = useState("");
   const [newVariantPrice, setNewVariantPrice] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [withVariants, setWithVariants] = useState(false);
+  const [variationTheme, setVariationTheme] = useState("Size");
+  const [draftVariants, setDraftVariants] = useState<
+    { name: string; sku: string; price: string }[]
+  >([{ name: "", sku: "", price: "" }]);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
@@ -143,6 +148,9 @@ export default function ProductsPage() {
 
   function openNew() {
     setForm({ ...emptyForm, sku: generateSku() });
+    setWithVariants(false);
+    setVariationTheme("Size");
+    setDraftVariants([{ name: "", sku: "", price: "" }]);
     setEditingVariants([]);
     setShowForm(true);
   }
@@ -175,8 +183,11 @@ export default function ProductsPage() {
     const stock_qty = form.stock_qty === "" ? 0 : Number(form.stock_qty);
     const avg_cost = form.avg_cost === "" ? 0 : Number(form.avg_cost);
     if (isNaN(price) || price < 0) return showToast(t("products_priceInvalid"));
-    if (!hasVariants && (isNaN(stock_qty) || stock_qty < 0)) return showToast(t("products_stockInvalid"));
-    if (!hasVariants && (isNaN(avg_cost) || avg_cost < 0)) return showToast(t("products_avgCostInvalid"));
+    const buildingVariants = withVariants && draftVariants.some((v) => v.name.trim());
+    if (!hasVariants && !buildingVariants && (isNaN(stock_qty) || stock_qty < 0))
+      return showToast(t("products_stockInvalid"));
+    if (!hasVariants && !buildingVariants && (isNaN(avg_cost) || avg_cost < 0))
+      return showToast(t("products_avgCostInvalid"));
 
     setSaving(true);
     try {
@@ -211,7 +222,29 @@ export default function ProductsPage() {
           .select()
           .single();
         if (error) throw error;
-        await upsertStoreInventory(storeId, created.id, null, { stock_qty, avg_cost });
+
+        const filledVariants = draftVariants.filter((v) => v.name.trim());
+        if (withVariants && filledVariants.length) {
+          // The parent becomes a grouping row; stock and price live on the children
+          await supabase.from("product_variants").insert(
+            filledVariants.map((v) => ({
+              product_id: created.id,
+              variant_name: v.name.trim(),
+              // Fall back to the parent SKU plus the variant name so scanning works
+              sku:
+                v.sku.trim() ||
+                `${form.sku.trim()}-${v.name.trim().toUpperCase().replace(/\s+/g, "-")}`,
+              price_override: v.price.trim() ? Number(v.price) : price,
+            }))
+          );
+          await supabase
+            .from("products")
+            .update({ variation_theme: variationTheme })
+            .eq("id", created.id);
+        } else {
+          await upsertStoreInventory(storeId, created.id, null, { stock_qty, avg_cost });
+        }
+
         showToast(t("products_createSuccess"));
       }
       setShowForm(false);
@@ -480,6 +513,89 @@ export default function ProductsPage() {
 
             {editingVariants.length === 0 ? (
               <>
+                <label className="flex items-start gap-2 text-sm mb-3 cursor-pointer">
+                  <input type="checkbox" className="mt-1" checked={withVariants}
+                    onChange={(e) => setWithVariants(e.target.checked)} />
+                  <span>
+                    <span className="font-medium">{t("products_hasVariants")}</span>
+                    <span className="block text-xs text-slate-500">{t("products_hasVariantsHint")}</span>
+                  </span>
+                </label>
+
+                {withVariants && (
+                  <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-3 mb-4">
+                    <label className="text-sm text-slate-600">{t("products_variationTheme")}</label>
+                    <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+                      value={variationTheme} onChange={(e) => setVariationTheme(e.target.value)}>
+                      <option value="Size">Size</option>
+                      <option value="Color">Color</option>
+                      <option value="Flavour">Flavour</option>
+                      <option value="Pack">Pack</option>
+                    </select>
+
+                    <div className="grid grid-cols-[1fr_1.2fr_0.9fr_auto] gap-1 text-[10px] text-slate-400 uppercase mb-1">
+                      <span>{t("products_variantName")}</span>
+                      <span>{t("products_sku")}</span>
+                      <span>{t("products_price")}</span>
+                      <span></span>
+                    </div>
+
+                    {draftVariants.map((v, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_1.2fr_0.9fr_auto] gap-1 mb-1">
+                        <input
+                          className="border border-slate-200 rounded px-2 py-1.5 text-sm"
+                          placeholder="M"
+                          value={v.name}
+                          onChange={(e) => {
+                            const next = [...draftVariants];
+                            next[idx] = { ...next[idx], name: e.target.value };
+                            setDraftVariants(next);
+                          }}
+                        />
+                        <input
+                          className="border border-slate-200 rounded px-2 py-1.5 text-sm"
+                          placeholder={
+                            v.name.trim()
+                              ? `${form.sku}-${v.name.trim().toUpperCase()}`
+                              : t("products_skuAuto")
+                          }
+                          value={v.sku}
+                          onChange={(e) => {
+                            const next = [...draftVariants];
+                            next[idx] = { ...next[idx], sku: e.target.value };
+                            setDraftVariants(next);
+                          }}
+                        />
+                        <input
+                          type="number"
+                          className="border border-slate-200 rounded px-2 py-1.5 text-sm"
+                          placeholder={form.price || "0"}
+                          value={v.price}
+                          onChange={(e) => {
+                            const next = [...draftVariants];
+                            next[idx] = { ...next[idx], price: e.target.value };
+                            setDraftVariants(next);
+                          }}
+                        />
+                        <button type="button" className="text-red-500 px-1"
+                          onClick={() => setDraftVariants(draftVariants.filter((_, i) => i !== idx))}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    <button type="button"
+                      onClick={() => setDraftVariants([...draftVariants, { name: "", sku: "", price: "" }])}
+                      className="w-full py-1.5 border border-slate-300 rounded text-xs font-medium mt-1">
+                      + {t("products_addVariantRow")}
+                    </button>
+
+                    <p className="text-xs text-slate-500 mt-2">{t("products_variantStockHint")}</p>
+                  </div>
+                )}
+
+                {!withVariants && (
+                <>
                 <label className="text-sm text-slate-600">
                   {t("products_stockQty")}
                   <span className="text-slate-400 text-xs">
@@ -504,6 +620,8 @@ export default function ProductsPage() {
                   placeholder="0"
                 />
                 <p className="text-xs text-slate-400 -mt-3 mb-4">{t("products_avgCostWarning")}</p>
+                </>
+                )}
               </>
             ) : (
               <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">

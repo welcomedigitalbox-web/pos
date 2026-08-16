@@ -2,6 +2,13 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    products_hasVariants: "Variant များ ရှိသည် (Size/Color စသည်)",
+    products_hasVariantsHint: "အမှန်ခြစ်လျှင် ဤပစ္စည်းသည် အုပ်စုသာဖြစ်ပြီး၊ လက်ကျန်နှင့် ဈေးနှုန်းကို variant တစ်ခုချင်းစီတွင် ထားပါမည်",
+    products_variationTheme: "ဘာအလိုက် ခွဲမလဲ",
+    products_variantName: "Variant အမည်",
+    products_skuAuto: "အလိုအလျောက်",
+    products_addVariantRow: "Variant ထပ်ထည့်",
+    products_variantStockHint: "လက်ကျန်ကို PO သို့မဟုတ် Stock-In ကနေ variant အလိုက် ထည့်ပါ",
     products_openingStockHint: "စတင်လက်ကျန်သာဖြစ်သည် — ပုံမှန်အားဖြင့် PO/Stock-In ကနေ ဝင်သင့်သည်",
     variant_skuAutoHint: "အလွတ်ထားလျှင် မူရင်း SKU နှင့် ပေါင်း၍ အလိုအလျောက် ထုတ်ပါမည် (ဥပမာ SKU-1001-M)",
     nav_campaigns: "ကြော်ငြာ Campaign",
@@ -717,6 +724,13 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    products_hasVariants: "This product has variants (Size, Color, etc.)",
+    products_hasVariantsHint: "The parent becomes a grouping only — stock and price live on each variant",
+    products_variationTheme: "Vary by",
+    products_variantName: "Variant Name",
+    products_skuAuto: "Auto",
+    products_addVariantRow: "Add variant",
+    products_variantStockHint: "Add stock per variant later via a PO or Stock-In",
     products_openingStockHint: "Opening stock only — normally this comes from a PO or Stock-In",
     variant_skuAutoHint: "Leave blank to generate from the parent SKU (e.g. SKU-1001-M)",
     nav_campaigns: "Ad Campaigns",
