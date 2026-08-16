@@ -133,7 +133,9 @@ export default function ProductsPage() {
   }
 
   function generateSku() {
-    const storePrefix = storeId.replace(/[^A-Z0-9]/gi, "").slice(0, 4).toUpperCase();
+    // With no store selected the prefix would be empty, producing SKUs like "-0022"
+    const storePrefix =
+      storeId.replace(/[^A-Z0-9]/gi, "").slice(0, 4).toUpperCase() || "SKU";
     const timestampPart = Date.now().toString().slice(-6);
     const randomPart = Math.floor(Math.random() * 90 + 10); // 2-digit
     return `${storePrefix}-${timestampPart}${randomPart}`;
@@ -225,6 +227,12 @@ export default function ProductsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm(t("products_deleteConfirm"))) return;
+
+    // Variants and empty stock rows belong to the product, not to its history —
+    // clearing them first stops a plain delete being mistaken for "has sales"
+    await supabase.from("product_variants").delete().eq("product_id", id);
+    await supabase.from("store_inventory").delete().eq("product_id", id).eq("stock_qty", 0);
+
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) {
       if (error.message.includes("foreign key") || error.message.includes("violates")) {

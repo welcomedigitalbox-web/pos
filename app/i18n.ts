@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    variant_skuAutoHint: "အလွတ်ထားလျှင် မူရင်း SKU နှင့် ပေါင်း၍ အလိုအလျောက် ထုတ်ပါမည် (ဥပမာ SKU-1001-M)",
     nav_campaigns: "ကြော်ငြာ Campaign",
     campaigns_new: "+ Campaign အသစ်",
     campaigns_subtitle: "Boost/Campaign ကာလအတွင်း ရောင်းအား ဘယ်လောက် ပြောင်းလဲသလဲ",
@@ -715,6 +716,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    variant_skuAutoHint: "Leave blank to generate from the parent SKU (e.g. SKU-1001-M)",
     nav_campaigns: "Ad Campaigns",
     campaigns_new: "+ New Campaign",
     campaigns_subtitle: "How sales moved during each boost or campaign",

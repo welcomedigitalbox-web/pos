@@ -22,6 +22,14 @@ export default function ProductVariantPage() {
   const [productId, setProductId] = useState("");
   const [variantName, setVariantName] = useState("");
   const [sku, setSku] = useState("");
+
+  // "SKU-1001" + "M" -> "SKU-1001-M"; falls back to the variant name alone
+  function autoVariantSku() {
+    const parent = products.find((p) => p.id === productId);
+    const suffix = variantName.trim().toUpperCase().replace(/\s+/g, "-");
+    if (!suffix) return null;
+    return parent?.sku ? `${parent.sku}-${suffix}` : suffix;
+  }
   const [priceOverride, setPriceOverride] = useState("");
 
   useEffect(() => {
@@ -69,7 +77,8 @@ export default function ProductVariantPage() {
       const { error } = await supabase.from("product_variants").insert({
         product_id: productId,
         variant_name: variantName.trim(),
-        sku: sku.trim() || null,
+        // Derive from the parent SKU so scanning works even if left blank
+        sku: sku.trim() || autoVariantSku(),
         price_override: priceOverride ? Number(priceOverride) : null,
       });
       if (error) throw error;
@@ -184,6 +193,7 @@ export default function ProductVariantPage() {
             />
 
             <label className="text-sm text-slate-600">{t("products_sku")}</label>
+            <p className="text-xs text-slate-400">{t("variant_skuAutoHint")}</p>
             <input
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={sku}
