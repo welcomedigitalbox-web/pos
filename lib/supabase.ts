@@ -186,8 +186,17 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
     variantsByProduct.set(v.product_id, list);
   }
 
+  const { data: offRows } = await supabase
+    .from("store_product_settings")
+    .select("product_id")
+    .eq("store_id", storeId)
+    .eq("is_available", false);
+  const unavailable = new Set(((offRows as any[]) || []).map((r) => r.product_id));
+
   const items: SellableItem[] = [];
   for (const p of (products || []) as Product[]) {
+    // Switched off for this store, so it should not appear at the till
+    if (unavailable.has(p.id)) continue;
     const children = variantsByProduct.get(p.id) || [];
 
     if (children.length === 0) {

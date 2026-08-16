@@ -42,6 +42,8 @@ export default function ProductsPage() {
   const [newVariantPrice, setNewVariantPrice] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [withVariants, setWithVariants] = useState(false);
+  const [availRow, setAvailRow] = useState<{ id: string; name: string } | null>(null);
+  const [availOff, setAvailOff] = useState<Set<string>>(new Set());
   const [variationTheme, setVariationTheme] = useState("Size");
   const [draftVariants, setDraftVariants] = useState<
     { name: string; sku: string; price: string }[]
@@ -258,6 +260,40 @@ export default function ProductsPage() {
     }
   }
 
+  async function openAvailability(productId: string, name: string) {
+    const { data } = await supabase
+      .from("store_product_settings")
+      .select("store_id, is_available")
+      .eq("product_id", productId);
+    // Only rows explicitly marked unavailable are stored; everything else is on
+    setAvailOff(
+      new Set(((data as any[]) || []).filter((r) => !r.is_available).map((r) => r.store_id))
+    );
+    setAvailRow({ id: productId, name });
+  }
+
+  async function toggleAvailability(storeIdToToggle: string) {
+    if (!availRow) return;
+    const turningOff = !availOff.has(storeIdToToggle);
+
+    const { error } = await supabase.from("store_product_settings").upsert(
+      {
+        store_id: storeIdToToggle,
+        product_id: availRow.id,
+        is_available: !turningOff,
+        updated_by: profile?.email || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "store_id,product_id" }
+    );
+    if (error) return showToast("❌ " + error.message);
+
+    const next = new Set(availOff);
+    if (turningOff) next.add(storeIdToToggle);
+    else next.delete(storeIdToToggle);
+    setAvailOff(next);
+  }
+
   async function handleDelete(id: string) {
     if (!confirm(t("products_deleteConfirm"))) return;
 
@@ -399,6 +435,12 @@ export default function ProductsPage() {
                   <button onClick={() => openEdit(row)} className="text-blue-600 text-xs font-medium">
                     {t("products_edit")}
                   </button>
+                  {!row.variant_id && (
+                    <button onClick={() => openAvailability(row.product_id, row.display_name)}
+                      className="text-slate-500 text-xs font-medium">
+                      {t("products_availability")}
+                    </button>
+                  )}
                   {row.is_active ? (
                     <button
                       onClick={() => handleDelete(row.product_id)}
@@ -427,6 +469,37 @@ export default function ProductsPage() {
           </tbody>
         </table>
       </div>
+
+      {availRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("products_availability")}</h3>
+            <p className="text-sm text-slate-500 mb-4">{availRow.name}</p>
+
+            <div className="space-y-2 mb-4">
+              {stores.filter((st) => !st.is_warehouse).map((st) => {
+                const on = !availOff.has(st.id);
+                return (
+                  <label key={st.id}
+                    className="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 cursor-pointer">
+                    <span className="text-sm">{st.name}</span>
+                    <input type="checkbox" checked={on} onChange={() => toggleAvailability(st.id)} />
+                  </label>
+                );
+              })}
+            </div>
+
+            <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-4">
+              {t("products_availabilityHint")}
+            </p>
+
+            <button onClick={() => setAvailRow(null)}
+              className="w-full py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+              {t("products_cancel")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto">

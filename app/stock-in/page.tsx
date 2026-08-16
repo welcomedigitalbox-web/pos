@@ -24,8 +24,8 @@ type PurchaseRow = {
   new_avg_cost: number;
   expiry_date: string | null;
   remaining_qty: number;
-  products: { name: string } | null;
-  product_variants: { variant_name: string } | null;
+  products: { name: string; sku: string | null } | null;
+  product_variants: { variant_name: string; sku: string | null } | null;
 };
 
 export default function StockInPage() {
@@ -84,7 +84,7 @@ export default function StockInPage() {
   async function loadHistory() {
     const { data } = await supabase
       .from("stock_purchases")
-      .select("*, products(name), product_variants(variant_name)")
+      .select("*, products(name, sku), product_variants(variant_name, sku)")
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -313,6 +313,7 @@ export default function StockInPage() {
             <tr>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
+              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_supplier")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_qtyColumn")}</th>
               <th className="text-left px-3 py-2">{t("stockIn_unitCost")}</th>
@@ -338,6 +339,9 @@ export default function StockInPage() {
                     {h.product_variants?.variant_name && (
                       <span className="text-blue-600 text-xs ml-1">({h.product_variants.variant_name})</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">
+                    {h.product_variants?.sku || h.products?.sku || "-"}
                   </td>
                   <td className="px-3 py-2 text-slate-400">{h.supplier || "-"}</td>
                   <td className="px-3 py-2">{h.qty}</td>
