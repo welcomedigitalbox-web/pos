@@ -25,6 +25,11 @@ export default function InventoryPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
+  // Stock value exposes cost, which shop-floor staff shouldn't see
+  const canSeeCost =
+    profile?.role === "sale_manager" || profile?.role === "manager" ||
+    profile?.role === "owner" || profile?.role === "admin";
+
   const [locId, setLocId] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -202,10 +207,12 @@ export default function InventoryPage() {
           <div className="text-xs text-slate-500 uppercase">{t("barcode_totalSale")}</div>
           <div className="text-lg font-bold mt-1">{fmt(totals.salesValue)}</div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("warehouse_stockValue")}</div>
-          <div className="text-lg font-bold mt-1">{fmt(totals.value)}</div>
-        </div>
+        {canSeeCost && (
+          <div className="bg-white border border-slate-200 rounded-xl p-3">
+            <div className="text-xs text-slate-500 uppercase">{t("warehouse_stockValue")}</div>
+            <div className="text-lg font-bold mt-1">{fmt(totals.value)}</div>
+          </div>
+        )}
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("warehouse_outOfStock")}</div>
           <div className="text-xl font-bold mt-1 text-red-600">{totals.outOfStock}</div>
@@ -221,7 +228,7 @@ export default function InventoryPage() {
               <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
               <th className="text-left px-3 py-2">{t("ledger_unitsSold")}</th>
               <th className="text-left px-3 py-2">{t("products_price")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_stockValue")}</th>
+              {canSeeCost && <th className="text-left px-3 py-2">{t("warehouse_stockValue")}</th>}
               <th className="text-left px-3 py-2">{t("warehouse_colExpiry")}</th>
               <th className="text-left px-3 py-2"></th>
             </tr>
@@ -242,7 +249,9 @@ export default function InventoryPage() {
                     </td>
                     <td className="px-3 py-2 text-slate-600">{r.soldQty.toLocaleString()}</td>
                     <td className="px-3 py-2">{fmt(r.price)}</td>
-                    <td className="px-3 py-2 text-slate-500">{fmt(r.stockValue)}</td>
+                    {canSeeCost && (
+                      <td className="px-3 py-2 text-slate-500">{fmt(r.stockValue)}</td>
+                    )}
                     <td className={`px-3 py-2 text-xs ${expired ? "text-red-600 font-semibold" : soon ? "text-orange-600 font-medium" : "text-slate-400"}`}>
                       {nearest || "-"}
                       {expired && " ⚠️"}
