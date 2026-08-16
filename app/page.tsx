@@ -508,7 +508,17 @@ export default function POSPage() {
       resetOrder();
       await loadProducts();
 
-      setTimeout(() => window.print(), 300);
+      // @page can't be scoped by a CSS class, so the thermal-roll page size is
+      // injected only for this print and removed afterwards — otherwise every
+      // other document (like a purchase order) would print on 80mm paper too.
+      setTimeout(() => {
+        const style = document.createElement("style");
+        style.id = "receipt-page-size";
+        style.textContent = "@page { size: 80mm auto; margin: 0; }";
+        document.head.appendChild(style);
+        window.print();
+        setTimeout(() => style.remove(), 500);
+      }, 300);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       showToast("❌ " + message);

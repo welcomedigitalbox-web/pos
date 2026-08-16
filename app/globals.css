@@ -51,15 +51,15 @@ body {
     font-size: 11px;
     color: #000;
   }
-  @page {
-    size: 80mm auto;
-    margin: 0;
-  }
 }
 
 /* A purchase order is a document the supplier keeps, so printing it should
    produce a clean sheet: no app chrome, no action buttons. */
 @media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
   body * {
     visibility: hidden;
   }

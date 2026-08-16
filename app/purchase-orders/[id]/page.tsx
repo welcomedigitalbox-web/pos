@@ -560,6 +560,18 @@ export default function PoDetailPage() {
                         {t("po_receive")}
                       </button>
                     )}
+                    {editable && (
+                      <button
+                        onClick={() => {
+                          setEditRow(i);
+                          setItemQty(String(i.qty));
+                          setItemCost(String(i.unit_cost));
+                        }}
+                        className="text-blue-600 text-xs font-medium"
+                      >
+                        {t("products_edit")}
+                      </button>
+                    )}
                     {editable && i.received_qty === 0 && (
                       <button onClick={() => deleteItem(i.id)} className="text-red-600 text-xs font-medium">
                         {t("products_delete")}
