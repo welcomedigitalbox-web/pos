@@ -490,6 +490,19 @@ export default function PoDetailPage() {
         {items.some((i) => i.received_qty > 0) && po.status !== "cancelled" && (
           <span className="text-xs text-slate-400 self-center">{t("po_cannotCancelReceived")}</span>
         )}
+        {po.status === "draft" && (
+          <button
+            onClick={() => setShowApprove(true)}
+            className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold print:hidden"
+          >
+            {t("po_approveTitle")}
+          </button>
+        )}
+        {(po as any).approved_by && (
+          <span className="text-xs text-slate-400 self-center print:hidden">
+            {t("po_approvedBy")}: {(po as any).approved_by}
+          </span>
+        )}
         <button
           onClick={() => window.print()}
           className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium print:hidden"
@@ -839,6 +852,88 @@ export default function PoDetailPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {editRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 print:hidden">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("products_edit")}</h3>
+            <p className="text-sm text-slate-500 mb-4">{editRow.product_name}</p>
+
+            <label className="text-sm text-slate-600">{t("po_orderQty")}</label>
+            <input type="number" autoFocus
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-1"
+              value={itemQty} onChange={(e) => setItemQty(e.target.value)} />
+            {Number(editRow.received_qty || 0) > 0 && (
+              <p className="text-xs text-amber-600 mb-2">
+                ⚠️ {t("po_receivedQty")}: {editRow.received_qty}
+              </p>
+            )}
+
+            <label className="text-sm text-slate-600 block mt-2">{t("stockIn_unitCost")}</label>
+            <input type="number"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={itemCost} onChange={(e) => setItemCost(e.target.value)} />
+
+            <div className="flex gap-2">
+              <button onClick={() => setEditRow(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={saveItemEdit}
+                className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold">
+                {t("products_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApprove && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 print:hidden">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("po_approveTitle")}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {po.po_number} · {fmt(total)}
+            </p>
+
+            <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-4">
+              {t("po_approveHint")}
+            </p>
+
+            {canApprovePo ? (
+              <div className="flex gap-2">
+                <button onClick={() => setShowApprove(false)}
+                  className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                  {t("products_cancel")}
+                </button>
+                <button onClick={() => approvePo()} disabled={approving}
+                  className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                  {approving ? "..." : t("returns_approve")}
+                </button>
+              </div>
+            ) : (
+              <>
+                <label className="text-sm text-slate-600">{t("returns_managerPin")}</label>
+                <input type="password" inputMode="numeric" autoFocus
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4 tracking-widest text-center"
+                  placeholder="••••"
+                  value={approvalPin} onChange={(e) => setApprovalPin(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && approveWithPin()} />
+                <div className="flex gap-2">
+                  <button onClick={() => setShowApprove(false)}
+                    className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                    {t("products_cancel")}
+                  </button>
+                  <button onClick={approveWithPin} disabled={approving}
+                    className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                    {approving ? "..." : t("returns_approveWithPin")}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
