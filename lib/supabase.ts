@@ -496,6 +496,7 @@ export type SaleReturn = {
   return_number: string;
   original_sale_id: string | null;
   store_id: string;
+  processed_store_id: string | null;
   customer_id: string | null;
   customer_name: string | null;
   refund_method: RefundMethod;

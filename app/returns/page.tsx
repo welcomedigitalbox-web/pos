@@ -119,15 +119,12 @@ export default function ReturnsPage() {
     const q = orderSearch.trim().toLowerCase();
     if (!q) return;
 
-    // Any cashier can handle a colleague's sale from their own store; looking up
-    // another store's order is a manager-level action.
-    let lookupQuery = supabase
+    // A customer may return to any branch, so the search spans every store
+    const { data: sales } = await supabase
       .from("sales")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(2000);
-    if (!canApprove) lookupQuery = lookupQuery.eq("store_id", storeId);
-    const { data: sales } = await lookupQuery;
 
     const sale = ((sales as any[]) || []).find(
       (s) =>
@@ -138,7 +135,7 @@ export default function ReturnsPage() {
     if (!sale) {
       setFoundSale(null);
       setOrderItems([]);
-      return showToast(canApprove ? t("returns_orderNotFound") : t("returns_orderNotFoundStore"));
+      return showToast(t("returns_orderNotFound"));
     }
 
     const { data: items } = await supabase
@@ -244,6 +241,7 @@ export default function ReturnsPage() {
           return_number: returnNumber,
           original_sale_id: foundSale.id,
           store_id: foundSale.store_id,
+          processed_store_id: storeId,
           customer_id: foundSale.customer_id,
           customer_name: foundSale.customer_name,
           refund_method: refundMethod,
@@ -289,7 +287,7 @@ export default function ReturnsPage() {
       await supabase.from("sale_return_items").insert([...returnRows, ...(exchangeRows as any[])]);
 
       if (voucherFile) {
-        const path = await uploadReturnVoucher(voucherFile, foundSale.store_id, created.id);
+        const path = await uploadReturnVoucher(voucherFile, storeId, created.id);
         await supabase.from("sale_returns").update({ voucher_url: path }).eq("id", created.id);
       }
 
@@ -332,22 +330,24 @@ export default function ReturnsPage() {
     const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
+      // Goods are physically here, so they go back into THIS store
+      const stockStore = (reviewRow as any).processed_store_id || reviewRow.store_id;
       for (const item of reviewItems.filter((i) => i.line_type !== "exchange")) {
         if (item.condition === "good") {
           // Sellable again — put it back on the shelf at its original cost
           const { data: inv } = await (item.variant_id
-            ? supabase.from("store_inventory").select("*").eq("store_id", reviewRow.store_id)
+            ? supabase.from("store_inventory").select("*").eq("store_id", stockStore)
                 .eq("product_id", item.product_id).eq("variant_id", item.variant_id).maybeSingle()
-            : supabase.from("store_inventory").select("*").eq("store_id", reviewRow.store_id)
+            : supabase.from("store_inventory").select("*").eq("store_id", stockStore)
                 .eq("product_id", item.product_id).is("variant_id", null).maybeSingle());
 
-          await upsertStoreInventory(reviewRow.store_id, item.product_id, item.variant_id, {
+          await upsertStoreInventory(stockStore, item.product_id, item.variant_id, {
             stock_qty: Number(inv?.stock_qty || 0) + Number(item.qty),
           });
         } else {
           // Damaged goods never re-enter sellable stock; log them as a write-off
           await supabase.from("stock_damages").insert({
-            store_id: reviewRow.store_id,
+            store_id: stockStore,
             product_id: item.product_id,
             variant_id: item.variant_id,
             qty: item.qty,
@@ -365,7 +365,7 @@ export default function ReturnsPage() {
         const { data: exSale, error: exErr } = await supabase
           .from("sales")
           .insert({
-            store_id: reviewRow.store_id,
+            store_id: stockStore,
             subtotal: exchangeTotal,
             total: exchangeTotal,
             payment_method: "exchange",
@@ -395,11 +395,11 @@ export default function ReturnsPage() {
 
         for (const i of outLines) {
           const { data: inv } = await (i.variant_id
-            ? supabase.from("store_inventory").select("*").eq("store_id", reviewRow.store_id)
+            ? supabase.from("store_inventory").select("*").eq("store_id", stockStore)
                 .eq("product_id", i.product_id).eq("variant_id", i.variant_id).maybeSingle()
-            : supabase.from("store_inventory").select("*").eq("store_id", reviewRow.store_id)
+            : supabase.from("store_inventory").select("*").eq("store_id", stockStore)
                 .eq("product_id", i.product_id).is("variant_id", null).maybeSingle());
-          await upsertStoreInventory(reviewRow.store_id, i.product_id, i.variant_id, {
+          await upsertStoreInventory(stockStore, i.product_id, i.variant_id, {
             stock_qty: Number(inv?.stock_qty || 0) - Number(i.qty),
           });
         }
@@ -780,7 +780,13 @@ export default function ReturnsPage() {
             <h3 className="font-semibold text-lg mb-1 font-mono">{reviewRow.return_number}</h3>
             <p className="text-xs text-slate-500 mb-1">
               {t("returns_requestedBy")}: <span className="font-medium text-slate-700">{reviewRow.requested_by || "-"}</span>
-              {" · "}{reviewRow.store_id}
+              {" · "}{t("returns_soldAt")}: {reviewRow.store_id}
+              {(reviewRow as any).processed_store_id &&
+                (reviewRow as any).processed_store_id !== reviewRow.store_id && (
+                  <span className="text-orange-600">
+                    {" · "}{t("returns_returnedAt")}: {(reviewRow as any).processed_store_id}
+                  </span>
+                )}
             </p>
             <p className="text-sm text-slate-500 mb-4">
               {reviewRow.customer_name || "-"} · {t(`returns_method_${reviewRow.refund_method}` as any)}
