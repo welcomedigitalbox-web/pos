@@ -331,9 +331,26 @@ export default function ReturnsPage() {
     const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
-      // Goods are physically here, so they go back into THIS store
-      const stockStore = (reviewRow as any).processed_store_id || reviewRow.store_id;
+      const handledAt = (reviewRow as any).processed_store_id || reviewRow.store_id;
+      const isCrossStore = handledAt !== reviewRow.store_id;
+      // Same-store returns land in that store. Cross-store returns belong to the
+      // selling branch, so they bypass this store's books entirely.
+      const stockStore = handledAt;
       for (const item of reviewItems.filter((i) => i.line_type !== "exchange")) {
+        if (isCrossStore && item.condition === "good") {
+          // Straight into transit — never added to the handling store's stock
+          await supabase.from("stock_transfers").insert({
+            product_id: item.product_id,
+            variant_id: item.variant_id,
+            from_store_id: handledAt,
+            to_store_id: reviewRow.store_id,
+            qty: item.qty,
+            status: "in_transit",
+            transferred_by: profile?.email || null,
+          });
+          continue;
+        }
+
         if (item.condition === "good") {
           // Sellable again — put it back on the shelf at its original cost
           const { data: inv } = await (item.variant_id
@@ -406,6 +423,18 @@ export default function ReturnsPage() {
         }
 
         await supabase.from("sale_returns").update({ exchange_sale_id: exSale.id }).eq("id", reviewRow.id);
+      }
+
+      if (isCrossStore && Number(reviewRow.refund_amount) > 0) {
+        await supabase.from("inter_store_settlements").insert({
+          owing_store_id: reviewRow.store_id,
+          owed_store_id: handledAt,
+          amount: reviewRow.refund_amount,
+          reason: "cross_store_refund",
+          sale_return_id: reviewRow.id,
+          note: reviewRow.return_number,
+          created_by: profile?.email || null,
+        });
       }
 
       await supabase
