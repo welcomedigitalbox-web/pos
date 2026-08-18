@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Receipt, { ReceiptData } from "../receipt";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -79,6 +80,8 @@ export default function HistoryPage() {
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [refunds, setRefunds] = useState<RefundRow[]>([]);
   const [refundBySale, setRefundBySale] = useState<Map<string, number>>(new Map());
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null);
+  const [printing, setPrinting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [period, setPeriod] = useState<PeriodKey>("today");
@@ -147,6 +150,65 @@ export default function HistoryPage() {
     setRefundBySale(refundMap);
     setRefunds((refundData as RefundRow[]) || []);
     setLoading(false);
+  }
+
+  async function reprint(sale: SaleRow) {
+    setPrinting(sale.id);
+    try {
+      const [{ data: items }, { data: settings }] = await Promise.all([
+        supabase.from("sale_items").select("*").eq("sale_id", sale.id).order("created_at"),
+        supabase.from("store_settings").select("*").eq("store_id", sale.store_id).maybeSingle(),
+      ]);
+
+      const full = sale as any;
+      setReceipt({
+        storeId: sale.store_id,
+        businessName: settings?.business_name || null,
+        phone: settings?.phone || null,
+        address: settings?.address || null,
+        footerText: settings?.footer_text || null,
+        logoText: settings?.logo_text || null,
+        saleRef: sale.id.slice(0, 8).toUpperCase(),
+        createdAt: sale.created_at,
+        items: ((items as any[]) || []).map((i) => ({
+          name: i.product_name,
+          qty: Number(i.qty),
+          price: Number(i.unit_price),
+          lineTotal: Number(i.line_total),
+        })),
+        subtotal: Number(full.subtotal || 0),
+        discountLabel:
+          full.discount_type === "percent" ? `${full.discount_value}%` : "",
+        discountAmount: Number(full.discount_amount || 0),
+        vatPercent: Number(full.vat_percent || 0),
+        vatAmount: Number(full.vat_amount || 0),
+        grandTotal: Number(full.total || 0),
+        paymentMethod: full.payment_method || "",
+        amountReceived: Number(full.amount_received || 0),
+        change: Number(full.change_amount || 0),
+        advancePayment: Number(full.advance_payment || 0),
+        balanceDue: Number(full.balance_due || 0),
+        note: full.note || "",
+        customerName: full.customer_name || "",
+        cashierEmail: full.cashier_email || "",
+      });
+
+      // The receipt renders off-screen; give React a tick before printing,
+      // and inject the thermal-roll page size just for this print
+      setTimeout(() => {
+        const style = document.createElement("style");
+        style.textContent = "@page { size: 80mm auto; margin: 0; }";
+        document.head.appendChild(style);
+        window.print();
+        setTimeout(() => {
+          style.remove();
+          setReceipt(null);
+          setPrinting(null);
+        }, 500);
+      }, 300);
+    } catch {
+      setPrinting(null);
+    }
   }
 
   // Built from the loaded rows so the list only ever offers cashiers that
@@ -266,10 +328,11 @@ export default function HistoryPage() {
               <th className="text-left px-3 py-2">{t("pos_salesRep")}</th>
               <th className="text-left px-3 py-2">{t("pos_paymentMethod")}</th>
               <th className="text-left px-3 py-2">{t("pos_total")}</th>
+              <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filteredSales.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">
@@ -298,14 +361,22 @@ export default function HistoryPage() {
                     fmt(s.total)
                   )}
                 </td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={() => reprint(s)} disabled={printing === s.id}
+                    className="text-blue-600 text-xs font-medium disabled:text-slate-300">
+                    {printing === s.id ? "..." : t("history_reprint")}
+                  </button>
+                </td>
               </tr>
             ))}
             {!loading && filteredSales.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <Receipt data={receipt} />
 
       {filteredRefunds.length > 0 && (
         <>
