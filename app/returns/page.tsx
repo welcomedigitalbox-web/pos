@@ -69,6 +69,7 @@ export default function ReturnsPage() {
   const [voucherLink, setVoucherLink] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [sendingBack, setSendingBack] = useState<string | null>(null);
   const [approvalPin, setApprovalPin] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [verifying, setVerifying] = useState(false);
@@ -451,6 +452,76 @@ export default function ReturnsPage() {
     }
   }
 
+  // Goods returned at another branch still belong to the selling store's books,
+  // so they have to physically go back. This opens that transfer.
+  async function sendBackToOrigin(r: SaleReturn) {
+    const from = (r as any).processed_store_id || r.store_id;
+    if (from === r.store_id) return;
+    if (!confirm(t("returns_sendBackConfirm"))) return;
+
+    setSendingBack(r.id);
+    try {
+      const { data: lines } = await supabase
+        .from("sale_return_items")
+        .select("product_id, variant_id, qty, condition, line_type")
+        .eq("return_id", r.id)
+        .eq("line_type", "return")
+        .eq("condition", "good");
+
+      const rows = (lines as any[]) || [];
+      if (!rows.length) {
+        setSendingBack(null);
+        return showToast(t("returns_nothingToSend"));
+      }
+
+      let firstTransfer: string | null = null;
+      for (const l of rows) {
+        const { data: inv } = await (l.variant_id
+          ? supabase.from("store_inventory").select("*").eq("store_id", from)
+              .eq("product_id", l.product_id).eq("variant_id", l.variant_id).maybeSingle()
+          : supabase.from("store_inventory").select("*").eq("store_id", from)
+              .eq("product_id", l.product_id).is("variant_id", null).maybeSingle());
+
+        await upsertStoreInventory(from, l.product_id, l.variant_id, {
+          stock_qty: Math.max(0, Number(inv?.stock_qty || 0) - Number(l.qty)),
+        });
+
+        const { data: created, error } = await supabase
+          .from("stock_transfers")
+          .insert({
+            product_id: l.product_id,
+            variant_id: l.variant_id,
+            from_store_id: from,
+            to_store_id: r.store_id,
+            qty: l.qty,
+            status: "in_transit",
+            transferred_by: profile?.email || null,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        if (!firstTransfer) firstTransfer = created.id;
+      }
+
+      await supabase.from("sale_returns").update({ return_transfer_id: firstTransfer }).eq("id", r.id);
+
+      await logActivity({
+        entityType: "sale_return",
+        entityId: r.id,
+        action: "sent_back",
+        detail: `${r.return_number}: ${from} → ${r.store_id}`,
+        actor: profile?.email,
+      });
+
+      showToast(t("returns_sentBack"));
+      await load();
+    } catch (err) {
+      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSendingBack(null);
+    }
+  }
+
   async function rejectReturn() {
     if (!reviewRow || !rejectReason.trim()) return showToast(t("returns_rejectReasonRequired"));
     await supabase
@@ -467,6 +538,13 @@ export default function ReturnsPage() {
   }
 
   const pending = returns.filter((r) => r.status === "pending").length;
+  const awaitingSendBack = returns.filter(
+    (r) =>
+      r.status === "approved" &&
+      (r as any).processed_store_id &&
+      (r as any).processed_store_id !== r.store_id &&
+      !(r as any).return_transfer_id
+  ).length;
   const visibleReturns =
     statusFilter === "all" ? returns : returns.filter((r) => r.status === statusFilter);
 
@@ -481,6 +559,14 @@ export default function ReturnsPage() {
       </div>
       <p className="text-sm text-slate-500 mb-3">
         {t("returns_pending")}: <span className="font-semibold text-orange-600">{pending}</span>
+        {awaitingSendBack > 0 && (
+          <>
+            {" · "}
+            <span className="font-semibold text-orange-600">
+              {t("returns_awaitingSendBack")}: {awaitingSendBack}
+            </span>
+          </>
+        )}
       </p>
 
       <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
@@ -530,7 +616,16 @@ export default function ReturnsPage() {
                   )}
                 </td>
                 <td className="px-3 py-2 text-slate-500 text-xs">{r.requested_by || "-"}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right space-x-3">
+                  {r.status === "approved" &&
+                    (r as any).processed_store_id &&
+                    (r as any).processed_store_id !== r.store_id &&
+                    !(r as any).return_transfer_id && (
+                      <button onClick={() => sendBackToOrigin(r)} disabled={sendingBack === r.id}
+                        className="text-orange-600 text-xs font-medium disabled:text-slate-300">
+                        {sendingBack === r.id ? "..." : t("returns_sendBack")}
+                      </button>
+                    )}
                   <button onClick={() => openReview(r)} className="text-blue-600 text-xs font-medium">
                     {r.status === "pending" ? t("returns_review") : t("products_view")}
                   </button>
