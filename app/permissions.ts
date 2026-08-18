@@ -4,6 +4,7 @@ export type PageKey =
   | "history"
   | "order-lookup"
   | "returns"
+  | "cash-drawer"
   | "customers"
   | "sales-reps"
   | "loyalty-tiers"
@@ -24,6 +25,7 @@ export type PageKey =
   | "dashboard"
   | "sales-report"
   | "campaigns"
+  | "settlements"
   | "my-pin"
   | "product-category"
   | "product-variant"
@@ -50,6 +52,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "history", href: "/history", labelKey: "nav_history", group: "sale" },
   { key: "order-lookup", href: "/order-lookup", labelKey: "nav_orderLookup", group: "sale" },
   { key: "returns", href: "/returns", labelKey: "nav_returns", group: "sale" },
+  { key: "cash-drawer", href: "/cash-drawer", labelKey: "nav_cashDrawer", group: "sale" },
   { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
   { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "sale" },
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
@@ -74,6 +77,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
   { key: "campaigns", href: "/campaigns", labelKey: "nav_campaigns", group: "reports" },
+  { key: "settlements", href: "/settlements", labelKey: "nav_settlements", group: "reports" },
   { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "reports" },
   { key: "ai-agent", href: "/ai-agent", labelKey: "nav_aiAgent", group: "ai-agent" },
   { key: "profile", href: "/profile", labelKey: "nav_profile", group: "profile" },
@@ -95,7 +99,7 @@ const ALL_KEYS: PageKey[] = [...ALL_KEYS_EXCEPT_ADMIN, "admin"];
 const COMMON_ALL_ROLES: PageKey[] = ["ai-agent", "profile"];
 
 export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> = {
-  cashier: ["pos", "inventory", "history", "returns", "customers", "sales-performance", ...COMMON_ALL_ROLES],
+  cashier: ["pos", "inventory", "history", "returns", "cash-drawer", "customers", "sales-performance", ...COMMON_ALL_ROLES],
   online_sale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
   wholesale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
   sale_manager: [
@@ -123,6 +127,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "dashboard",
     "sales-report",
     "campaigns",
+    "settlements",
     "my-pin",
     "product-category",
     "product-variant",
@@ -134,6 +139,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "pos",
     "history",
     "returns",
+    "cash-drawer",
     "customers",
     "sales-reps",
     "products",
