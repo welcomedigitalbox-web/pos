@@ -2,6 +2,9 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    drawer_zReport: "ငွေတိုက် ပိတ်သိမ်းချက် (Z-Report)",
+    drawer_printZ: "ပုံနှိပ်မည်",
+    drawer_printZConfirm: "Z-Report ပုံနှိပ်မလား",
     drawer_byMethod: "ငွေပေးချေမှုနည်းလမ်း အလိုက်",
     drawer_inTill: "ငွေတိုက်ထဲ",
     drawer_nonCashNote: "ငွေသားမဟုတ်သည့် ငွေလက်ခံမှု (ငွေတိုက်ကို မထိပါ)",
@@ -799,6 +802,9 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    drawer_zReport: "Cash Drawer Z-Report",
+    drawer_printZ: "Print",
+    drawer_printZConfirm: "Print the Z-Report?",
     drawer_byMethod: "By Payment Method",
     drawer_inTill: "in till",
     drawer_nonCashNote: "Non-cash takings (these never enter the till)",
