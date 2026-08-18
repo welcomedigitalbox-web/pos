@@ -65,6 +65,7 @@ export default function CashDrawerPage() {
   const [countedAmount, setCountedAmount] = useState("");
   const [closeNote, setCloseNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [zReport, setZReport] = useState<Session | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "cash-drawer")) router.replace("/");
@@ -185,6 +186,21 @@ export default function CashDrawerPage() {
   const counted = Number(countedAmount || 0);
   const variance = counted - expected;
 
+  function printZReport(row: Session) {
+    setZReport(row);
+    // Give the hidden report a tick to mount, then apply the till-roll size
+    setTimeout(() => {
+      const style = document.createElement("style");
+      style.textContent = "@page { size: 80mm auto; margin: 0; }";
+      document.head.appendChild(style);
+      window.print();
+      setTimeout(() => {
+        style.remove();
+        setZReport(null);
+      }, 500);
+    }, 300);
+  }
+
   async function openDrawer() {
     const amt = Number(openingAmount);
     if (isNaN(amt) || amt < 0) return showToast(t("drawer_invalidAmount"));
@@ -267,6 +283,18 @@ export default function CashDrawerPage() {
       });
 
       showToast(t("drawer_closed"));
+      if (confirm(t("drawer_printZConfirm"))) {
+        printZReport({
+          ...session,
+          counted_amount: counted,
+          expected_amount: expected,
+          variance,
+          closed_at: new Date().toISOString(),
+          closed_by: profile?.email || null,
+          note: closeNote.trim() || null,
+          status: "closed",
+        });
+      }
       setShowClose(false);
       setCountedAmount("");
       setCloseNote("");
@@ -444,6 +472,7 @@ export default function CashDrawerPage() {
                   <th className="text-left px-3 py-2">{t("drawer_counted")}</th>
                   <th className="text-left px-3 py-2">{t("drawer_variance")}</th>
                   <th className="text-left px-3 py-2">{t("po_receivedBy")}</th>
+                  <th className="text-left px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -464,6 +493,11 @@ export default function CashDrawerPage() {
                         {h.note && <div className="text-[10px] font-normal text-slate-500">{h.note}</div>}
                       </td>
                       <td className="px-3 py-2 text-slate-400 text-xs">{h.closed_by || "-"}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => printZReport(h)} className="text-blue-600 text-xs font-medium">
+                          {t("drawer_printZ")}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -471,6 +505,69 @@ export default function CashDrawerPage() {
             </table>
           </div>
         </>
+      )}
+
+      {/* Z-Report: printed on the same roll as receipts, so a shift can be filed */}
+      {zReport && (
+        <div id="receipt-print" className="hidden print:block">
+          <div style={{ textAlign: "center", marginBottom: "6px" }}>
+            <strong>{storeName}</strong>
+            <div>{t("drawer_zReport")}</div>
+          </div>
+          <div>{t("drawer_openedAt")}: {new Date(zReport.opened_at).toLocaleString()}</div>
+          <div>{zReport.opened_by}</div>
+          {zReport.closed_at && (
+            <>
+              <div>{t("drawer_closedAt")}: {new Date(zReport.closed_at).toLocaleString()}</div>
+              <div>{zReport.closed_by}</div>
+            </>
+          )}
+          <div>--------------------------------</div>
+          {byMethod.map((m) => (
+            <div key={m.method} style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{m.method.toUpperCase()} ({m.orders})</span>
+              <span>{fmt(m.sales - m.refunds)}</span>
+            </div>
+          ))}
+          <div>--------------------------------</div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{t("drawer_opening")}</span><span>{fmt(Number(zReport.opening_amount))}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{t("drawer_cashSales")}</span><span>+{fmt(cashSales)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{t("drawer_cashRefunds")}</span><span>-{fmt(cashRefunds)}</span>
+          </div>
+          {movedIn > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{t("drawer_in")}</span><span>+{fmt(movedIn)}</span>
+            </div>
+          )}
+          {movedOut > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{t("drawer_out")}</span><span>-{fmt(movedOut)}</span>
+            </div>
+          )}
+          <div>--------------------------------</div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <strong>{t("drawer_expected")}</strong>
+            <strong>{fmt(Number(zReport.expected_amount ?? expected))}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <strong>{t("drawer_counted")}</strong>
+            <strong>{fmt(Number(zReport.counted_amount ?? 0))}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <strong>{t("drawer_variance")}</strong>
+            <strong>{fmt(Number(zReport.variance ?? 0))}</strong>
+          </div>
+          {zReport.note && <div style={{ marginTop: "4px" }}>{zReport.note}</div>}
+          <div style={{ textAlign: "center", marginTop: "8px" }}>
+            ______________________<br />
+            {t("po_approvedBy")}
+          </div>
+        </div>
       )}
 
       {showOpen && (
