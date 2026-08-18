@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Receipt, { ReceiptData } from "../receipt";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
@@ -60,6 +61,8 @@ export default function OrderLookupPage() {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [returnedItems, setReturnedItems] = useState<any[]>([]);
   const [refundTotal, setRefundTotal] = useState(0);
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "order-lookup")) router.replace("/");
@@ -159,6 +162,65 @@ export default function OrderLookupPage() {
     setItemsLoading(false);
   }
 
+  async function reprint() {
+    if (!selected) return;
+    setPrinting(true);
+    try {
+      const { data: settings } = await supabase
+        .from("store_settings")
+        .select("*")
+        .eq("store_id", selected.store_id)
+        .maybeSingle();
+
+      const o = selected as any;
+      setReceipt({
+        storeId: selected.store_id,
+        businessName: settings?.business_name || null,
+        phone: settings?.phone || null,
+        address: settings?.address || null,
+        footerText: settings?.footer_text || null,
+        logoText: settings?.logo_text || null,
+        saleRef: selected.id.slice(0, 8).toUpperCase(),
+        createdAt: selected.created_at,
+        items: items.map((i) => ({
+          name: i.product_name,
+          qty: Number(i.qty),
+          price: Number(i.unit_price),
+          lineTotal: Number(i.line_total),
+        })),
+        subtotal: Number(o.subtotal || 0),
+        discountLabel: o.discount_type === "percent" ? `${o.discount_value}%` : "",
+        discountAmount: Number(o.discount_amount || 0),
+        vatPercent: Number(o.vat_percent || 0),
+        vatAmount: Number(o.vat_amount || 0),
+        grandTotal: Number(o.total || 0),
+        paymentMethod: o.payment_method || "",
+        amountReceived: Number(o.amount_received || 0),
+        change: Number(o.change_amount || 0),
+        advancePayment: Number(o.advance_payment || 0),
+        balanceDue: Number(o.balance_due || 0),
+        note: o.note || "",
+        customerName: o.customer_name || "",
+        cashierEmail: o.cashier_email || "",
+      });
+
+      // Let the receipt mount, then apply the thermal page size for this print only
+      setTimeout(() => {
+        const style = document.createElement("style");
+        style.textContent = "@page { size: 80mm auto; margin: 0; }";
+        document.head.appendChild(style);
+        window.print();
+        setTimeout(() => {
+          style.remove();
+          setReceipt(null);
+          setPrinting(false);
+        }, 500);
+      }, 300);
+    } catch {
+      setPrinting(false);
+    }
+  }
+
   // Matching on the short reference shown on receipts, plus customer and staff
   const filtered = orders;
 
@@ -228,6 +290,8 @@ export default function OrderLookupPage() {
         </table>
       </div>
 
+      <Receipt data={receipt} />
+
       {selected && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto"
           onClick={() => setSelected(null)}>
@@ -238,7 +302,13 @@ export default function OrderLookupPage() {
                 <h3 className="font-semibold text-lg font-mono">{selected.id.slice(0, 8).toUpperCase()}</h3>
                 <p className="text-sm text-slate-500">{new Date(selected.created_at).toLocaleString()}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 text-xl leading-none">✕</button>
+              <div className="flex items-center gap-3">
+                <button onClick={reprint} disabled={printing || itemsLoading}
+                  className="text-blue-600 text-sm font-medium disabled:text-slate-300 print:hidden">
+                  {printing ? "..." : t("history_reprint")}
+                </button>
+                <button onClick={() => setSelected(null)} className="text-slate-400 text-xl leading-none">✕</button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-4">
