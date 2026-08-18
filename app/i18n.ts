@@ -2,6 +2,11 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    returns_sendBack: "မူရင်းဆိုင်သို့ ပြန်ပို့",
+    returns_sendBackConfirm: "ပစ္စည်းကို မူရင်းရောင်းခဲ့သည့် ဆိုင်သို့ ပြန်ပို့မည်လား",
+    returns_sentBack: "🚚 ပြန်ပို့လိုက်ပါပြီ — မူရင်းဆိုင်က လက်ခံအတည်ပြုရန် ကျန်ပါသည်",
+    returns_awaitingSendBack: "ပြန်ပို့ရန် ကျန်",
+    returns_nothingToSend: "⚠️ ပြန်ပို့စရာ ကောင်းမွန်သည့် ပစ္စည်း မရှိပါ",
     pos_moreHidden: "နောက်ထပ် {n} ခု ရှိသည် — ရှာဖွေရန် ရိုက်ထည့်ပါ သို့မဟုတ် barcode scan လုပ်ပါ",
     history_reprint: "ပြေစာ ထပ်ထုတ်",
     returns_soldAt: "ရောင်းခဲ့သည့်ဆိုင်",
@@ -744,6 +749,11 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    returns_sendBack: "Send back to origin",
+    returns_sendBackConfirm: "Send these goods back to the store that sold them?",
+    returns_sentBack: "🚚 Sent back — the origin store confirms receipt",
+    returns_awaitingSendBack: "Awaiting send-back",
+    returns_nothingToSend: "⚠️ No good-condition items to send back",
     pos_moreHidden: "{n} more — type to search or scan a barcode",
     history_reprint: "Reprint",
     returns_soldAt: "Sold at",
