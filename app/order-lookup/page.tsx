@@ -67,25 +67,56 @@ export default function OrderLookupPage() {
   }, [profile]);
 
   useEffect(() => {
-    load();
+    const timer = setTimeout(() => load(search), search ? 350 : 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [search]);
 
   if (!profile || !hasPermission(profile, "order-lookup")) return null;
 
-  async function load() {
+  async function load(term = "") {
     setLoading(true);
-    const { data } = await supabase
+
+    // Search hits the database rather than filtering a fixed page of rows —
+    // otherwise anything older than the newest 200 orders can never be found.
+    let query = supabase
       .from("sales")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(200);
-    setOrders((data as Order[]) || []);
+      .limit(term.trim() ? 100 : 50);
+
+    const q = term.trim();
+    if (q) {
+      // Staff quote the short reference from the receipt, so match on that too
+      const isRef = /^[0-9a-f-]{4,}$/i.test(q);
+      query = isRef
+        ? query.or(
+            `customer_name.ilike.%${q}%,cashier_email.ilike.%${q}%,sale_rep_name.ilike.%${q}%,id.gte.${q}`
+          )
+        : query.or(
+            `customer_name.ilike.%${q}%,cashier_email.ilike.%${q}%,sale_rep_name.ilike.%${q}%`
+          );
+    }
+
+    const { data } = await query;
+
+    // The short reference is a prefix of the uuid, which Postgres can't match
+    // directly, so narrow that last step here
+    const rows = ((data as Order[]) || []).filter((o) =>
+      q ? o.id.toLowerCase().startsWith(q.toLowerCase()) ||
+          (o.customer_name || "").toLowerCase().includes(q.toLowerCase()) ||
+          (o.cashier_email || "").toLowerCase().includes(q.toLowerCase()) ||
+          (o.sale_rep_name || "").toLowerCase().includes(q.toLowerCase())
+        : true
+    );
+    setOrders(rows);
 
     const { data: returned } = await supabase
       .from("sale_returns")
       .select("original_sale_id")
-      .eq("status", "approved");
+      .eq("status", "approved")
+      .order("created_at", { ascending: false })
+      .limit(500);
     setReturnedSaleIds(
       new Set(((returned as any[]) || []).map((r) => r.original_sale_id).filter(Boolean))
     );
@@ -129,19 +160,7 @@ export default function OrderLookupPage() {
   }
 
   // Matching on the short reference shown on receipts, plus customer and staff
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? orders.filter((o) => {
-        const ref = o.id.slice(0, 8).toLowerCase();
-        return (
-          o.id.toLowerCase().includes(q) ||
-          ref.includes(q) ||
-          (o.customer_name || "").toLowerCase().includes(q) ||
-          (o.cashier_email || "").toLowerCase().includes(q) ||
-          (o.sale_rep_name || "").toLowerCase().includes(q)
-        );
-      })
-    : orders;
+  const filtered = orders;
 
   // This order's own discount is already known, so apply it directly
   const grossGp = items.reduce((s, i) => s + (Number(i.line_total) - Number(i.line_cogs || 0)), 0);
