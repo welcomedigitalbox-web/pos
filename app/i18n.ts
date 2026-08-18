@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    history_reprint: "ပြေစာ ထပ်ထုတ်",
     returns_soldAt: "ရောင်းခဲ့သည့်ဆိုင်",
     returns_returnedAt: "ပြန်အမ်းသည့်ဆိုင်",
     nav_salesPerformance: "ရောင်းအား ခွဲခြမ်းစိတ်ဖြာချက်",
@@ -742,6 +743,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    history_reprint: "Reprint",
     returns_soldAt: "Sold at",
     returns_returnedAt: "Returned at",
     nav_salesPerformance: "Sales Performance",
