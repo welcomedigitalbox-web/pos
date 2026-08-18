@@ -315,6 +315,13 @@ export default function POSPage() {
     });
   }, [productGroups, categoryFilter, search]);
 
+  // Drawing every product is what costs the time, not fetching them. Until the
+  // cashier searches or picks a category, show a workable slice.
+  const POS_GRID_LIMIT = 60;
+  const isNarrowed = search.trim() !== "" || categoryFilter !== "all";
+  const visibleGroups = isNarrowed ? filteredGroups : filteredGroups.slice(0, POS_GRID_LIMIT);
+  const hiddenCount = filteredGroups.length - visibleGroups.length;
+
   const filteredCustomers = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -575,7 +582,7 @@ export default function POSPage() {
         )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {filteredGroups.map(([productId, g]) => {
+          {visibleGroups.map(([productId, g]) => {
             const hasVariants = g.items.some((i) => i.variant_id !== null);
             const totalStock = g.items.reduce((s, i) => s + i.stock_qty, 0);
             const prices = g.items.map((i) => i.price);
@@ -609,6 +616,11 @@ export default function POSPage() {
           {filteredGroups.length === 0 && (
             <div className="col-span-full text-center text-slate-400 py-8">
               {t("pos_noProduct")}
+            </div>
+          )}
+          {hiddenCount > 0 && (
+            <div className="col-span-full text-center text-slate-400 text-xs py-4">
+              {t("pos_moreHidden").replace("{n}", String(hiddenCount))}
             </div>
           )}
         </div>
