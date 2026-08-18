@@ -111,7 +111,7 @@ export default function HistoryPage() {
     let saleQuery = supabase.from("sales").select("*").order("created_at", { ascending: false }).limit(500);
     let refundQuery = supabase
       .from("sale_returns")
-      .select("id, return_number, created_at, store_id, requested_by, refund_amount")
+      .select("id, return_number, created_at, store_id, requested_by, refund_amount, refund_payment_method, refund_method")
       .eq("status", "approved")
       .order("created_at", { ascending: false })
       .limit(500);
@@ -241,6 +241,31 @@ export default function HistoryPage() {
 
   const netSale = summary.totalSale - summary.totalRefund;
 
+  // Owners reconcile against bank and wallet statements, so the split by tender
+  // matters as much as the total
+  const byMethod = useMemo(() => {
+    const map = new Map<string, { sales: number; refunds: number; orders: number }>();
+
+    for (const s of filteredSales) {
+      const m = (s.payment_method || "unknown").toLowerCase();
+      const cur = map.get(m) || { sales: 0, refunds: 0, orders: 0 };
+      cur.sales += Number(s.total);
+      cur.orders += 1;
+      map.set(m, cur);
+    }
+
+    for (const r of filteredRefunds) {
+      const m = ((r as any).refund_payment_method || "cash").toLowerCase();
+      const cur = map.get(m) || { sales: 0, refunds: 0, orders: 0 };
+      cur.refunds += Number(r.refund_amount);
+      map.set(m, cur);
+    }
+
+    return Array.from(map.entries())
+      .map(([method, v]) => ({ method, ...v }))
+      .sort((a, b) => b.sales - a.sales);
+  }, [filteredSales, filteredRefunds]);
+
   return (
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-1">{t("nav_history")}</h2>
@@ -315,6 +340,61 @@ export default function HistoryPage() {
           <div className="text-lg font-bold mt-1 text-green-700">{fmt(netSale)}</div>
         </div>
       </div>
+
+      {byMethod.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-4">
+          <div className="px-4 py-2 font-semibold text-sm border-b border-slate-100">
+            {t("drawer_byMethod")}
+          </div>
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="text-left px-3 py-2">{t("pos_paymentMethod")}</th>
+                <th className="text-left px-3 py-2">{t("history_totalOrders")}</th>
+                <th className="text-left px-3 py-2">{t("history_totalSale")}</th>
+                <th className="text-left px-3 py-2">{t("history_totalRefund")}</th>
+                <th className="text-left px-3 py-2">{t("history_netSale")}</th>
+                <th className="text-left px-3 py-2">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byMethod.map((m) => {
+                const net = m.sales - m.refunds;
+                const share = netSale > 0 ? (net / netSale) * 100 : 0;
+                return (
+                  <tr key={m.method} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-medium uppercase">{m.method}</td>
+                    <td className="px-3 py-2 text-slate-500">{m.orders}</td>
+                    <td className="px-3 py-2">{fmt(m.sales)}</td>
+                    <td className="px-3 py-2 text-red-600">{m.refunds ? `-${fmt(m.refunds)}` : "-"}</td>
+                    <td className="px-3 py-2 font-medium">{fmt(net)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-12 h-1.5 bg-slate-100 rounded overflow-hidden">
+                          <div className="h-full bg-blue-500" style={{ width: `${Math.min(Math.max(share, 0), 100)}%` }} />
+                        </div>
+                        <span className="text-xs">{share.toFixed(0)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr className="border-t-2 border-slate-300 font-bold">
+                <td className="px-3 py-2">{t("pos_total")}</td>
+                <td className="px-3 py-2">{byMethod.reduce((s, m) => s + m.orders, 0)}</td>
+                <td className="px-3 py-2">{fmt(byMethod.reduce((s, m) => s + m.sales, 0))}</td>
+                <td className="px-3 py-2 text-red-600">
+                  -{fmt(byMethod.reduce((s, m) => s + m.refunds, 0))}
+                </td>
+                <td className="px-3 py-2">
+                  {fmt(byMethod.reduce((s, m) => s + m.sales - m.refunds, 0))}
+                </td>
+                <td className="px-3 py-2"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[860px]">
