@@ -2,6 +2,7 @@ export type Lang = "my" | "en";
 
 export const translations = {
   my: {
+    pos_moreHidden: "နောက်ထပ် {n} ခု ရှိသည် — ရှာဖွေရန် ရိုက်ထည့်ပါ သို့မဟုတ် barcode scan လုပ်ပါ",
     history_reprint: "ပြေစာ ထပ်ထုတ်",
     returns_soldAt: "ရောင်းခဲ့သည့်ဆိုင်",
     returns_returnedAt: "ပြန်အမ်းသည့်ဆိုင်",
@@ -743,6 +744,7 @@ export const translations = {
     profile_language: "ဘာသာစကား",
   },
   en: {
+    pos_moreHidden: "{n} more — type to search or scan a barcode",
     history_reprint: "Reprint",
     returns_soldAt: "Sold at",
     returns_returnedAt: "Returned at",
