@@ -446,6 +446,7 @@ export type ActivityLog = {
   action: string;
   detail: string | null;
   actor: string | null;
+  actor_id: string | null;
   created_at: string;
 };
 
@@ -459,12 +460,11 @@ export async function logActivity(params: {
   actor?: string | null;
 }) {
   try {
-    await supabase.from("activity_log").insert({
-      entity_type: params.entityType,
-      entity_id: params.entityId || null,
-      action: params.action,
-      detail: params.detail || null,
-      actor: params.actor || null,
+    await supabase.rpc("log_activity", {
+      p_entity_type: params.entityType,
+      p_entity_id: params.entityId || null,
+      p_action: params.action,
+      p_detail: params.detail || null,
     });
   } catch {
     // swallow — logging is best-effort
