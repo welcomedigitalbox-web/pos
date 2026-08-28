@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
@@ -43,6 +43,7 @@ export default function POSPage() {
   const [items, setItems] = useState<SellableItem[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const idempotencyKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -399,82 +400,48 @@ export default function POSPage() {
     }
     setLoading(true);
     try {
-      const { data: sale, error: saleErr } = await supabase
-        .from("sales")
-        .insert({
-          store_id: storeId,
-          total: grandTotal,
-          cashier: "POS",
+      // One key per attempt at THIS cart. A retry after a timeout reuses it,
+      // so the server returns the original sale instead of creating a second.
+      const idempotencyKey =
+        idempotencyKeyRef.current ?? (idempotencyKeyRef.current = crypto.randomUUID());
+
+      const { data: rpcRows, error: rpcErr } = await supabase.rpc("checkout_sale", {
+        p_idempotency_key: idempotencyKey,
+        p_store_id: storeId,
+        p_items: cart.map((c) => ({
+          product_id: c.product_id,
+          variant_id: c.variant_id,
+          product_name: c.name,
+          qty: c.qty,
+          unit_price: c.price,
+        })),
+        p_payment: {
           payment_method: paymentMethod,
-          subtotal,
+          is_cod: isCodMethod,
           discount_type: discountType,
           discount_value: discountValueNum,
           discount_amount: effectiveDiscount,
           discount_approved_by: discountApprovedBy,
-          discount_approved_at: discountApproved ? new Date().toISOString() : null,
           vat_percent: vatPercentNum,
-          vat_amount: vatAmount,
           amount_received: isCashMethod ? amountReceivedNum : grandTotal,
-          change_amount: isCodMethod ? codChange : change,
           advance_payment: isCodMethod ? advancePaymentNum : 0,
-          balance_due: balanceDue,
           note: note.trim() || null,
           customer_id: selectedCustomer?.id || null,
-          customer_name: selectedCustomer?.name || (customerSearch.trim() || null),
-          cashier_email: profile?.email || null,
+          customer_name: selectedCustomer?.name || customerSearch.trim() || null,
           sale_rep_id: saleRepId || null,
           sale_rep_name: salesReps.find((r) => r.id === saleRepId)?.name || null,
-        })
-        .select()
-        .single();
-      if (saleErr) throw saleErr;
+        },
+      });
+      if (rpcErr) throw rpcErr;
 
-      const items = cart.map((c) => ({
-        sale_id: sale.id,
-        product_id: c.product_id,
-        variant_id: c.variant_id,
-        product_name: c.name,
-        qty: c.qty,
-        unit_price: c.price,
-        line_total: c.price * c.qty,
-        unit_cost: c.avg_cost,
-        line_cogs: c.avg_cost * c.qty,
-      }));
-      const { error: itemsErr } = await supabase.from("sale_items").insert(items);
-      if (itemsErr) throw itemsErr;
+      const sale = rpcRows?.[0];
+      if (!sale) throw new Error("Checkout returned no sale");
 
-      // Each cart line is already one distinct sellable item (product+variant),
-      // so its stock deducts independently — no grouping needed.
-      for (const c of cart) {
-        await upsertStoreInventory(storeId, c.product_id, c.variant_id, {
-          stock_qty: c.stock_qty - c.qty,
-        });
+      // Committed - this cart is done with its key.
+      idempotencyKeyRef.current = null;
 
-        // FEFO: deduct from batches with the earliest expiry first (no-expiry batches last)
-        let batchQuery = supabase
-          .from("stock_purchases")
-          .select("id, remaining_qty, expiry_date, created_at")
-          .eq("product_id", c.product_id)
-          .eq("store_id", storeId)
-          .gt("remaining_qty", 0);
-        batchQuery = c.variant_id
-          ? batchQuery.eq("variant_id", c.variant_id)
-          : batchQuery.is("variant_id", null);
-        const { data: batches } = await batchQuery
-          .order("expiry_date", { ascending: true, nullsFirst: false })
-          .order("created_at", { ascending: true });
-
-        let remainingToDeduct = c.qty;
-        for (const batch of batches || []) {
-          if (remainingToDeduct <= 0) break;
-          const deductFromBatch = Math.min(batch.remaining_qty, remainingToDeduct);
-          await supabase
-            .from("stock_purchases")
-            .update({ remaining_qty: batch.remaining_qty - deductFromBatch })
-            .eq("id", batch.id);
-          remainingToDeduct -= deductFromBatch;
-        }
-      }
+      // The server deducted stock; the cached list is now stale.
+      await loadProducts();
 
       setReceiptData({
         storeId,
@@ -483,7 +450,7 @@ export default function POSPage() {
         address: storeSettings?.address || null,
         footerText: storeSettings?.receipt_footer || null,
         logoText: storeSettings?.logo_text || null,
-        saleRef: sale.id.slice(0, 8).toUpperCase(),
+        saleRef: sale.sale_ref,
         createdAt: sale.created_at,
         items: cart.map((c) => ({
           name: c.name,
