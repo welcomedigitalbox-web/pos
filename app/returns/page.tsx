@@ -335,11 +335,12 @@ export default function ReturnsPage() {
       const isCrossStore = handledAt !== reviewRow.store_id;
       // Same-store returns land in that store. Cross-store returns belong to the
       // selling branch, so they bypass this store's books entirely.
+      let approvalTransferId: string | null = null;
       const stockStore = handledAt;
       for (const item of reviewItems.filter((i) => i.line_type !== "exchange")) {
         if (isCrossStore && item.condition === "good") {
           // Straight into transit — never added to the handling store's stock
-          await supabase.from("stock_transfers").insert({
+          const { data: transitRow } = await supabase.from("stock_transfers").insert({
             product_id: item.product_id,
             variant_id: item.variant_id,
             from_store_id: handledAt,
@@ -347,7 +348,15 @@ export default function ReturnsPage() {
             qty: item.qty,
             status: "in_transit",
             transferred_by: profile?.email || null,
-          });
+            sale_return_id: reviewRow.id,
+          }).select("id").single();
+          // Recording this is what hides "Send back" - without it the operator
+          // can open a second transfer for goods already in transit.
+          if (transitRow && !approvalTransferId) {
+            approvalTransferId = transitRow.id;
+            await supabase.from("sale_returns")
+              .update({ return_transfer_id: transitRow.id }).eq("id", reviewRow.id);
+          }
           continue;
         }
 
@@ -486,6 +495,14 @@ export default function ReturnsPage() {
   async function sendBackToOrigin(r: SaleReturn) {
     const from = (r as any).processed_store_id || r.store_id;
     if (from === r.store_id) return;
+
+    // The row in props may predate an approval that already opened the
+    // transfer, so ask the database rather than trusting what is on screen.
+    const { data: fresh } = await supabase
+      .from("sale_returns").select("return_transfer_id").eq("id", r.id).single();
+    if (fresh?.return_transfer_id) {
+      return showToast(t("returns_alreadySent") || "Already sent back");
+    }
     if (!confirm(t("returns_sendBackConfirm"))) return;
 
     setSendingBack(r.id);
@@ -525,6 +542,7 @@ export default function ReturnsPage() {
             qty: l.qty,
             status: "in_transit",
             transferred_by: profile?.email || null,
+            sale_return_id: r.id,
           })
           .select()
           .single();
