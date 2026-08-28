@@ -6,7 +6,8 @@ import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
-const APPROVER_ROLES = ["sale_manager", "owner", "admin"];
+// Must match public.is_approver_role() in the database.
+const APPROVER_ROLES = ["admin", "owner", "manager"];
 
 export default function MyPinPage() {
   const { profile } = useAuth();
@@ -15,7 +16,7 @@ export default function MyPinPage() {
 
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [currentPin, setCurrentPin] = useState<string | null>(null);
+  const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -25,15 +26,20 @@ export default function MyPinPage() {
   }, [profile]);
 
   useEffect(() => {
-    if (profile) loadCurrentPin();
+    if (profile) loadPinStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
   if (!profile || !APPROVER_ROLES.includes(profile.role)) return null;
 
-  async function loadCurrentPin() {
-    const { data } = await supabase.from("profiles").select("approval_pin").eq("id", profile!.id).single();
-    setCurrentPin(data?.approval_pin || null);
+  // The PIN itself is never sent to the browser — only whether one is set.
+  async function loadPinStatus() {
+    const { data, error } = await supabase.rpc("my_approval_pin_status");
+    if (error) {
+      setHasPin(null);
+      return;
+    }
+    setHasPin(Boolean(data?.[0]?.has_pin));
   }
 
   function showToast(msg: string) {
@@ -48,12 +54,13 @@ export default function MyPinPage() {
 
     setSaving(true);
     try {
-      const { error } = await supabase.from("profiles").update({ approval_pin: pin }).eq("id", profile!.id);
+      // Hashing happens server side; the plaintext PIN is never stored.
+      const { error } = await supabase.rpc("set_my_approval_pin", { p_pin: pin });
       if (error) throw error;
       showToast(t("myPin_saved"));
       setPin("");
       setConfirmPin("");
-      await loadCurrentPin();
+      await loadPinStatus();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       showToast("❌ " + message);
@@ -70,7 +77,11 @@ export default function MyPinPage() {
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
         <div className="text-xs text-slate-400 uppercase mb-1">{t("myPin_currentStatus")}</div>
         <div className="text-sm font-medium">
-          {currentPin ? `🔒 ${t("myPin_isSet")}` : `⚪ ${t("myPin_notSet")}`}
+          {hasPin === null
+            ? "…"
+            : hasPin
+              ? `🔒 ${t("myPin_isSet")}`
+              : `⚪ ${t("myPin_notSet")}`}
         </div>
       </div>
 
@@ -79,6 +90,7 @@ export default function MyPinPage() {
         <input
           type="password"
           inputMode="numeric"
+          autoComplete="new-password"
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
@@ -90,6 +102,7 @@ export default function MyPinPage() {
         <input
           type="password"
           inputMode="numeric"
+          autoComplete="new-password"
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
           value={confirmPin}
           onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}

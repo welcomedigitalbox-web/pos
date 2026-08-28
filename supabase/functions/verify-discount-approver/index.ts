@@ -10,7 +10,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const APPROVER_ROLES = ["sale_manager", "owner", "admin"];
+// Roles that may approve. Must match public.is_approver_role() in the
+// database — that function is the source of truth for PIN approval.
+const APPROVER_ROLES = ["admin", "owner", "manager"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -30,7 +32,8 @@ serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Confirm the caller (the cashier's own browser session) is a real logged-in user.
+    // The caller's own session. Used both to confirm they are logged in and
+    // to run the PIN check as them, so the lockout counter lands on their row.
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -42,28 +45,34 @@ serve(async (req) => {
       });
     }
 
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const body = await req.json();
     const { email, password, pin } = body;
 
     // ---- Method 1: Quick PIN approval ----
+    // The PIN never leaves the database boundary as plaintext-comparable
+    // data: verify_approval_pin() bcrypt-compares server side, counts
+    // failures against this caller, and locks out after 5 tries.
     if (pin) {
-      const { data: matches, error: pinErr } = await adminClient
-        .from("profiles")
-        .select("id, email, role")
-        .eq("approval_pin", pin)
-        .in("role", APPROVER_ROLES);
+      const { data: rows, error: pinErr } = await callerClient
+        .rpc("verify_approval_pin", { p_pin: pin });
 
-      if (pinErr || !matches || matches.length === 0) {
-        return new Response(JSON.stringify({ error: "Invalid PIN" }), {
-          status: 401,
-          headers: corsHeaders,
-        });
+      if (pinErr || !rows || rows.length === 0) {
+        const msg = pinErr?.message ?? "Invalid PIN";
+        // Lockout messages are worth surfacing; anything else stays generic.
+        const isLockout = msg.includes("Too many failed attempts");
+        return new Response(
+          JSON.stringify({ error: isLockout ? msg : "Invalid PIN" }),
+          { status: isLockout ? 429 : 401, headers: corsHeaders }
+        );
       }
 
-      const approver = matches[0];
+      const approver = rows[0];
       return new Response(
-        JSON.stringify({ approved: true, approver_email: approver.email, approver_role: approver.role }),
+        JSON.stringify({
+          approved: true,
+          approver_email: approver.approver_email,
+          approver_role: approver.approver_role,
+        }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -92,6 +101,7 @@ serve(async (req) => {
     // Immediately end this ephemeral server-side session — it was only used to verify the password.
     await approverClient.auth.signOut();
 
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const { data: profile } = await adminClient
       .from("profiles")
       .select("role")
