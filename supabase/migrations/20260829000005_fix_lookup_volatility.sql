@@ -1,0 +1,7 @@
+-- lookup_sale_for_return was declared STABLE but writes an audit row, and
+-- Postgres refuses INSERT in a non-volatile function - every cross-store
+-- lookup failed with "Order not found". Recreated without STABLE; the audit
+-- write is the point of the function and stays.
+--
+-- Already applied by hand in the SQL editor, so repair the history after push
+-- if it reports a conflict.
