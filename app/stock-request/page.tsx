@@ -13,6 +13,7 @@ type RequestRow = {
   id: string;
   product_id: string;
   variant_id: string | null;
+  store_id: string;
   requested_qty: number;
   received_qty: number | null;
   note: string | null;
