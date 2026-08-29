@@ -742,7 +742,12 @@ export default function ReturnsPage() {
             {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && visibleReturns.map((r) => (
               <tr key={r.id} className={`border-t border-slate-100 ${r.status === "pending" ? "bg-yellow-50" : ""}`}>
-                <td className="px-3 py-2 font-mono text-xs">{r.return_number}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {r.return_number}
+                  {(r as any).sale_ref && (
+                    <div className="text-slate-400">{(r as any).sale_ref}</div>
+                  )}
+                </td>
                 <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
                 {canApprove && <td className="px-3 py-2 text-slate-500">{r.store_id}</td>}
                 <td className="px-3 py-2">{r.customer_name || "-"}</td>
@@ -1022,6 +1027,9 @@ export default function ReturnsPage() {
             <h3 className="font-semibold text-lg mb-1 font-mono">{reviewRow.return_number}</h3>
             <p className="text-xs text-slate-500 mb-1">
               {t("returns_requestedBy")}: <span className="font-medium text-slate-700">{reviewRow.requested_by || "-"}</span>
+              {(reviewRow as any).sale_ref && (
+                <>{" · "}<span className="font-mono">{(reviewRow as any).sale_ref}</span></>
+              )}
               {" · "}{t("returns_soldAt")}: {reviewRow.store_id}
               {(reviewRow as any).processed_store_id &&
                 (reviewRow as any).processed_store_id !== reviewRow.store_id && (
