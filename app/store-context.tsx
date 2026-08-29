@@ -32,6 +32,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   async function refreshStores() {
     const { data } = await supabase.from("stores").select("*").eq("is_active", true).order("name");
     setStores(data || []);
+
+    // A locked account belongs to exactly one branch, and defaulting to the
+    // first retail store here made pages read the wrong one until the profile
+    // arrived - long enough for a cashier to see another branch's screen.
+    if (isStoreLocked) return;
+
     if (data && data.length > 0 && !storeId) {
       const firstRetail = data.find((s) => !s.is_warehouse) || data[0];
       setStoreIdState(firstRetail.id);
@@ -41,7 +47,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshStores();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [profile?.id]);
 
   // For cashier/online-sale/wholesale accounts, always pin the store to the one
   // assigned on their profile — they cannot switch stores.
