@@ -324,6 +324,7 @@ export default function ReturnsPage() {
         .insert({
           return_number: returnNumber,
           original_sale_id: foundSale.id,
+          sale_ref: foundSale.sale_ref,
           store_id: foundSale.store_id,
           processed_store_id: storeId,
           customer_id: foundSale.customer_id,
