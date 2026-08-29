@@ -120,19 +120,41 @@ export default function ReturnsPage() {
     const q = orderSearch.trim().toLowerCase();
     if (!q) return;
 
-    // A customer may return to any branch, so the search spans every store
-    const { data: sales } = await supabase
+    // Look in this store first. Row-level security scopes `sales` to the
+    // cashier's own branch, so anything from elsewhere needs the lookup RPC.
+    const { data: local } = await supabase
       .from("sales")
       .select("*")
+      .or(`sale_ref.ilike.${q},customer_name.ilike.${q}`)
       .order("created_at", { ascending: false })
-      .limit(2000);
+      .limit(20);
 
-    const sale = ((sales as any[]) || []).find(
-      (s) =>
-        s.id.toLowerCase() === q ||
-        s.id.toLowerCase().startsWith(q) ||
-        (s.customer_name || "").toLowerCase() === q
-    );
+    let sale = ((local as any[]) || [])[0] || null;
+
+    // Not ours: ask the server by exact receipt reference. This allows a
+    // lookup, not a search - the cashier must already hold the receipt, and
+    // every call is written to the audit log.
+    if (!sale) {
+      const { data: remote, error: remoteErr } = await supabase
+        .rpc("lookup_sale_for_return", { p_sale_ref: orderSearch.trim() });
+      const row = ((remote as any[]) || [])[0];
+      if (!remoteErr && row) {
+        sale = {
+          id: row.sale_id,
+          sale_ref: row.sale_ref,
+          store_id: row.store_id,
+          created_at: row.created_at,
+          total: row.total,
+          subtotal: row.subtotal,
+          discount_amount: row.discount_amount,
+          customer_id: row.customer_id,
+          customer_name: row.customer_name,
+          payment_method: row.payment_method,
+          cashier_email: row.cashier_email,
+        };
+      }
+    }
+
     if (!sale) {
       setFoundSale(null);
       setOrderItems([]);
