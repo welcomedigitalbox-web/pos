@@ -130,6 +130,7 @@ export default function ReturnsPage() {
       .limit(20);
 
     let sale = ((local as any[]) || [])[0] || null;
+    let remoteItems: any[] | null = null;
 
     // Not ours: ask the server by exact receipt reference. This allows a
     // lookup, not a search - the cashier must already hold the receipt, and
@@ -152,6 +153,9 @@ export default function ReturnsPage() {
           payment_method: row.payment_method,
           cashier_email: row.cashier_email,
         };
+        // sale_items is store-scoped too, so a cross-store lookup has to
+        // carry its own lines - querying the table returns nothing here.
+        remoteItems = (row.items as any[]) || [];
       }
     }
 
@@ -161,10 +165,14 @@ export default function ReturnsPage() {
       return showToast(t("returns_orderNotFound"));
     }
 
-    const { data: items } = await supabase
-      .from("sale_items")
-      .select("*, products(sku), product_variants(sku)")
-      .eq("sale_id", sale.id);
+    let items: any[] | null = remoteItems;
+    if (!items) {
+      const { data: localItems } = await supabase
+        .from("sale_items")
+        .select("*, products(sku), product_variants(sku)")
+        .eq("sale_id", sale.id);
+      items = (localItems as any[]) || [];
+    }
 
     // Anything already returned can't be returned twice
     // Query the items directly rather than through a nested select, so a missing
