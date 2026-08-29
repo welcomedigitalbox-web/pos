@@ -265,6 +265,51 @@ export default function ReturnsPage() {
         }
       }
 
+      // Cross-store: the return belongs to the selling branch's books, and RLS
+      // rightly refuses a cashier writing a row for a store they are not in.
+      // The RPC applies the same quantity and pricing rules server side.
+      const isCrossStore = foundSale.store_id !== storeId;
+      if (isCrossStore) {
+        if (refundMethod === "exchange") {
+          setSaving(false);
+          return showToast(t("returns_exchangeSameStoreOnly"));
+        }
+        const { data: rpcRows, error: rpcErr } = await supabase.rpc("submit_sale_return", {
+          p_sale_id: foundSale.id,
+          p_lines: lines.map((l) => ({
+            product_id: l.item.product_id,
+            variant_id: l.item.variant_id,
+            qty: l.qty,
+            condition: l.condition,
+          })),
+          p_refund_method: refundMethod,
+          p_refund_payment: refundMethod === "cash" ? refundPaymentMethod || null : null,
+          p_reason: reason.trim() || null,
+        });
+        if (rpcErr) throw rpcErr;
+        const row = (rpcRows as any[])?.[0];
+        if (!row) throw new Error("Return was not created");
+
+        if (voucherFile) {
+          try {
+            const path = await uploadReturnVoucher(voucherFile, storeId, row.return_id);
+            await supabase.from("sale_returns").update({ voucher_url: path }).eq("id", row.return_id);
+          } catch {
+            // The return itself is filed; a failed voucher upload must not undo it.
+          }
+        }
+
+        showToast(t("returns_submitted"));
+        setShowCreate(false);
+        setFoundSale(null);
+        setOrderItems([]);
+        setVoucherFile(null);
+        setReason("");
+        setSaving(false);
+        await load();
+        return;
+      }
+
       const returnNumber = `RT-${Date.now().toString().slice(-8)}`;
       const { data: created, error } = await supabase
         .from("sale_returns")
