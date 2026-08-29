@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase, SellableItem, fetchSellableItems, fetchSellableItem, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems, fetchSellableItem, upsertStoreInventory , logActivity } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -16,7 +16,7 @@ type RequestRow = {
   requested_qty: number;
   received_qty: number | null;
   note: string | null;
-  status: "awaiting_approval" | "pending" | "received" | "mismatch" | "approved" | "rejected";
+  status: "awaiting_approval" | "pending" | "received" | "mismatch" | "approved" | "rejected" | "cancelled";
   requested_by: string | null;
   received_by: string | null;
   approved_by: string | null;
@@ -39,6 +39,7 @@ const statusColor: Record<string, string> = {
   mismatch: "bg-orange-100 text-orange-700",
   approved: "bg-blue-100 text-blue-700",
   rejected: "bg-red-100 text-red-700",
+  cancelled: "bg-slate-100 text-slate-400",
 };
 
 export default function StockRequestPage() {
@@ -61,6 +62,9 @@ export default function StockRequestPage() {
   const [approveRow, setApproveRow] = useState<RequestRow | null>(null);
   const [approvalPin, setApprovalPin] = useState("");
   const [verifying, setVerifying] = useState(false);
+
+  const [editRow, setEditRow] = useState<RequestRow | null>(null);
+  const [editQty, setEditQty] = useState("");
 
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [receivedQty, setReceivedQty] = useState("");
@@ -105,6 +109,60 @@ export default function StockRequestPage() {
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
+  }
+
+  // Only before a sale manager has seen it. Cancelling keeps the row so the
+  // request still shows in history; deleting would lose the audit trail.
+  async function cancelRequest(r: RequestRow) {
+    if (r.status !== "awaiting_approval") return;
+    if (!confirm(t("stockRequest_cancelConfirm"))) return;
+    const { error } = await supabase
+      .from("stock_requests")
+      .update({ status: "cancelled" })
+      .eq("id", r.id)
+      .eq("status", "awaiting_approval");
+    if (error) return showToast("\u274c " + error.message);
+    await logActivity({
+      entityType: "stock_request",
+      entityId: r.id,
+      action: "cancelled",
+      detail: `${r.request_no || r.id} \u00b7 ${r.store_id}`,
+    });
+    showToast(t("stockRequest_cancelled"));
+    await loadRequests();
+  }
+
+  // Editable until the warehouse acts. Changing an approved quantity sends it
+  // back for approval - otherwise a cashier could raise 10, get a yes, then
+  // quietly change it to 100.
+  async function saveEdit() {
+    if (!editRow) return;
+    const qty = Number(editQty);
+    if (!qty || qty <= 0) return showToast(t("stockRequest_invalidQty"));
+
+    const { error } = await supabase
+      .from("stock_requests")
+      .update({
+        requested_qty: qty,
+        status: "awaiting_approval",
+        approved_by: null,
+        approved_at: null,
+      })
+      .eq("id", editRow.id)
+      .in("status", ["awaiting_approval", "pending"]);
+    if (error) return showToast("\u274c " + error.message);
+
+    await logActivity({
+      entityType: "stock_request",
+      entityId: editRow.id,
+      action: "edited",
+      detail: `${editRow.request_no || editRow.id} \u00b7 ${editRow.requested_qty} \u2192 ${qty}`,
+    });
+
+    setEditRow(null);
+    setEditQty("");
+    showToast(t("stockRequest_editedNeedsApproval"));
+    await loadRequests();
   }
 
   async function approveRequest(approver?: string) {
@@ -329,13 +387,29 @@ export default function StockRequestPage() {
                 </td>
                 <td className="px-3 py-2 text-right">
                   {r.status === "awaiting_approval" && (
-                    <button onClick={() => { setApproveRow(r); setApprovalPin(""); }}
-                      className="text-blue-600 text-xs font-medium">
-                      {t("stockRequest_needsApproval")}
-                    </button>
+                    <div className="flex gap-2 justify-end items-center">
+                      <button onClick={() => { setApproveRow(r); setApprovalPin(""); }}
+                        className="text-blue-600 text-xs font-medium">
+                        {t("stockRequest_needsApproval")}
+                      </button>
+                      <button onClick={() => { setEditRow(r); setEditQty(String(r.requested_qty)); }}
+                        className="text-slate-500 text-xs font-medium">
+                        {t("stockRequest_edit")}
+                      </button>
+                      <button onClick={() => cancelRequest(r)}
+                        className="text-red-600 text-xs font-medium">
+                        {t("stockRequest_cancel")}
+                      </button>
+                    </div>
                   )}
                   {r.status === "pending" && (
-                    <span className="text-xs text-slate-400">{t("stockRequest_awaitingWarehouse")}</span>
+                    <div className="flex gap-2 justify-end items-center">
+                      <span className="text-xs text-slate-400">{t("stockRequest_awaitingWarehouse")}</span>
+                      <button onClick={() => { setEditRow(r); setEditQty(String(r.requested_qty)); }}
+                        className="text-slate-500 text-xs font-medium">
+                        {t("stockRequest_edit")}
+                      </button>
+                    </div>
                   )}
                   {r.status === "approved" && (
                     <Link href="/incoming-transfers" className="text-blue-600 text-xs font-medium">
@@ -360,6 +434,46 @@ export default function StockRequestPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Edit quantity */}
+      {editRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("stockRequest_edit")}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {editRow.products?.name}
+              {editRow.product_variants?.variant_name && ` (${editRow.product_variants.variant_name})`}
+            </p>
+
+            <label className="text-sm text-slate-600">{t("stockRequest_qty")}</label>
+            <input
+              autoFocus
+              type="number"
+              min={1}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={editQty}
+              onChange={(e) => setEditQty(e.target.value)}
+            />
+
+            {editRow.status === "pending" && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                {t("stockRequest_editResetsApproval")}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button onClick={() => setEditRow(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm">
+                {t("returns_cancel")}
+              </button>
+              <button onClick={saveEdit}
+                className="flex-1 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold">
+                {t("stockRequest_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New request modal */}
       {showNewForm && (
