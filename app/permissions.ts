@@ -19,6 +19,7 @@ export type PageKey =
   | "sales-performance"
   | "warehouse"
   | "stock-transfer"
+  | "request-approval"
   | "request-inbox"
   | "goods-received"
   | "warehouse-history"
@@ -66,6 +67,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "inventory" },
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "warehouse" },
   { key: "goods-received", href: "/goods-received", labelKey: "nav_goodsReceived", group: "warehouse" },
+  { key: "request-approval", href: "/request-approval", labelKey: "nav_requestApproval", group: "sale" },
   { key: "request-inbox", href: "/request-inbox", labelKey: "nav_requestInbox", group: "warehouse" },
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
@@ -103,6 +105,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
   online_sale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
   wholesale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
   sale_manager: [
+    "request-approval",
     "pos",
     "sale-order",
     "history",
@@ -136,6 +139,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     ...COMMON_ALL_ROLES,
   ],
   manager: [
+    "request-approval",
     "pos",
     "history",
     "returns",
