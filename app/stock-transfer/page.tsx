@@ -156,6 +156,10 @@ export default function StockTransferPage() {
           qty,
           status: "in_transit",
           transferred_by: profile?.email || null,
+          // The receiving store cannot read the warehouse's inventory - RLS
+          // scopes it - so the cost has to travel with the goods. Without it
+          // stock arrives at zero cost and every sale shows 100% margin.
+          unit_cost: Number(transferItem.avg_cost || 0),
         })
         .select()
         .single();

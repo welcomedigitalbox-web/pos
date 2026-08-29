@@ -22,6 +22,7 @@ type RequestRow = {
   displayName: string;
   sku: string | null;
   availableAtWh: number;
+  avgCostAtWh: number;
 };
 
 const statusColor: Record<string, string> = {
@@ -84,7 +85,14 @@ export default function RequestInboxPage() {
       .limit(200);
 
     const whItems = await fetchSellableItems(whId, true);
-    const stockMap = new Map(whItems.map((i) => [`${i.product_id}:${i.variant_id || "base"}`, i.stock_qty]));
+    // Keep the cost alongside the quantity: it is stamped onto the transfer so
+    // the receiving store never has to read warehouse rows RLS hides from it.
+    const stockMap = new Map(
+      whItems.map((i) => [
+        `${i.product_id}:${i.variant_id || "base"}`,
+        { qty: i.stock_qty, cost: i.avg_cost },
+      ])
+    );
 
     setRows(
       ((data as any[]) || []).map((r) => ({
@@ -93,7 +101,8 @@ export default function RequestInboxPage() {
           ? `${r.products?.name} (${r.product_variants.variant_name})`
           : r.products?.name || "-",
         sku: r.product_variants?.sku || r.products?.sku || null,
-        availableAtWh: stockMap.get(`${r.product_id}:${r.variant_id || "base"}`) ?? 0,
+        availableAtWh: stockMap.get(`${r.product_id}:${r.variant_id || "base"}`)?.qty ?? 0,
+        avgCostAtWh: stockMap.get(`${r.product_id}:${r.variant_id || "base"}`)?.cost ?? 0,
       }))
     );
     setLoading(false);
@@ -133,6 +142,8 @@ export default function RequestInboxPage() {
           qty,
           status: "in_transit",
           transferred_by: profile?.email || null,
+          // Cost travels with the goods; the store cannot read warehouse rows.
+          unit_cost: Number(sendRow.avgCostAtWh || 0),
         })
         .select()
         .single();

@@ -16,6 +16,7 @@ type TransferRow = {
   to_store_id: string;
   qty: number;
   received_qty: number | null;
+  unit_cost: number | null;
   status: "in_transit" | "received" | "discrepancy" | "pending_approval";
   transferred_by: string | null;
   received_by: string | null;
@@ -158,7 +159,13 @@ export default function IncomingTransfersPage() {
       if (!needsApproval) {
         // Weighted average, so receiving at a different cost doesn't overwrite
         // what the store already holds
-        const incomingCost = Number(sourceInv?.avg_cost ?? existing?.avg_cost ?? 0);
+        // The transfer carries its own cost. sourceInv is a fallback for rows
+        // created before that column existed, and is null anyway whenever RLS
+        // hides the sending warehouse from this account.
+        const stampedCost = Number((confirmRow as any).unit_cost || 0);
+        const incomingCost = stampedCost > 0
+          ? stampedCost
+          : Number(sourceInv?.avg_cost ?? existing?.avg_cost ?? 0);
         const heldQty = Number(existing?.stock_qty || 0);
         const heldCost = Number(existing?.avg_cost || 0);
         const newQty = heldQty + actual;
