@@ -99,7 +99,11 @@ export default function ReturnsPage() {
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);
-    if (!canApprove) listQuery = listQuery.eq("store_id", storeId);
+    if (!canApprove) {
+      // A branch is involved either as the seller or as the counter that
+      // handled the refund - both need it in their history.
+      listQuery = listQuery.or(`store_id.eq.${storeId},processed_store_id.eq.${storeId}`);
+    }
     const { data } = await listQuery;
     setReturns((data as SaleReturn[]) || []);
 
