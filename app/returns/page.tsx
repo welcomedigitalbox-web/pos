@@ -467,6 +467,20 @@ export default function ReturnsPage() {
         }
       }
 
+      // A cross-store return with nothing in good condition has nothing to
+      // send anywhere - the damaged goods are written off where they were
+      // handed in. Mark it settled so "Send back" stops offering a transfer
+      // that would move stock that does not exist.
+      if (isCrossStore && !approvalTransferId) {
+        const anyGood = reviewItems.some(
+          (i) => i.line_type !== "exchange" && i.condition === "good"
+        );
+        if (!anyGood) {
+          await supabase.from("sale_returns")
+            .update({ no_transfer_needed: true }).eq("id", reviewRow.id);
+        }
+      }
+
       // Replacement goods are a real sale: booking one keeps stock, COGS and
       // every downstream report correct without special-casing exchanges.
       const outLines = reviewItems.filter((i) => i.line_type === "exchange");
@@ -673,7 +687,8 @@ export default function ReturnsPage() {
       r.status === "approved" &&
       (r as any).processed_store_id &&
       (r as any).processed_store_id !== r.store_id &&
-      !(r as any).return_transfer_id
+      !(r as any).return_transfer_id &&
+      !(r as any).no_transfer_needed
   ).length;
   const visibleReturns =
     statusFilter === "all" ? returns : returns.filter((r) => r.status === statusFilter);
@@ -750,7 +765,8 @@ export default function ReturnsPage() {
                   {r.status === "approved" &&
                     (r as any).processed_store_id &&
                     (r as any).processed_store_id !== r.store_id &&
-                    !(r as any).return_transfer_id && (
+                    !(r as any).return_transfer_id &&
+                    !(r as any).no_transfer_needed && (
                       <button onClick={() => sendBackToOrigin(r)} disabled={sendingBack === r.id}
                         className="text-orange-600 text-xs font-medium disabled:text-slate-300">
                         {sendingBack === r.id ? "..." : t("returns_sendBack")}
