@@ -268,7 +268,11 @@ export default function ReturnsPage() {
       // Cross-store: the return belongs to the selling branch's books, and RLS
       // rightly refuses a cashier writing a row for a store they are not in.
       // The RPC applies the same quantity and pricing rules server side.
-      const isCrossStore = foundSale.store_id !== storeId;
+      // profile.store_id is the account's actual branch. The store picker's
+      // value can lag behind it on first load, and picking the wrong one here
+      // sends the insert down the path RLS refuses.
+      const myStore = profile?.store_id || storeId;
+      const isCrossStore = foundSale.store_id !== myStore;
       if (isCrossStore) {
         if (refundMethod === "exchange") {
           setSaving(false);
@@ -292,7 +296,7 @@ export default function ReturnsPage() {
 
         if (voucherFile) {
           try {
-            const path = await uploadReturnVoucher(voucherFile, storeId, row.return_id);
+            const path = await uploadReturnVoucher(voucherFile, myStore, row.return_id);
             await supabase.from("sale_returns").update({ voucher_url: path }).eq("id", row.return_id);
           } catch {
             // The return itself is filed; a failed voucher upload must not undo it.
