@@ -168,7 +168,7 @@ export default function HistoryPage() {
         address: settings?.address || null,
         footerText: settings?.footer_text || null,
         logoText: settings?.logo_text || null,
-        saleRef: sale.id.slice(0, 8).toUpperCase(),
+        saleRef: sale.sale_ref || sale.id.slice(0, 8).toUpperCase(),
         createdAt: sale.created_at,
         items: ((items as any[]) || []).map((i) => ({
           name: i.product_name,
@@ -416,7 +416,7 @@ export default function HistoryPage() {
             {!loading && filteredSales.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">
-                  {s.id.slice(0, 8).toUpperCase()}
+                  {s.sale_ref || s.id.slice(0, 8).toUpperCase()}
                   {refundBySale.has(s.id) && (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700 font-medium">
                       {t("returns_returnedBadge")}

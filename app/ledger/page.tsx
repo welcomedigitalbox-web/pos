@@ -327,7 +327,7 @@ export default function LedgerPage() {
       })),
       ...(sales || []).map((s: any) => ({
         date: s.created_at, type: "out", qty: Number(s.qty),
-        reference: `Sale #${s.sale_id.slice(0, 8).toUpperCase()}`,
+        reference: `Sale #${s.sale_ref || s.sale_id.slice(0, 8).toUpperCase()}`,
       })),
       ...(damages || []).map((d: any) => ({
         date: d.created_at, type: "damage", qty: Number(d.qty),

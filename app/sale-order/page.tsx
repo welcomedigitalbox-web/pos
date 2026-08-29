@@ -296,7 +296,7 @@ export default function SaleOrderPage() {
             product_id: l.product_id,
             variant_id: l.variant_id,
             requested_qty: shortageQty,
-            note: `Auto-requested: Sale Order #${sale.id.slice(0, 8).toUpperCase()} (${l.name})`,
+            note: `Auto-requested: Sale Order #${sale.sale_ref || sale.id.slice(0, 8).toUpperCase()} (${l.name})`,
             requested_by: profile?.email || null,
           });
           shortageNotes.push(`${l.name} (-${shortageQty})`);

@@ -207,7 +207,7 @@ export default function ProductDetailPage() {
         date: i.created_at,
         type: "out" as const,
         qty: Number(i.qty),
-        reference: `Sale #${i.sale_id.slice(0, 8).toUpperCase()}`,
+        reference: `Sale #${i.sale_ref || i.sale_id.slice(0, 8).toUpperCase()}`,
       })),
       ...(damageRows || []).map((d) => ({
         date: d.created_at,

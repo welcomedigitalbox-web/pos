@@ -180,7 +180,7 @@ export default function OrderLookupPage() {
         address: settings?.address || null,
         footerText: settings?.footer_text || null,
         logoText: settings?.logo_text || null,
-        saleRef: selected.id.slice(0, 8).toUpperCase(),
+        saleRef: selected.sale_ref || selected.id.slice(0, 8).toUpperCase(),
         createdAt: selected.created_at,
         items: items.map((i) => ({
           name: i.product_name,
@@ -262,7 +262,7 @@ export default function OrderLookupPage() {
             {!loading && filtered.map((o) => (
               <tr key={o.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">
-                  {o.id.slice(0, 8).toUpperCase()}
+                  {o.sale_ref || o.id.slice(0, 8).toUpperCase()}
                   {returnedSaleIds.has(o.id) && (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700 font-medium">
                       {t("returns_returnedBadge")}
@@ -299,7 +299,7 @@ export default function OrderLookupPage() {
             onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h3 className="font-semibold text-lg font-mono">{selected.id.slice(0, 8).toUpperCase()}</h3>
+                <h3 className="font-semibold text-lg font-mono">{selected.sale_ref || selected.id.slice(0, 8).toUpperCase()}</h3>
                 <p className="text-sm text-slate-500">{new Date(selected.created_at).toLocaleString()}</p>
               </div>
               <div className="flex items-center gap-3">
