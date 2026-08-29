@@ -43,6 +43,7 @@ function resolvePeriod(key: PeriodKey, from?: string, to?: string) {
 
 type SaleRow = {
   id: string;
+  sale_ref: string | null;
   created_at: string;
   store_id: string;
   cashier_email: string | null;

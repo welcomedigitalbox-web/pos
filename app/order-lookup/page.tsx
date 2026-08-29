@@ -23,6 +23,7 @@ type OrderItem = {
 
 type Order = {
   id: string;
+  sale_ref: string | null;
   created_at: string;
   store_id: string;
   order_type: string;
