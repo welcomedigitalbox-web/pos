@@ -5,6 +5,7 @@ import { supabase, logActivity } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
+import { APPROVER_ROLES } from "../permissions";
 import { hasPermission } from "../permissions";
 
 type PendingRequest = {
