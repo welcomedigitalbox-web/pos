@@ -149,9 +149,7 @@ export default function RequestApprovalPage() {
         });
 
         if (error) throw error;
-
       }
-      if (error) throw error;
 
       await logActivity({
         entityType: "stock_request",

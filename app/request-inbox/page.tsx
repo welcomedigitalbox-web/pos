@@ -156,8 +156,6 @@ export default function RequestInboxPage() {
       });
       if (acceptErr) throw acceptErr;
 
-      if (acceptErr) throw acceptErr;
-
       await logActivity({
         entityType: "stock_transfer",
         entityId: created.id,
