@@ -218,3 +218,18 @@ export function isManagerTier(role?: string | null): boolean {
 
 // Who may hold an approval PIN.
 export const APPROVER_ROLES: string[] = MANAGER_TIER;
+
+
+// Which roles exist inside each department. The admin form asks for the
+// department first and offers only these, so a warehouse hire cannot be
+// saved as a cashier by a slip of the mouse.
+export const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
+  sale: ["cashier", "online_sale", "wholesale", "sale_manager"],
+  merchandising: ["merchandising_staff", "merchandising_manager"],
+  warehouse: ["warehouse_staff", "warehouse_manager"],
+  finance: ["accountant", "finance_manager"],
+  marketing: ["marketing_manager"],
+};
+
+// Company-wide posts that sit outside any one department.
+export const COMPANY_ROLES: UserRole[] = ["operation_director", "owner", "admin"];

@@ -6,7 +6,7 @@ import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../../language-context";
-import { PAGE_OPTIONS, DEFAULT_PERMISSIONS, PageKey, UserRole, ROLE_OPTIONS } from "../../permissions";
+import { PAGE_OPTIONS, DEFAULT_PERMISSIONS, PageKey, UserRole, ROLE_OPTIONS, DEPARTMENT_ROLES, COMPANY_ROLES } from "../../permissions";
 
 
 
@@ -269,13 +269,30 @@ export default function AdminUsersPage() {
               </>
             )}
 
+            <label className="text-sm text-slate-600">{t("admin_department")}</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={department}
+              onChange={(e) => {
+                const d = e.target.value;
+                setDepartment(d);
+                const allowed = d ? DEPARTMENT_ROLES[d] || [] : COMPANY_ROLES;
+                if (!allowed.includes(role as any)) onRoleChange(allowed[0]);
+              }}
+            >
+              <option value="">—</option>
+              {["sale", "merchandising", "warehouse", "finance", "marketing"].map((d) => (
+                <option key={d} value={d}>{t(`admin_dept_${d}` as any)}</option>
+              ))}
+            </select>
+
             <label className="text-sm text-slate-600">{t("admin_role")}</label>
             <select
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
               value={role}
               onChange={(e) => onRoleChange(e.target.value as UserRole)}
             >
-              {ROLE_OPTIONS.map((r) => (
+              {(department ? DEPARTMENT_ROLES[department] || [] : COMPANY_ROLES).map((r) => (
                 <option key={r} value={r}>
                   {t(`admin_role_${r}` as any)}
                 </option>
@@ -293,18 +310,6 @@ export default function AdminUsersPage() {
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
-              ))}
-            </select>
-
-            <label className="text-sm text-slate-600">{t("admin_department")}</label>
-            <select
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-            >
-              <option value="">—</option>
-              {["sale", "merchandising", "warehouse", "finance", "marketing"].map((d) => (
-                <option key={d} value={d}>{t(`admin_dept_${d}` as any)}</option>
               ))}
             </select>
 
