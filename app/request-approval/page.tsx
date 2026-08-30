@@ -24,7 +24,7 @@ type PendingRequest = {
 
 // Mirrors canApproveRequest in stock-request/page.tsx and
 // is_approver_role() in the database.
-const APPROVER_ROLES = ["sale_manager", "manager", "owner", "admin"];
+
 
 export default function RequestApprovalPage() {
   const { profile } = useAuth();

@@ -6,7 +6,7 @@ import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
-import { hasPermission } from "../permissions";
+import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
 
 type TransferRow = {
   id: string;
@@ -38,7 +38,7 @@ export default function IncomingTransfersPage() {
   const { storeId, stores } = useStore();
   const { profile } = useAuth();
   const isManagerLevel =
-    profile?.role === "sale_manager" || profile?.role === "manager" ||
+    isManagerTier(profile?.role) ||
     profile?.role === "owner" || profile?.role === "admin";
   const { t } = useLanguage();
   const router = useRouter();

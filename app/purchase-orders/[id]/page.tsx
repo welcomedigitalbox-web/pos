@@ -10,7 +10,7 @@ import {
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
 import { useLanguage } from "../../language-context";
-import { hasPermission } from "../../permissions";
+import { hasPermission, isManagerTier, APPROVER_ROLES } from "../../permissions";
 
 function fmt(n: number) {
   return n.toLocaleString() + " MMK";
@@ -265,7 +265,7 @@ export default function PoDetailPage() {
   }
 
   const canApprovePo =
-    profile?.role === "manager" || profile?.role === "owner" || profile?.role === "admin";
+    isManagerTier(profile?.role);
 
   function openHeaderEdit() {
     if (!po) return;

@@ -7,7 +7,7 @@ import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
-import { hasPermission } from "../permissions";
+import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
 
 function fmt(n: number) {
   return Number(n || 0).toLocaleString() + " MMK";
@@ -74,7 +74,7 @@ export default function HistoryPage() {
   // manager role, so the filters below are deliberately locked down for them.
   const isManagerLevel =
     profile?.role === "sale_manager" ||
-    profile?.role === "manager" ||
+    isManagerTier(profile?.role) ||
     profile?.role === "owner" ||
     profile?.role === "admin";
 

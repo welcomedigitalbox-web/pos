@@ -5,9 +5,10 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
+import { APPROVER_ROLES } from "../permissions";
 
 // Must match public.is_approver_role() in the database.
-const APPROVER_ROLES = ["admin", "owner", "manager"];
+
 
 export default function MyPinPage() {
   const { profile } = useAuth();

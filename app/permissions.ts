@@ -41,7 +41,11 @@ export type UserRole =
   | "online_sale"
   | "wholesale"
   | "sale_manager"
-  | "manager"
+  | "merchandising_manager"
+  | "warehouse_manager"
+  | "finance_manager"
+  | "marketing_manager"
+  | "operation_director"
   | "owner"
   | "admin";
 
@@ -127,10 +131,27 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
 
   // Whole-department roles: everything in their own area, plus reports.
   sale_manager: [...pagesIn("sale", "reports"), ...COMMON_ALL_ROLES],
-  manager: [
-    ...pagesIn("sale", "inventory", "warehouse", "merchandising", "reports"),
+  merchandising_manager: [
+    ...pagesIn("merchandising", "reports"),
+    "inventory", "barcode",
     ...COMMON_ALL_ROLES,
   ],
+  warehouse_manager: [
+    ...pagesIn("warehouse", "inventory", "reports"),
+    ...COMMON_ALL_ROLES,
+  ],
+  finance_manager: [
+    ...pagesIn("reports"),
+    "history", "order-lookup", "cash-drawer", "sales-performance", "suppliers",
+    ...COMMON_ALL_ROLES,
+  ],
+  marketing_manager: [
+    ...pagesIn("reports"),
+    "customers", "loyalty-tiers", "products",
+    ...COMMON_ALL_ROLES,
+  ],
+  // The tier above the department heads: approves anything, sees everything.
+  operation_director: ALL_KEYS_EXCEPT_ADMIN,
   owner: ALL_KEYS_EXCEPT_ADMIN,
 };
 
@@ -139,7 +160,11 @@ export const ROLE_OPTIONS: UserRole[] = [
   "online_sale",
   "wholesale",
   "sale_manager",
-  "manager",
+  "merchandising_manager",
+  "warehouse_manager",
+  "finance_manager",
+  "marketing_manager",
+  "operation_director",
   "owner",
   "admin",
 ];
@@ -152,3 +177,19 @@ export function hasPermission(
   if (profile.role === "admin") return true;
   return profile.permissions?.includes(key) ?? false;
 }
+
+
+// Department heads and above. Pages use this instead of listing role names,
+// so adding a role does not mean revisiting every screen.
+export const MANAGER_TIER: UserRole[] = [
+  "sale_manager", "merchandising_manager", "warehouse_manager",
+  "finance_manager", "marketing_manager",
+  "operation_director", "owner", "admin",
+];
+
+export function isManagerTier(role?: string | null): boolean {
+  return !!role && (MANAGER_TIER as string[]).includes(role);
+}
+
+// Who may hold an approval PIN.
+export const APPROVER_ROLES: string[] = MANAGER_TIER;

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase, SellableItem, fetchSellableItems, netLineTotal } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
-import { hasPermission } from "../permissions";
+import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -92,7 +92,7 @@ export default function LedgerPage() {
   // Cost and margin are commercially sensitive, so shop-floor staff see the
   // sales side only — the same page, with those columns withheld.
   const canSeeCost =
-    profile?.role === "sale_manager" || profile?.role === "manager" ||
+    isManagerTier(profile?.role) ||
     profile?.role === "owner" || profile?.role === "admin";
 
   const [storeId, setStoreId] = useState("");
