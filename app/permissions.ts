@@ -41,6 +41,9 @@ export type UserRole =
   | "online_sale"
   | "wholesale"
   | "sale_manager"
+  | "merchandising_staff"
+  | "warehouse_staff"
+  | "accountant"
   | "merchandising_manager"
   | "warehouse_manager"
   | "finance_manager"
@@ -131,6 +134,25 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
 
   // Whole-department roles: everything in their own area, plus reports.
   sale_manager: [...pagesIn("sale", "reports"), ...COMMON_ALL_ROLES],
+
+  // Staff do the work; their department head signs it off. None of them are
+  // dept heads, so can_approve_for() refuses them by construction.
+  merchandising_staff: [
+    "products", "product-category", "product-variant",
+    "suppliers", "purchase-orders", "inventory", "barcode",
+    ...COMMON_ALL_ROLES,
+  ],
+  warehouse_staff: [
+    "warehouse", "stock-transfer", "request-inbox", "goods-received",
+    "warehouse-history", "ledger", "inventory", "stock-in", "barcode",
+    "incoming-transfers", "damage",
+    ...COMMON_ALL_ROLES,
+  ],
+  accountant: [
+    "dashboard", "sales-report", "settlements",
+    "history", "order-lookup", "cash-drawer", "sales-performance", "suppliers",
+    ...COMMON_ALL_ROLES,
+  ],
   merchandising_manager: [
     ...pagesIn("merchandising", "reports"),
     "inventory", "barcode",
@@ -160,6 +182,9 @@ export const ROLE_OPTIONS: UserRole[] = [
   "online_sale",
   "wholesale",
   "sale_manager",
+  "merchandising_staff",
+  "warehouse_staff",
+  "accountant",
   "merchandising_manager",
   "warehouse_manager",
   "finance_manager",
