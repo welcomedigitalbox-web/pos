@@ -21,7 +21,9 @@ alter table public.stock_transfers
 create index if not exists stock_transfers_transfer_no_idx
   on public.stock_transfers (transfer_no);
 
-create unique index if not exists stock_transfers_idempotency_idx
+-- Not unique: every line of one dispatch carries the same key. The replay
+-- check at the top of send_transfer is what stops a retry going out twice.
+create index if not exists stock_transfers_idempotency_idx
   on public.stock_transfers (idempotency_key) where idempotency_key is not null;
 
 -- One counter row per store per day, same shape as sale_ref_counters.
