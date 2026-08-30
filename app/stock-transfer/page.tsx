@@ -67,6 +67,7 @@ export default function StockTransferPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkKey, setBulkKey] = useState("");
   const [bulkQty, setBulkQty] = useState("");
+  const [bulkBarcode, setBulkBarcode] = useState("");
   const idemRef = useRef<string>("");
   const [sending, setSending] = useState(false);
   const [resolveRow, setResolveRow] = useState<OutgoingRow | null>(null);
@@ -624,6 +625,26 @@ export default function StockTransferPage() {
               value={transferToStore} onChange={(e) => setTransferToStore(e.target.value)}>
               {retailStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+
+            <label className="text-sm text-slate-600">{t("po_scanBarcode")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              placeholder={t("warehouse_searchPlaceholder")}
+              value={bulkBarcode}
+              onChange={(e) => {
+                const v = e.target.value;
+                setBulkBarcode(v);
+                // A scanner types the whole code then Enter; match on the full
+                // value so a partial code never selects the wrong product.
+                const hit = items.find(
+                  (i) => (i.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
+                );
+                if (hit) {
+                  setBulkKey(`${hit.product_id}:${hit.variant_id || "base"}`);
+                  setBulkBarcode("");
+                }
+              }}
+            />
 
             <div className="flex gap-2 items-end mb-4">
               <div className="flex-1">
