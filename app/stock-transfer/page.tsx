@@ -62,6 +62,12 @@ export default function StockTransferPage() {
   const [transferItem, setTransferItem] = useState<SellableItem | null>(null);
   const [transferQty, setTransferQty] = useState("");
   const [transferToStore, setTransferToStore] = useState("");
+  // One dispatch can carry many products, the way a purchase order does.
+  const [draftLines, setDraftLines] = useState<{ key: string; qty: number }[]>([]);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkKey, setBulkKey] = useState("");
+  const [bulkQty, setBulkQty] = useState("");
+  const idemRef = useRef<string>("");
   const [sending, setSending] = useState(false);
   const [resolveRow, setResolveRow] = useState<OutgoingRow | null>(null);
   const [resolution, setResolution] = useState<"miscount" | "damaged">("miscount");
@@ -183,6 +189,66 @@ export default function StockTransferPage() {
     }
   }
 
+  function itemFor(key: string) {
+    return items.find((i) => `${i.product_id}:${i.variant_id || "base"}` === key);
+  }
+
+  function addDraftLine() {
+    const it = itemFor(bulkKey);
+    const qty = Number(bulkQty);
+    if (!it) return showToast(t("warehouseTransfer_pickItem"));
+    if (!qty || qty <= 0) return showToast(t("stockRequest_invalidQty"));
+    if (qty > it.stock_qty) return showToast(t("warehouseTransfer_notEnough"));
+    if (draftLines.find((l) => l.key === bulkKey))
+      return showToast(t("warehouseTransfer_lineExists"));
+
+    setDraftLines([...draftLines, { key: bulkKey, qty }]);
+    setBulkKey("");
+    setBulkQty("");
+  }
+
+  function openBulk() {
+    setShowBulk(true);
+    setDraftLines([]);
+    setBulkKey("");
+    setBulkQty("");
+    setTransferToStore(retailStores[0]?.id || "");
+    idemRef.current = crypto.randomUUID();
+  }
+
+  // Every line moves inside one database transaction. A half-finished
+  // dispatch would leave the warehouse short with no transfer to show for it.
+  async function submitBulkTransfer() {
+    if (!draftLines.length) return showToast(t("stockRequest_noLines"));
+    if (!transferToStore) return showToast(t("warehouseTransfer_pickStore"));
+
+    setSending(true);
+    try {
+      const lines = draftLines.map((l) => {
+        const it = itemFor(l.key)!;
+        return { product_id: it.product_id, variant_id: it.variant_id, qty: l.qty };
+      });
+
+      const { data, error } = await supabase.rpc("send_transfer", {
+        p_from_store: whId,
+        p_to_store: transferToStore,
+        p_lines: lines,
+        p_idempotency_key: idemRef.current || crypto.randomUUID(),
+      });
+      if (error) throw error;
+
+      const row = (data as any[])?.[0];
+      showToast(`${t("warehouseTransfer_sent")} · ${row?.transfer_no || ""}`);
+      setShowBulk(false);
+      setDraftLines([]);
+      await load();
+    } catch (err) {
+      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function submitResolution() {
     if (!resolveRow) return;
     const missing = Number(resolveRow.qty) - Number(resolveRow.received_qty ?? 0);
@@ -286,7 +352,13 @@ export default function StockTransferPage() {
 
   return (
     <div className="pt-4">
-      <h2 className="font-semibold text-lg mb-1">{t("nav_stockTransfer")}</h2>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="font-semibold text-lg">{t("nav_stockTransfer")}</h2>
+        <button onClick={openBulk}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold">
+          + {t("warehouseTransfer_newTransfer")}
+        </button>
+      </div>
       <p className="text-sm text-slate-500 mb-4">{t("stockTransfer_subtitle")}</p>
 
       {warehouses.length > 1 && (
@@ -539,6 +611,87 @@ export default function StockTransferPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4"
           onClick={() => setZoomPhoto(null)}>
           <img src={zoomPhoto} alt="" className="max-h-[85vh] max-w-full rounded-lg" />
+        </div>
+      )}
+
+      {showBulk && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-lg my-8">
+            <h3 className="font-semibold text-lg mb-4">{t("warehouseTransfer_newTransfer")}</h3>
+
+            <label className="text-sm text-slate-600">{t("warehouseTransfer_toStore")}</label>
+            <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
+              value={transferToStore} onChange={(e) => setTransferToStore(e.target.value)}>
+              {retailStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+
+            <div className="flex gap-2 items-end mb-4">
+              <div className="flex-1">
+                <label className="text-sm text-slate-600">{t("warehouseTransfer_product")}</label>
+                <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1"
+                  value={bulkKey} onChange={(e) => setBulkKey(e.target.value)}>
+                  <option value="">—</option>
+                  {items.map((i) => {
+                    const k = `${i.product_id}:${i.variant_id || "base"}`;
+                    return (
+                      <option key={k} value={k} disabled={!!draftLines.find((l) => l.key === k)}>
+                        {i.display_name} ({i.stock_qty})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div className="w-28">
+                <label className="text-sm text-slate-600">{t("warehouseTransfer_qty")}</label>
+                <input type="number" min={1}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1"
+                  value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} />
+              </div>
+              <button onClick={addDraftLine}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium">
+                {t("warehouseTransfer_addLine")}
+              </button>
+            </div>
+
+            {draftLines.length > 0 && (
+              <div className="border border-slate-200 rounded-lg overflow-hidden mb-4">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="text-left px-3 py-2">{t("warehouseTransfer_product")}</th>
+                      <th className="text-left px-3 py-2">{t("warehouseTransfer_qty")}</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftLines.map((l) => (
+                      <tr key={l.key} className="border-t border-slate-100">
+                        <td className="px-3 py-2">{itemFor(l.key)?.display_name || l.key}</td>
+                        <td className="px-3 py-2">{l.qty}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => setDraftLines(draftLines.filter((d) => d.key !== l.key))}
+                            className="text-red-600 text-xs font-medium">
+                            {t("products_delete")}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button onClick={() => { setShowBulk(false); setDraftLines([]); }}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={submitBulkTransfer} disabled={sending || !draftLines.length}
+                className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {sending ? "..." : `${t("warehouseTransfer_button")} (${draftLines.length})`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
