@@ -131,44 +131,6 @@ export default function StockTransferPage() {
     setLoading(false);
   }
 
-  // One dispatch is one row here, the way a purchase order is one row. The
-  // lines behind it open in a modal rather than filling the list with a
-  // separate entry per product.
-  const groupedOutgoing = useMemo(() => {
-    const byRef = new Map<string, typeof filteredOutgoing>();
-    for (const o of filteredOutgoing) {
-      const key = (o as any).transfer_no || o.id;
-      const bucket = byRef.get(key);
-      if (bucket) bucket.push(o);
-      else byRef.set(key, [o]);
-    }
-
-    return Array.from(byRef.entries())
-      .map(([ref, lines]) => {
-        const statuses = Array.from(new Set(lines.map((l) => l.status)));
-        return {
-          ref,
-          lines,
-          created_at: lines[0].created_at,
-          to_store_id: lines[0].to_store_id,
-          totalQty: lines.reduce((sum, l) => sum + Number(l.qty), 0),
-          // A dispatch can be part received; say so rather than picking one.
-          status: statuses.length === 1 ? statuses[0] : "mixed",
-          receivedBy: lines.find((l) => l.received_by)?.received_by || null,
-        };
-      })
-      .filter((g) =>
-        refSearch.trim() === "" ||
-        g.ref.toLowerCase().includes(refSearch.trim().toLowerCase())
-      )
-      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  }, [filteredOutgoing, refSearch]);
-
-  const viewLines = useMemo(
-    () => groupedOutgoing.find((g) => g.ref === viewNo)?.lines || [],
-    [groupedOutgoing, viewNo]
-  );
-
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3500);
@@ -379,6 +341,45 @@ export default function StockTransferPage() {
       }),
     [outgoing, statusFilter, storeFilter]
   );
+
+  // One dispatch is one row here, the way a purchase order is one row. The
+  // lines behind it open in a modal rather than filling the list with a
+  // separate entry per product.
+  const groupedOutgoing = useMemo(() => {
+    const byRef = new Map<string, typeof filteredOutgoing>();
+    for (const o of filteredOutgoing) {
+      const key = (o as any).transfer_no || o.id;
+      const bucket = byRef.get(key);
+      if (bucket) bucket.push(o);
+      else byRef.set(key, [o]);
+    }
+
+    return Array.from(byRef.entries())
+      .map(([ref, lines]) => {
+        const statuses = Array.from(new Set(lines.map((l) => l.status)));
+        return {
+          ref,
+          lines,
+          created_at: lines[0].created_at,
+          to_store_id: lines[0].to_store_id,
+          totalQty: lines.reduce((sum, l) => sum + Number(l.qty), 0),
+          // A dispatch can be part received; say so rather than picking one.
+          status: statuses.length === 1 ? statuses[0] : "mixed",
+          receivedBy: lines.find((l) => l.received_by)?.received_by || null,
+        };
+      })
+      .filter((g) =>
+        refSearch.trim() === "" ||
+        g.ref.toLowerCase().includes(refSearch.trim().toLowerCase())
+      )
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  }, [filteredOutgoing, refSearch]);
+
+  const viewLines = useMemo(
+    () => groupedOutgoing.find((g) => g.ref === viewNo)?.lines || [],
+    [groupedOutgoing, viewNo]
+  );
+
 
   const pendingCount = outgoing.filter((o) => o.status === "in_transit").length;
   const problemCount = outgoing.filter((o) => o.status === "discrepancy").length;
