@@ -105,15 +105,15 @@ export default function RequestApprovalPage() {
     setBusyId(key);
     try {
       const ids = lines.map((l) => l.id);
-      const { error } = await supabase
-        .from("stock_requests")
-        .update({
-          status: "pending",
-          approved_by: profile!.email,
-          approved_at: new Date().toISOString(),
-        })
-        .in("id", ids);
-      if (error) throw error;
+      // One RPC per line: the function checks the approver against the
+      // requester's reporting line and stamps who signed it off. A direct
+      // UPDATE is refused by the database, so this is the only way through.
+      for (const id of ids) {
+        const { error } = await supabase.rpc("approve_stock_request", {
+          p_request_id: id,
+        });
+        if (error) throw error;
+      }
 
       await logActivity({
         entityType: "stock_request",
@@ -136,15 +136,21 @@ export default function RequestApprovalPage() {
     setBusyId(key);
     try {
       const ids = lines.map((l) => l.id);
-      const { error } = await supabase
-        .from("stock_requests")
-        .update({
-          status: "rejected",
-          approved_by: profile!.email,
-          approved_at: new Date().toISOString(),
-          rejected_reason: rejectReason.trim(),
-        })
-        .in("id", ids);
+      for (const id of ids) {
+
+        const { error } = await supabase.rpc("approve_stock_request", {
+
+          p_request_id: id,
+
+          p_reject: true,
+
+          p_reason: rejectReason || null,
+
+        });
+
+        if (error) throw error;
+
+      }
       if (error) throw error;
 
       await logActivity({

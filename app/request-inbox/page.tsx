@@ -149,10 +149,14 @@ export default function RequestInboxPage() {
         .single();
       if (error) throw error;
 
-      await supabase
-        .from("stock_requests")
-        .update({ status: "approved", approved_by: profile?.email || null, approved_at: new Date().toISOString() })
-        .eq("id", sendRow.id);
+      // The warehouse head accepts the job; the RPC checks the
+      // department and records who accepted it.
+      const { error: acceptErr } = await supabase.rpc("warehouse_accept_request", {
+        p_request_id: sendRow.id,
+      });
+      if (acceptErr) throw acceptErr;
+
+      if (acceptErr) throw acceptErr;
 
       await logActivity({
         entityType: "stock_transfer",
@@ -175,14 +179,12 @@ export default function RequestInboxPage() {
   async function submitReject() {
     if (!rejectRow) return;
     if (!rejectReason.trim()) return showToast(t("requestInbox_rejectReasonRequired"));
-    await supabase
-      .from("stock_requests")
-      .update({
-        status: "rejected",
-        approved_by: profile?.email || null,
-        rejected_reason: rejectReason.trim(),
-      })
-      .eq("id", rejectRow.id);
+    const { error: rejErr } = await supabase.rpc("warehouse_accept_request", {
+      p_request_id: rejectRow.id,
+      p_reject: true,
+      p_reason: rejectReason.trim(),
+    });
+    if (rejErr) return showToast(rejErr.message);
     await logActivity({
       entityType: "stock_request",
       entityId: rejectRow.id,
