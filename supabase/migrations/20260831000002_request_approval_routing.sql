@@ -82,6 +82,8 @@ begin
     raise exception 'you are not the approver for this request';
   end if;
 
+  perform set_config('pos.approval_flow', 'on', true);
+
   update public.stock_requests
   set status = case when p_reject then 'rejected' else 'pending' end,
       approved_by = case when p_reject then approved_by else v_actor end,
@@ -91,6 +93,8 @@ begin
       reject_reason = case when p_reject then p_reason else reject_reason end
   where id = p_request_id
   returning * into v_req;
+
+  perform set_config('pos.approval_flow', '', true);
 
   insert into public.activity_log (actor, actor_id, action, detail, entity_type, entity_id)
   values (
@@ -147,6 +151,8 @@ begin
     raise exception 'only the warehouse head can accept this';
   end if;
 
+  perform set_config('pos.approval_flow', 'on', true);
+
   update public.stock_requests
   set status = case when p_reject then 'rejected' else 'approved' end,
       warehouse_approved_by = case when p_reject then warehouse_approved_by else v_actor end,
@@ -156,6 +162,8 @@ begin
       reject_reason = case when p_reject then p_reason else reject_reason end
   where id = p_request_id
   returning * into v_req;
+
+  perform set_config('pos.approval_flow', '', true);
 
   insert into public.activity_log (actor, actor_id, action, detail, entity_type, entity_id)
   values (
@@ -184,8 +192,11 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  -- SECURITY DEFINER functions run as the owner, so let those through.
-  if current_setting('role', true) = 'rls_bypass' then
+  -- SECURITY DEFINER does not change the session role, so the trigger
+  -- cannot tell an RPC's write from a hand-rolled UPDATE by role alone.
+  -- The approval functions set this flag for their own update and clear
+  -- it straight after; nothing outside them can set it.
+  if coalesce(current_setting('pos.approval_flow', true), '') = 'on' then
     return new;
   end if;
 
