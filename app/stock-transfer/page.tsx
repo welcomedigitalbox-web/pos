@@ -68,6 +68,8 @@ export default function StockTransferPage() {
   const [bulkKey, setBulkKey] = useState("");
   const [bulkQty, setBulkQty] = useState("");
   const [bulkBarcode, setBulkBarcode] = useState("");
+  const [viewNo, setViewNo] = useState<string | null>(null);
+  const [refSearch, setRefSearch] = useState("");
   const idemRef = useRef<string>("");
   const [sending, setSending] = useState(false);
   const [resolveRow, setResolveRow] = useState<OutgoingRow | null>(null);
@@ -128,6 +130,44 @@ export default function StockTransferPage() {
     );
     setLoading(false);
   }
+
+  // One dispatch is one row here, the way a purchase order is one row. The
+  // lines behind it open in a modal rather than filling the list with a
+  // separate entry per product.
+  const groupedOutgoing = useMemo(() => {
+    const byRef = new Map<string, typeof filteredOutgoing>();
+    for (const o of filteredOutgoing) {
+      const key = (o as any).transfer_no || o.id;
+      const bucket = byRef.get(key);
+      if (bucket) bucket.push(o);
+      else byRef.set(key, [o]);
+    }
+
+    return Array.from(byRef.entries())
+      .map(([ref, lines]) => {
+        const statuses = Array.from(new Set(lines.map((l) => l.status)));
+        return {
+          ref,
+          lines,
+          created_at: lines[0].created_at,
+          to_store_id: lines[0].to_store_id,
+          totalQty: lines.reduce((sum, l) => sum + Number(l.qty), 0),
+          // A dispatch can be part received; say so rather than picking one.
+          status: statuses.length === 1 ? statuses[0] : "mixed",
+          receivedBy: lines.find((l) => l.received_by)?.received_by || null,
+        };
+      })
+      .filter((g) =>
+        refSearch.trim() === "" ||
+        g.ref.toLowerCase().includes(refSearch.trim().toLowerCase())
+      )
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  }, [filteredOutgoing, refSearch]);
+
+  const viewLines = useMemo(
+    () => groupedOutgoing.find((g) => g.ref === viewNo)?.lines || [],
+    [groupedOutgoing, viewNo]
+  );
 
   function showToast(msg: string) {
     setToast(msg);
@@ -455,6 +495,12 @@ export default function StockTransferPage() {
           <option value="all">{t("warehouse_allStores")}</option>
           {retailStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        <input
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-56"
+          placeholder={t("stockTransfer_searchRef")}
+          value={refSearch}
+          onChange={(e) => setRefSearch(e.target.value)}
+        />
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">{t("warehouse_allStock")}</option>
@@ -466,152 +512,129 @@ export default function StockTransferPage() {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[900px]">
+        <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
+              <th className="text-left px-3 py-2">{t("stockTransfer_transferNo")}</th>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("stockTransfer_toStore")}</th>
+              <th className="text-left px-3 py-2">{t("stockTransfer_lines")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_sent")}</th>
-              <th className="text-left px-3 py-2">{t("transferIn_actual")}</th>
-              <th className="text-left px-3 py-2">{t("transferIn_diff")}</th>
               <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
               <th className="text-left px-3 py-2">{t("po_receivedBy")}</th>
               <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={10} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && filteredOutgoing.map((o) => {
-              const diff = o.received_qty === null ? null : o.received_qty - o.qty;
-              return (
-                <tr key={o.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2">{new Date(o.created_at).toLocaleString()}</td>
-                  <td className="px-3 py-2">{o.display_name}</td>
-                  <td className="px-3 py-2 text-slate-400 text-xs">{o.sku || "-"}</td>
-                  <td className="px-3 py-2">{o.to_store_id}</td>
-                  <td className="px-3 py-2">{o.qty}</td>
-                  <td className="px-3 py-2 font-medium">{o.received_qty ?? "-"}</td>
-                  <td className={`px-3 py-2 font-medium ${diff ? "text-red-600" : "text-slate-400"}`}>
-                    {diff === null ? "-" : diff === 0 ? "0" : diff > 0 ? `+${diff}` : diff}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[o.status]}`}>
-                      {t(`transferIn_status_${o.status}` as any)}
-                    </span>
-                    {o.discrepancy_note && (
-                      <div className="text-[10px] text-red-600 mt-0.5">{o.discrepancy_note}</div>
-                    )}
-                    {o.discrepancy_approved_by && (
-                      <div className="text-[10px] text-slate-400">{o.discrepancy_approved_by}</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{o.received_by || "-"}</td>
-                  <td className="px-3 py-2 text-right">
-                    {o.status === "discrepancy" && (
-                      <button onClick={async () => {
-                          setResolveRow(o);
-                          setResolution("miscount");
-                          setResolutionNote("");
-                          // The store's photo is the evidence this decision rests on
-                          setResolvePhoto(o.photo_url ? await getTransferPhotoUrl(o.photo_url) : null);
-                        }}
-                        className="text-blue-600 text-xs font-medium">
-                        {t("stockTransfer_resolve")}
-                      </button>
-                    )}
-                    {o.status === "resolved" && (
-                      <span className="text-xs text-slate-400">
-                        {t(`stockTransfer_res_${o.resolution}` as any)}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {!loading && filteredOutgoing.length === 0 && (
-              <tr><td colSpan={10} className="text-center text-slate-400 py-8">-</td></tr>
+            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {!loading && groupedOutgoing.map((g) => (
+              <tr key={g.ref} className="border-t border-slate-100">
+                <td className="px-3 py-2 font-mono text-xs">{g.ref}</td>
+                <td className="px-3 py-2">{new Date(g.created_at).toLocaleString()}</td>
+                <td className="px-3 py-2">{g.to_store_id}</td>
+                <td className="px-3 py-2">{g.lines.length}</td>
+                <td className="px-3 py-2 font-medium">{g.totalQty}</td>
+                <td className="px-3 py-2">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    g.status === "mixed" ? "bg-slate-100 text-slate-600" : statusColor[g.status]
+                  }`}>
+                    {g.status === "mixed"
+                      ? t("stockTransfer_statusMixed")
+                      : t(`transferIn_status_${g.status}` as any)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-slate-500 text-xs">{g.receivedBy || "-"}</td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={() => setViewNo(g.ref)} className="text-blue-600 text-xs font-medium">
+                    {t("stockTransfer_view")}
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!loading && groupedOutgoing.length === 0 && (
+              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {resolveRow && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
-            <h3 className="font-semibold text-lg mb-1">{t("stockTransfer_resolveTitle")}</h3>
-            <p className="text-sm text-slate-500 mb-1">
-              {resolveRow.display_name} → {resolveRow.to_store_id}
-            </p>
-            <p className="text-sm mb-4">
-              {t("transferIn_sent")}: {resolveRow.qty} · {t("transferIn_actual")}: {resolveRow.received_qty} ·{" "}
-              <span className="text-red-600 font-semibold">
-                {t("stockTransfer_missing")}: {Number(resolveRow.qty) - Number(resolveRow.received_qty ?? 0)}
-              </span>
+      {/* Lines behind one dispatch */}
+      {viewNo && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl shadow-lg my-8">
+            <h3 className="font-semibold text-lg mb-1 font-mono">{viewNo}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {viewLines[0]?.to_store_id} · {viewLines[0] && new Date(viewLines[0].created_at).toLocaleString()}
+              {viewLines[0]?.transferred_by ? ` · ${viewLines[0].transferred_by}` : ""}
             </p>
 
-            {resolveRow.discrepancy_note && (
-              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 mb-3">
-                <span className="text-slate-400 uppercase text-[10px] block">{t("transferIn_note")}</span>
-                {resolveRow.discrepancy_note}
-              </div>
-            )}
-
-            {resolvePhoto ? (
-              <button type="button" onClick={() => setZoomPhoto(resolvePhoto)} className="block w-full mb-3">
-                <img src={resolvePhoto} alt=""
-                  className="w-full max-h-48 object-cover rounded-lg border border-slate-200" />
-                <span className="text-[10px] text-slate-400">{t("transferIn_viewPhoto")}</span>
-              </button>
-            ) : (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
-                {t("stockTransfer_noPhoto")}
-              </div>
-            )}
-
-            <label className="text-sm text-slate-600">{t("stockTransfer_whatHappened")}</label>
-            <div className="space-y-2 mt-2 mb-3">
-              <label className="flex items-start gap-2 border border-slate-200 rounded-lg px-3 py-2 cursor-pointer">
-                <input type="radio" className="mt-1" checked={resolution === "miscount"}
-                  onChange={() => setResolution("miscount")} />
-                <span className="text-sm">
-                  <span className="font-medium">{t("stockTransfer_res_miscount")}</span>
-                  <span className="block text-xs text-slate-500">{t("stockTransfer_miscountHint")}</span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 border border-slate-200 rounded-lg px-3 py-2 cursor-pointer">
-                <input type="radio" className="mt-1" checked={resolution === "damaged"}
-                  onChange={() => setResolution("damaged")} />
-                <span className="text-sm">
-                  <span className="font-medium">{t("stockTransfer_res_damaged")}</span>
-                  <span className="block text-xs text-slate-500">{t("stockTransfer_damagedHint")}</span>
-                </span>
-              </label>
+            <div className="border border-slate-200 rounded-lg overflow-x-auto mb-4">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
+                    <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
+                    <th className="text-left px-3 py-2">{t("transferIn_sent")}</th>
+                    <th className="text-left px-3 py-2">{t("transferIn_actual")}</th>
+                    <th className="text-left px-3 py-2">{t("transferIn_diff")}</th>
+                    <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
+                    <th className="text-left px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewLines.map((o) => {
+                    const diff = o.received_qty === null ? null : o.received_qty - o.qty;
+                    return (
+                      <tr key={o.id} className="border-t border-slate-100">
+                        <td className="px-3 py-2">{o.display_name}</td>
+                        <td className="px-3 py-2 text-slate-400 text-xs">{o.sku || "-"}</td>
+                        <td className="px-3 py-2">{o.qty}</td>
+                        <td className="px-3 py-2 font-medium">{o.received_qty ?? "-"}</td>
+                        <td className={`px-3 py-2 font-medium ${diff ? "text-red-600" : "text-slate-400"}`}>
+                          {diff === null ? "-" : diff === 0 ? "0" : diff > 0 ? `+${diff}` : diff}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[o.status]}`}>
+                            {t(`transferIn_status_${o.status}` as any)}
+                          </span>
+                          {o.discrepancy_note && (
+                            <div className="text-[10px] text-red-600 mt-0.5">{o.discrepancy_note}</div>
+                          )}
+                          {o.discrepancy_approved_by && (
+                            <div className="text-[10px] text-slate-400">{o.discrepancy_approved_by}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {o.status === "discrepancy" && (
+                            <button onClick={async () => {
+                                setViewNo(null);
+                                setResolveRow(o);
+                                setResolution("miscount");
+                                setResolutionNote("");
+                                setResolvePhoto(o.photo_url ? await getTransferPhotoUrl(o.photo_url) : null);
+                              }}
+                              className="text-blue-600 text-xs font-medium">
+                              {t("stockTransfer_resolve")}
+                            </button>
+                          )}
+                          {o.status === "resolved" && (
+                            <span className="text-xs text-slate-400">
+                              {t(`stockTransfer_res_${o.resolution}` as any)}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            <label className="text-sm text-slate-600">{t("pos_note")}</label>
-            <textarea rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
-              value={resolutionNote} onChange={(e) => setResolutionNote(e.target.value)} />
-
-            <div className="flex gap-2">
-              <button onClick={() => setResolveRow(null)}
-                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
-                {t("products_cancel")}
-              </button>
-              <button onClick={submitResolution} disabled={resolving}
-                className="flex-1 py-2.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
-                {resolving ? "..." : t("stockTransfer_resolve")}
-              </button>
-            </div>
+            <button onClick={() => setViewNo(null)}
+              className="w-full py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+              {t("products_cancel")}
+            </button>
           </div>
-        </div>
-      )}
-
-      {zoomPhoto && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4"
-          onClick={() => setZoomPhoto(null)}>
-          <img src={zoomPhoto} alt="" className="max-h-[85vh] max-w-full rounded-lg" />
         </div>
       )}
 
