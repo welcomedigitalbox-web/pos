@@ -100,35 +100,71 @@ const ALL_KEYS: PageKey[] = [...ALL_KEYS_EXCEPT_ADMIN, "admin"];
 
 const COMMON_ALL_ROLES: PageKey[] = ["ai-agent", "profile"];
 
-// Built from PAGE_OPTIONS groups rather than hand-listed keys: a new page
-// lands in the right roles automatically, and "sale manager gets everything
-// on the sale side" stays true instead of drifting as pages are added.
-function pagesIn(...groups: PageGroup[]): PageKey[] {
-  return PAGE_OPTIONS.filter((p) => groups.includes(p.group)).map((p) => p.key);
-}
-
 export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> = {
-  // Tills work one screen at a time, so these stay an explicit short list.
-  cashier: [
-    "pos", "history", "returns", "cash-drawer", "customers",
-    "inventory", "stock-request", "incoming-transfers", "damage",
-    "barcode", "sales-performance",
+  cashier: ["pos", "inventory", "history", "returns", "cash-drawer", "customers", "sales-performance", ...COMMON_ALL_ROLES],
+  online_sale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
+  wholesale: ["sale-order", "history", "customers", "sales-performance", ...COMMON_ALL_ROLES],
+  sale_manager: [
+    "request-approval",
+    "pos",
+    "sale-order",
+    "history",
+        "customers",
+    "sales-reps",
+    "loyalty-tiers",
+    "sales-performance",
+    "products",
+    "inventory",
+    "stock-in",
+    "stock-request",
+    "damage",
+    "incoming-transfers",
+    "barcode",
+    "ledger",
+    "sales-performance",
+    "warehouse",
+    "stock-transfer",
+    "request-inbox",
+    "goods-received",
+    "warehouse-history",
+    "dashboard",
+    "sales-report",
+    "campaigns",
+    "settlements",
+    "my-pin",
+    "product-category",
+    "product-variant",
+    "purchase-orders",
+    "suppliers",
     ...COMMON_ALL_ROLES,
   ],
-  online_sale: [
-    "sale-order", "history", "order-lookup", "customers",
-    "inventory", "warehouse", "sales-performance",
-    ...COMMON_ALL_ROLES,
-  ],
-  wholesale: [
-    "sale-order", "history", "customers", "inventory", "sales-performance",
-    ...COMMON_ALL_ROLES,
-  ],
-
-  // Whole-department roles: everything in their own area, plus reports.
-  sale_manager: [...pagesIn("sale", "reports"), ...COMMON_ALL_ROLES],
   manager: [
-    ...pagesIn("sale", "inventory", "warehouse", "merchandising", "reports"),
+    "request-approval",
+    "pos",
+    "history",
+    "returns",
+    "cash-drawer",
+    "customers",
+    "sales-reps",
+    "products",
+    "inventory",
+    "stock-in",
+    "stock-request",
+    "damage",
+    "incoming-transfers",
+    "barcode",
+    "ledger",
+    "sales-performance",
+    "warehouse",
+    "stock-transfer",
+    "request-inbox",
+    "goods-received",
+    "warehouse-history",
+    "dashboard",
+    "product-category",
+    "product-variant",
+    "purchase-orders",
+    "suppliers",
     ...COMMON_ALL_ROLES,
   ],
   owner: ALL_KEYS_EXCEPT_ADMIN,
