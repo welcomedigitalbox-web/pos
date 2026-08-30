@@ -33,6 +33,14 @@ export default function AdminUsersPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("cashier");
   const [store, setStore] = useState("");
+  // Approval routing reads these: who you report to, which department you
+  // head, and which branches you cover. Without them can_approve_for()
+  // has nothing to go on.
+  const [department, setDepartment] = useState("");
+  const [reportsTo, setReportsTo] = useState("");
+  const [isDeptHead, setIsDeptHead] = useState(false);
+  const [scopeStores, setScopeStores] = useState<string[]>([]);
+  const [channels, setChannels] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<string[]>(DEFAULT_PERMISSIONS.cashier);
   const [saving, setSaving] = useState(false);
 
@@ -64,6 +72,11 @@ export default function AdminUsersPage() {
     setPassword("");
     setRole("cashier");
     setStore(stores[0]?.id || "");
+    setDepartment("sale");
+    setReportsTo("");
+    setIsDeptHead(false);
+    setScopeStores([]);
+    setChannels([]);
     setPermissions(DEFAULT_PERMISSIONS.cashier);
     setShowForm(true);
   }
@@ -74,6 +87,10 @@ export default function AdminUsersPage() {
     setPassword("");
     setRole(u.role);
     setStore(u.store_id);
+    setDepartment((u as any).department || "");
+    setReportsTo((u as any).reports_to || "");
+    setIsDeptHead(!!(u as any).is_dept_head);
+    loadScope(u.id);
     setPermissions(u.permissions || []);
     setShowForm(true);
   }
@@ -107,6 +124,32 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function loadScope(userId: string) {
+    const [{ data: st }, { data: ch }] = await Promise.all([
+      supabase.from("user_stores").select("store_id").eq("user_id", userId),
+      supabase.from("user_channels").select("channel").eq("user_id", userId),
+    ]);
+    setScopeStores(((st as any[]) || []).map((r) => r.store_id));
+    setChannels(((ch as any[]) || []).map((r) => r.channel));
+  }
+
+  // Replace rather than merge: the checkboxes are the whole truth about
+  // this person's scope, so a box cleared here must clear the row.
+  async function saveScope(userId: string) {
+    await supabase.from("user_stores").delete().eq("user_id", userId);
+    if (scopeStores.length) {
+      await supabase.from("user_stores").insert(
+        scopeStores.map((store_id) => ({ user_id: userId, store_id }))
+      );
+    }
+    await supabase.from("user_channels").delete().eq("user_id", userId);
+    if (channels.length) {
+      await supabase.from("user_channels").insert(
+        channels.map((channel) => ({ user_id: userId, channel }))
+      );
+    }
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -114,8 +157,14 @@ export default function AdminUsersPage() {
       if (editingUser) {
         const { error } = await supabase
           .from("profiles")
-          .update({ role, store_id: store, permissions })
+          .update({
+            role, store_id: store, permissions,
+            department: department || null,
+            reports_to: reportsTo || null,
+            is_dept_head: isDeptHead,
+          })
           .eq("id", editingUser.id);
+        await saveScope(editingUser.id);
         if (error) throw error;
         showToast(t("admin_userUpdated"));
       } else {
@@ -239,12 +288,91 @@ export default function AdminUsersPage() {
               value={store}
               onChange={(e) => setStore(e.target.value)}
             >
+              <option value="">—</option>
               {stores.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
             </select>
+
+            <label className="text-sm text-slate-600">{t("admin_department")}</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+            >
+              <option value="">—</option>
+              {["sale", "merchandising", "warehouse", "finance", "marketing"].map((d) => (
+                <option key={d} value={d}>{t(`admin_dept_${d}` as any)}</option>
+              ))}
+            </select>
+
+            <label className="text-sm text-slate-600">{t("admin_reportsTo")}</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
+              value={reportsTo}
+              onChange={(e) => setReportsTo(e.target.value)}
+            >
+              <option value="">—</option>
+              {users
+                .filter((u) => !editingUser || u.id !== editingUser.id)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.email} ({t(`admin_role_${u.role}` as any)})
+                  </option>
+                ))}
+            </select>
+
+            <label className="flex items-center gap-2 text-sm mb-3">
+              <input
+                type="checkbox"
+                checked={isDeptHead}
+                onChange={(e) => setIsDeptHead(e.target.checked)}
+              />
+              {t("admin_isDeptHead")}
+            </label>
+
+            {/* A head may cover several branches; a till belongs to one. */}
+            <label className="text-sm text-slate-600 block mb-2">{t("admin_storeScope")}</label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {stores.map((s) => (
+                <label key={s.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={scopeStores.includes(s.id)}
+                    onChange={() =>
+                      setScopeStores(
+                        scopeStores.includes(s.id)
+                          ? scopeStores.filter((x) => x !== s.id)
+                          : [...scopeStores, s.id]
+                      )
+                    }
+                  />
+                  {s.name}
+                </label>
+              ))}
+            </div>
+
+            <label className="text-sm text-slate-600 block mb-2">{t("admin_channelScope")}</label>
+            <div className="flex gap-4 mb-3">
+              {["pos", "online", "wholesale"].map((c) => (
+                <label key={c} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={channels.includes(c)}
+                    onChange={() =>
+                      setChannels(
+                        channels.includes(c)
+                          ? channels.filter((x) => x !== c)
+                          : [...channels, c]
+                      )
+                    }
+                  />
+                  {t(`admin_channel_${c}` as any)}
+                </label>
+              ))}
+            </div>
 
             {role !== "admin" && (
               <>
