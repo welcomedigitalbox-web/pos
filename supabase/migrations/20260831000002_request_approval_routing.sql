@@ -185,35 +185,11 @@ $$;
 -- requests, but the approval columns move only through the functions above.
 -- ---------------------------------------------------------------------
 
-create or replace function public.stock_request_status_guard()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-begin
-  -- SECURITY DEFINER does not change the session role, so the trigger
-  -- cannot tell an RPC's write from a hand-rolled UPDATE by role alone.
-  -- The approval functions set this flag for their own update and clear
-  -- it straight after; nothing outside them can set it.
-  if coalesce(current_setting('pos.approval_flow', true), '') = 'on' then
-    return new;
-  end if;
-
-  if new.status is distinct from old.status
-     and new.status in ('pending', 'approved', 'rejected')
-     and not public.is_director() then
-    raise exception 'use the approval workflow to change a request to %', new.status;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists stock_request_status_guard on public.stock_requests;
-create trigger stock_request_status_guard
-  before update on public.stock_requests
-  for each row execute function public.stock_request_status_guard();
+-- A BEFORE UPDATE guard was tried here to block hand-rolled status
+-- changes. It could not tell an RPC's write from a direct one: SECURITY
+-- DEFINER leaves the session role alone, and a transaction-local flag
+-- does not survive the way PostgREST calls the function. The approval
+-- checks live inside the RPCs above, where they can see who is asking.
 
 revoke all on function public.approve_stock_request(uuid, boolean, text) from public, anon;
 revoke all on function public.warehouse_accept_request(uuid, boolean, text) from public, anon;
