@@ -15,9 +15,11 @@ as $$
   -- Department heads and above. 'manager' predates the split into one
   -- head per department and is kept so any row still carrying it works.
   select p_role in (
+    -- Only the sale side signs off at the till. A warehouse or finance
+    -- head outranks a cashier but has no business discounting a sale, and
+    -- the PIN check has no store to test them against.
     'admin', 'owner', 'operation_director',
-    'sale_manager', 'merchandising_manager', 'warehouse_manager',
-    'finance_manager', 'marketing_manager',
+    'sale_manager',
     'manager'
   );
 $$;
