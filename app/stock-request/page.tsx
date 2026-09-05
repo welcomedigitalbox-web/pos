@@ -363,7 +363,10 @@ export default function StockRequestPage() {
                 <td className="px-3 py-2">
                   {new Date(r.created_at).toLocaleString()}
                   {r.request_no && (
-                    <div className="text-[10px] text-slate-400 font-mono">{r.request_no}</div>
+                    <a href={`/stock-request/${encodeURIComponent(r.request_no)}`}
+                      className="text-[10px] text-blue-600 font-mono hover:underline">
+                      {r.request_no}
+                    </a>
                   )}
                 </td>
                 <td className="px-3 py-2">
