@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
