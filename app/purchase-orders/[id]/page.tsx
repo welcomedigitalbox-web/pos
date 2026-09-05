@@ -10,7 +10,7 @@ import {
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
 import { useLanguage } from "../../language-context";
-import { hasPermission, isManagerTier, APPROVER_ROLES } from "../../permissions";
+import { hasPermission, APPROVER_ROLES } from "../../permissions";
 
 function fmt(n: number) {
   return n.toLocaleString() + " MMK";
@@ -264,8 +264,17 @@ export default function PoDetailPage() {
     }
   }
 
-  const canApprovePo =
-    isManagerTier(profile?.role);
+  // Buying is merchandising's call, so its head signs the order off -
+  // not whichever manager happens to be looking at the screen. The RPC
+  // behind the button is the check that counts; this only hides it.
+  const [canApprovePo, setCanApprovePo] = useState(false);
+  useEffect(() => {
+    let live = true;
+    supabase
+      .rpc("can_approve_dept", { p_department: "merchandising" })
+      .then(({ data }) => { if (live) setCanApprovePo(!!data); });
+    return () => { live = false; };
+  }, [profile?.id]);
 
   function openHeaderEdit() {
     if (!po) return;
