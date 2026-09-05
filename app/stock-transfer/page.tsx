@@ -69,6 +69,11 @@ export default function StockTransferPage() {
   const [bulkQty, setBulkQty] = useState("");
   const [bulkBarcode, setBulkBarcode] = useState("");
   const [viewNo, setViewNo] = useState<string | null>(null);
+  // A dispatch the warehouse raised itself sits at pending_approval until
+  // the head releases it; these track that decision.
+  const [releaseBusy, setReleaseBusy] = useState<string | null>(null);
+  const [releaseRejectNo, setReleaseRejectNo] = useState<string | null>(null);
+  const [releaseReason, setReleaseReason] = useState("");
   const [refSearch, setRefSearch] = useState("");
   const idemRef = useRef<string>("");
   const [sending, setSending] = useState(false);
@@ -249,6 +254,26 @@ export default function StockTransferPage() {
       showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function releaseTransfer(ref: string, reject = false) {
+    setReleaseBusy(ref);
+    try {
+      const { error } = await supabase.rpc("approve_transfer", {
+        p_transfer_no: ref,
+        p_reject: reject,
+        p_reason: reject ? releaseReason.trim() || null : null,
+      });
+      if (error) throw error;
+      setReleaseRejectNo(null);
+      setReleaseReason("");
+      showToast(reject ? t("returns_status_rejected") : t("warehouseTransfer_sent"));
+      await load();
+    } catch (err) {
+      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setReleaseBusy(null);
     }
   }
 
@@ -545,7 +570,22 @@ export default function StockTransferPage() {
                   </span>
                 </td>
                 <td className="px-3 py-2 text-slate-500 text-xs">{g.receivedBy || "-"}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {g.status === "pending_approval" && (
+                    <>
+                      <button onClick={() => releaseTransfer(g.ref)}
+                        disabled={releaseBusy === g.ref}
+                        className="text-green-700 text-xs font-medium mr-3">
+                        {releaseBusy === g.ref ? "…" : t("stockRequest_approve")}
+                      </button>
+                      <button
+                        onClick={() => { setReleaseRejectNo(g.ref); setReleaseReason(""); }}
+                        disabled={releaseBusy === g.ref}
+                        className="text-red-600 text-xs font-medium mr-3">
+                        {t("returns_reject")}
+                      </button>
+                    </>
+                  )}
                   <button onClick={() => setViewNo(g.ref)} className="text-blue-600 text-xs font-medium">
                     {t("stockTransfer_view")}
                   </button>
@@ -560,6 +600,30 @@ export default function StockTransferPage() {
       </div>
 
       {/* Lines behind one dispatch */}
+      {releaseRejectNo && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1 font-mono">{releaseRejectNo}</h3>
+            <p className="text-sm text-slate-500 mb-4">{t("returns_reasonRequired")}</p>
+            <input autoFocus
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+              value={releaseReason}
+              onChange={(e) => setReleaseReason(e.target.value)} />
+            <div className="flex gap-2">
+              <button onClick={() => setReleaseRejectNo(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={() => releaseTransfer(releaseRejectNo, true)}
+                disabled={!releaseReason.trim() || releaseBusy === releaseRejectNo}
+                className="flex-1 py-2.5 bg-red-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {t("returns_reject")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewNo && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl p-6 w-full max-w-3xl shadow-lg my-8">
