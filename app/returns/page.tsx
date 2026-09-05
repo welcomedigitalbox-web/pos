@@ -544,10 +544,12 @@ export default function ReturnsPage() {
         });
       }
 
-      await supabase
-        .from("sale_returns")
-        .update({ status: "approved", approved_by: approvedBy, approved_at: new Date().toISOString() })
-        .eq("id", reviewRow.id);
+      // The RPC checks the approver against the selling store's reporting
+      // line; a direct update to these columns is refused.
+      const { error: apprErr } = await supabase.rpc("approve_sale_return", {
+        p_return_id: reviewRow.id,
+      });
+      if (apprErr) throw apprErr;
 
       await logActivity({
         entityType: "sale_return",
@@ -669,10 +671,12 @@ export default function ReturnsPage() {
 
   async function rejectReturn() {
     if (!reviewRow || !rejectReason.trim()) return showToast(t("returns_rejectReasonRequired"));
-    await supabase
-      .from("sale_returns")
-      .update({ status: "rejected", approved_by: profile?.email || null, rejected_reason: rejectReason.trim() })
-      .eq("id", reviewRow.id);
+    const { error: rejErr } = await supabase.rpc("approve_sale_return", {
+      p_return_id: reviewRow.id,
+      p_reject: true,
+      p_reason: rejectReason.trim(),
+    });
+    if (rejErr) return showToast("\u274c " + rejErr.message);
     await logActivity({
       entityType: "sale_return", entityId: reviewRow.id, action: "rejected",
       detail: rejectReason.trim(), actor: profile?.email,
