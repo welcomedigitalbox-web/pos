@@ -33,6 +33,9 @@ export default function DamagePage() {
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  // A breakage usually covers several items at once; the lines are held
+  // here until the whole report goes in under one number.
+  const [draftLines, setDraftLines] = useState<{ key: string; qty: number; reason: string }[]>([]);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "damage")) router.replace("/");
@@ -67,63 +70,61 @@ export default function DamagePage() {
     setTimeout(() => setToast(""), 3000);
   }
 
-  async function submitDamage(e: React.FormEvent) {
-    e.preventDefault();
+  function addLine() {
     const item = items.find((i) => i.key === itemKey);
     const qtyNum = Number(qty);
     if (!item) return showToast(t("stockIn_selectProduct"));
     if (!qtyNum || qtyNum <= 0) return showToast(t("stockRequest_qtyInvalid"));
     if (qtyNum > item.stock_qty) return showToast(t("damage_notEnoughStock"));
+    if (draftLines.find((l) => l.key === item.key)) {
+      return showToast(t("warehouseTransfer_lineExists"));
+    }
+    setDraftLines([...draftLines, { key: item.key, qty: qtyNum, reason: reason.trim() }]);
+    setItemKey(""); setQty(""); setReason("");
+  }
+
+  async function submitDamage(e: React.FormEvent) {
+    e.preventDefault();
+
+    // Whatever is still in the picker counts as a line, so a single-item
+    // report does not need the add button pressed first.
+    const lines = [...draftLines];
+    const pending = items.find((i) => i.key === itemKey);
+    const pendingQty = Number(qty);
+    if (pending && pendingQty > 0 && !lines.find((l) => l.key === pending.key)) {
+      if (pendingQty > pending.stock_qty) return showToast(t("damage_notEnoughStock"));
+      lines.push({ key: pending.key, qty: pendingQty, reason: reason.trim() });
+    }
+    if (!lines.length) return showToast(t("stockIn_selectProduct"));
 
     setSaving(true);
     try {
-      const { error: insertErr } = await supabase.from("stock_damages").insert({
-        store_id: storeId,
-        product_id: item.product_id,
-        variant_id: item.variant_id,
-        qty: qtyNum,
-        reason: reason.trim() || null,
-        reported_by: profile?.email || null,
+      // The RPC takes the stock off, walks the batches oldest-expiry first
+      // and files the report awaiting approval, all in one transaction.
+      const payload = lines.map((l) => {
+        const it = items.find((i) => i.key === l.key)!;
+        return {
+          product_id: it.product_id,
+          variant_id: it.variant_id || "",
+          qty: l.qty,
+          reason: l.reason || null,
+        };
       });
-      if (insertErr) throw insertErr;
 
-      const newStock = item.stock_qty - qtyNum;
-      await upsertStoreInventory(storeId, item.product_id, item.variant_id, { stock_qty: newStock });
+      const { data, error } = await supabase.rpc("report_damage", {
+        p_store_id: storeId,
+        p_lines: payload,
+        p_note: null,
+      });
+      if (error) throw error;
 
-      // FEFO deduction from this variant's batches only
-      let batchQuery = supabase
-        .from("stock_purchases")
-        .select("id, remaining_qty")
-        .eq("product_id", item.product_id)
-        .eq("store_id", storeId)
-        .gt("remaining_qty", 0);
-      batchQuery = item.variant_id
-        ? batchQuery.eq("variant_id", item.variant_id)
-        : batchQuery.is("variant_id", null);
-      const { data: batches } = await batchQuery
-        .order("expiry_date", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: true });
-
-      let remainingToDeduct = qtyNum;
-      for (const batch of batches || []) {
-        if (remainingToDeduct <= 0) break;
-        const deductFromBatch = Math.min(batch.remaining_qty, remainingToDeduct);
-        await supabase
-          .from("stock_purchases")
-          .update({ remaining_qty: batch.remaining_qty - deductFromBatch })
-          .eq("id", batch.id);
-        remainingToDeduct -= deductFromBatch;
-      }
-
-      showToast(t("damage_recorded"));
-      setItemKey("");
-      setQty("");
-      setReason("");
+      showToast(`${t("damage_recorded")} \u00b7 ${data}`);
+      setDraftLines([]); setItemKey(""); setQty(""); setReason("");
       await loadItems();
       await loadHistory();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      showToast("❌ " + message);
+      showToast("\u274c " + message);
     } finally {
       setSaving(false);
     }
@@ -166,6 +167,32 @@ export default function DamagePage() {
             onChange={(e) => setReason(e.target.value)}
             placeholder={t("damage_reasonPlaceholder")}
           />
+            <button type="button" onClick={addLine}
+              className="w-full py-2 border border-slate-200 rounded-lg text-sm font-medium mb-3">
+              + {t("warehouseTransfer_addLine")}
+            </button>
+
+            {draftLines.length > 0 && (
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mb-3">
+                {draftLines.map((l) => {
+                  const it = items.find((i) => i.key === l.key);
+                  return (
+                    <div key={l.key} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="truncate">{it?.display_name || l.key}</span>
+                      <span className="flex items-center gap-3 shrink-0">
+                        <span className="font-medium">{l.qty}</span>
+                        <button type="button"
+                          onClick={() => setDraftLines(draftLines.filter((x) => x.key !== l.key))}
+                          className="text-red-600 text-xs">
+                          {t("products_cancel")}
+                        </button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
 
           <button
             type="submit"
