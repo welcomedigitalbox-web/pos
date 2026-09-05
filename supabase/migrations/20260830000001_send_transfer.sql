@@ -70,6 +70,7 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
+  v_status      text;
   v_line        jsonb;
   v_product_id  uuid;
   v_variant_id  uuid;
@@ -147,6 +148,13 @@ begin
     end if;
   end loop;
 
+  -- A dispatch the warehouse starts itself is the one worth watching, so
+  -- it waits at pending_approval unless the head is the one raising it.
+  v_status := case
+    when public.can_approve_dept('warehouse') then 'in_transit'
+    else 'pending_approval'
+  end;
+
   v_no := public.next_transfer_ref(p_from_store);
 
   -- Everything checked out; now move it.
@@ -173,7 +181,7 @@ begin
     )
     values (
       v_product_id, v_variant_id, p_from_store, p_to_store,
-      v_qty, 'in_transit',
+      v_qty, v_status,
       (select email from public.profiles where id = auth.uid()),
       coalesce(v_inv.avg_cost, 0), v_no, p_idempotency_key
     );
