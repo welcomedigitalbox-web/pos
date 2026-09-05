@@ -586,9 +586,10 @@ export default function StockTransferPage() {
                       </button>
                     </>
                   )}
-                  <button onClick={() => setViewNo(g.ref)} className="text-blue-600 text-xs font-medium">
+                  <a href={`/stock-transfer/${encodeURIComponent(g.ref)}`}
+                    className="text-blue-600 text-xs font-medium">
                     {t("stockTransfer_view")}
-                  </button>
+                  </a>
                 </td>
               </tr>
             ))}
