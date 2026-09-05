@@ -103,7 +103,7 @@ export default function TransferDetailPage() {
   if (!lines.length) {
     return (
       <div className="pt-8 text-center">
-        <p className="text-sm text-slate-500 mb-4">{t("orderLookup_notFound")}</p>
+        <p className="text-sm text-slate-500 mb-4">{header?.transfer_no || decodeURIComponent(transferNo)}</p>
         <button onClick={() => router.back()} className="text-blue-600 text-sm font-medium">
           {t("products_cancel")}
         </button>
