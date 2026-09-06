@@ -388,6 +388,20 @@ export default function StockRequestPage() {
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[r.status]}`}>
                     {t(`stockRequest_status_${r.status}` as any)}
                   </span>
+
+                  {/* A rejected request is only useful if the shop can see why -
+
+                      otherwise it asks again for the same thing. */}
+
+                  {(r.rejected_reason || (r as any).reject_reason) && (
+
+                    <div className="text-[10px] text-red-600 mt-0.5">
+
+                      {r.rejected_reason || (r as any).reject_reason}
+
+                    </div>
+
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">
                   {r.status === "awaiting_approval" && (
