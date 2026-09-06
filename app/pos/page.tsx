@@ -8,7 +8,7 @@ import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { hasPermission } from "../permissions";
 import { tierDiscountPercent } from "../loyalty";
-import Receipt, { ReceiptData } from "./receipt";
+import Receipt, { ReceiptData } from "../receipt";
 
 type CartItem = {
   key: string; // productId:variantId — one cart line per sellable item
