@@ -345,7 +345,9 @@ export default function RequestInboxPage() {
   }
 
   const visible = useMemo(
-    () => (statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter)),
+    () => (statusFilter === "all" ? rows
+      : statusFilter === "sent" ? rows.filter((r) => r.status === "sent" || r.status === "received")
+      : rows.filter((r) => r.status === statusFilter)),
     [rows, statusFilter]
   );
 
@@ -366,7 +368,10 @@ export default function RequestInboxPage() {
 
     const n = { pending: 0, approved: 0, sent: 0, received: 0, rejected: 0 } as Record<string, number>;
 
-    for (const st of byRef.values()) if (st in n) n[st] += 1;
+    for (const st of byRef.values()) {
+    if (st === 'received') n.sent += 1;
+    else if (st in n) n[st] += 1;
+  }
 
     return n;
 
