@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
-import { useStore } from "./store-context";
-import { useLanguage } from "./language-context";
-import { useAuth } from "./auth-context";
+import { useStore } from "../store-context";
+import { useLanguage } from "../language-context";
+import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
-import { hasPermission } from "./permissions";
-import { tierDiscountPercent } from "./loyalty";
+import { hasPermission } from "../permissions";
+import { tierDiscountPercent } from "../loyalty";
 import Receipt, { ReceiptData } from "./receipt";
 
 type CartItem = {
