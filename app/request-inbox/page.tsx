@@ -64,7 +64,7 @@ export default function RequestInboxPage() {
   const [damageRejectId, setDamageRejectId] = useState<string | null>(null);
   const [damageRejectReason, setDamageRejectReason] = useState("");
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("pending");
   // The head accepts a request into the picking queue; the staff who pick
   // it see only what has been accepted. One person is often both, and then
   // the two steps happen back to back on this screen.
@@ -325,6 +325,25 @@ export default function RequestInboxPage() {
 
   // filling the list with an entry per product.
 
+  // Counted over every request, not the filtered view, so the tab
+
+  // labels stay true whichever one is open.
+
+  const statusCounts = useMemo(() => {
+
+    const byRef = new Map<string, string>();
+
+    for (const r of rows) byRef.set((r as any).request_no || r.id, r.status);
+
+    const n = { pending: 0, approved: 0, received: 0, rejected: 0 } as Record<string, number>;
+
+    for (const st of byRef.values()) if (st in n) n[st] += 1;
+
+    return n;
+
+  }, [rows]);
+
+
   const groupedRows = useMemo(() => {
 
     const byRef = new Map<string, typeof visible>();
@@ -390,6 +409,37 @@ export default function RequestInboxPage() {
 
       {tab === "requests" ? (
         <>
+
+
+        {/* Second row: which stage of the queue. */}
+
+        <div className="flex gap-1 mb-4">
+
+          {([["pending", t("requestInbox_tabWaiting")],
+
+             ["approved", t("toSend_title")],
+
+             ["received", t("requestInbox_tabDone")],
+
+             ["rejected", t("returns_status_rejected")]] as const).map(([k, label]) => (
+
+            <button key={k} onClick={() => setStatusFilter(k)}
+
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+
+                statusFilter === k ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+
+              }`}>
+
+              {label}
+
+              {statusCounts[k] > 0 && <span className="ml-1 text-xs">({statusCounts[k]})</span>}
+
+            </button>
+
+          ))}
+
+        </div>
       <div className="flex flex-wrap gap-2 mb-4">
         {warehouses.length > 1 && (
           <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
@@ -397,13 +447,6 @@ export default function RequestInboxPage() {
             {warehouses.map((w) => <option key={w.id} value={w.id}>🏭 {w.name}</option>)}
           </select>
         )}
-        <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-          value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="pending">{t("returns_status_pending")}</option>
-          <option value="all">{t("warehouse_allStock")}</option>
-          <option value="approved">{t("requestInbox_sentStatus")}</option>
-          <option value="rejected">{t("returns_status_rejected")}</option>
-        </select>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
