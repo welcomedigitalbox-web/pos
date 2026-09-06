@@ -445,7 +445,7 @@ export default function RequestInboxPage() {
                     }`}>
                       {g.status === "mixed"
                         ? t("stockTransfer_statusMixed")
-                        : g.status === "approved" ? t("requestInbox_sentStatus") : g.status}
+                        : g.status === "approved" ? t("stockRequest_approved") : g.status}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{g.requested_by || "-"}</td>

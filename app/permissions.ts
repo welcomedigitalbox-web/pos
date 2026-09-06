@@ -21,6 +21,7 @@ export type PageKey =
   | "stock-transfer"
   | "request-approval"
   | "request-inbox"
+  | "to-send"
   | "goods-received"
   | "warehouse-history"
   | "dashboard"
@@ -76,6 +77,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "goods-received", href: "/goods-received", labelKey: "nav_goodsReceived", group: "warehouse" },
   { key: "request-approval", href: "/request-approval", labelKey: "nav_requestApproval", group: "sale" },
   { key: "request-inbox", href: "/request-inbox", labelKey: "nav_requestInbox", group: "warehouse" },
+  { key: "to-send", href: "/to-send", labelKey: "toSend_title", group: "warehouse" },
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
   { key: "ledger", href: "/stock-ledger", labelKey: "nav_ledger", group: "warehouse" },
@@ -143,7 +145,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     ...COMMON_ALL_ROLES,
   ],
   warehouse_staff: [
-    "warehouse", "stock-transfer", "request-inbox", "goods-received",
+    "warehouse", "stock-transfer", "request-inbox", "to-send", "goods-received",
     "warehouse-history", "ledger", "inventory", "stock-in", "barcode",
     "incoming-transfers", "damage",
     ...COMMON_ALL_ROLES,
