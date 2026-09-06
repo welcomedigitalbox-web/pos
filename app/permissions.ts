@@ -56,7 +56,7 @@ export type UserRole =
 export type PageGroup = "sale" | "inventory" | "warehouse" | "merchandising" | "reports" | "ai-agent" | "profile";
 
 export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group: PageGroup }[] = [
-  { key: "pos", href: "/", labelKey: "nav_pos", group: "sale" },
+  { key: "pos", href: "/pos", labelKey: "nav_pos", group: "sale" },
   { key: "sale-order", href: "/sale-order", labelKey: "nav_saleOrder", group: "sale" },
   { key: "history", href: "/history", labelKey: "nav_history", group: "sale" },
   { key: "order-lookup", href: "/order-lookup", labelKey: "nav_orderLookup", group: "sale" },
