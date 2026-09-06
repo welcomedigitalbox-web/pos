@@ -292,12 +292,13 @@ export default function RequestInboxPage() {
         .single();
       if (error) throw error;
 
-      // The warehouse head accepts the job; the RPC checks the
-      // department and records who accepted it.
-      const { error: acceptErr } = await supabase.rpc("warehouse_accept_request", {
-        p_request_id: sendRow.id,
-      });
-      if (acceptErr) throw acceptErr;
+      // Acceptance already happened when the head moved this request to
+      // approved; sending is the picking that follows, not a second
+      // sign-off. Calling the RPC again here refused the send outright.
+      await supabase
+        .from("stock_requests")
+        .update({ received_qty: qty })
+        .eq("id", sendRow.id);
 
       await logActivity({
         entityType: "stock_transfer",
