@@ -71,6 +71,11 @@ export default function RequestInboxPage() {
   const [canApproveWarehouse, setCanApproveWarehouse] = useState(false);
   const [acceptBusy, setAcceptBusy] = useState<string | null>(null);
   const [openRef, setOpenRef] = useState<string | null>(null);
+  // Rejecting without a reason leaves the shop to guess, and it will just
+  // ask again for the same thing.
+  const [acceptRejectRef, setAcceptRejectRef] = useState<string | null>(null);
+  const [acceptRejectLines, setAcceptRejectLines] = useState<any[]>([]);
+  const [acceptRejectReason, setAcceptRejectReason] = useState("");
   const [toast, setToast] = useState("");
 
   const [sendRow, setSendRow] = useState<RequestRow | null>(null);
@@ -112,17 +117,19 @@ export default function RequestInboxPage() {
 
   // Accepting covers every line filed under the same number, because that
   // is the unit the store asked in and the unit the head answers.
-  async function acceptRequest(ref: string, lines: any[], reject = false) {
+  async function acceptRequest(ref: string, lines: any[], reject = false, reason: string | null = null) {
     setAcceptBusy(ref);
     try {
       for (const l of lines) {
         const { error } = await supabase.rpc("warehouse_accept_request", {
           p_request_id: l.id,
           p_reject: reject,
-          p_reason: null,
+          p_reason: reason,
         });
         if (error) throw error;
       }
+      setAcceptRejectRef(null);
+      setAcceptRejectReason("");
       showToast(reject ? t("returns_status_rejected") : t("stockRequest_approved"));
       await load();
     } catch (err) {
@@ -452,7 +459,11 @@ export default function RequestInboxPage() {
                           className="text-green-700 text-xs font-medium">
                           {acceptBusy === g.ref ? "…" : t("stockRequest_approve")}
                         </button>
-                        <button onClick={() => acceptRequest(g.ref, g.lines, true)}
+                        <button onClick={() => {
+                            setAcceptRejectRef(g.ref);
+                            setAcceptRejectLines(g.lines);
+                            setAcceptRejectReason("");
+                          }}
                           disabled={acceptBusy === g.ref}
                           className="text-red-600 text-xs font-medium">
                           {t("returns_reject")}
@@ -565,6 +576,79 @@ export default function RequestInboxPage() {
           ))}
         </div>
       )}
+
+
+      {acceptRejectRef && (
+
+
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+
+
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+
+
+            <h3 className="font-semibold text-lg mb-1 font-mono">{acceptRejectRef}</h3>
+
+
+            <p className="text-sm text-slate-500 mb-4">{t("requestInbox_rejectReasonRequired")}</p>
+
+
+            <input autoFocus
+
+
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+
+
+              value={acceptRejectReason}
+
+
+              onChange={(e) => setAcceptRejectReason(e.target.value)} />
+
+
+            <div className="flex gap-2">
+
+
+              <button onClick={() => setAcceptRejectRef(null)}
+
+
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+
+
+                {t("products_cancel")}
+
+
+              </button>
+
+
+              <button
+
+
+                onClick={() => acceptRequest(acceptRejectRef, acceptRejectLines, true, acceptRejectReason.trim())}
+
+
+                disabled={!acceptRejectReason.trim() || acceptBusy === acceptRejectRef}
+
+
+                className="flex-1 py-2.5 bg-red-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+
+
+                {t("returns_reject")}
+
+
+              </button>
+
+
+            </div>
+
+
+          </div>
+
+
+        </div>
+
+
+      )}
+
 
 
       {sendRow && (
