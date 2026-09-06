@@ -78,7 +78,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "request-inbox", href: "/request-inbox", labelKey: "nav_requestInbox", group: "warehouse" },
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
-  { key: "ledger", href: "/ledger", labelKey: "nav_ledger", group: "warehouse" },
+  { key: "ledger", href: "/stock-ledger", labelKey: "nav_ledger", group: "warehouse" },
   { key: "product-category", href: "/product-category", labelKey: "nav_productCategory", group: "merchandising" },
   { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "merchandising" },
   { key: "purchase-orders", href: "/purchase-orders", labelKey: "nav_purchaseOrders", group: "merchandising" },
