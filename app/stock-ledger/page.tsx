@@ -127,7 +127,7 @@ export default function StockLedgerPage() {
     <div className="pt-4">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h2 className="font-semibold text-lg">{t("nav_stockLedger")}</h2>
+          <h2 className="font-semibold text-lg">{t("nav_ledger")}</h2>
           <p className="text-sm text-slate-500">{t("stockLedger_subtitle")}</p>
         </div>
         <button
