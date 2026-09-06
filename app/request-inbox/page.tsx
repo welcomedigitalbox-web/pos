@@ -295,10 +295,13 @@ export default function RequestInboxPage() {
       // Acceptance already happened when the head moved this request to
       // approved; sending is the picking that follows, not a second
       // sign-off. Calling the RPC again here refused the send outright.
-      await supabase
-        .from("stock_requests")
-        .update({ received_qty: qty })
-        .eq("id", sendRow.id);
+      // Closing the line is what stops a second press from sending the
+      // same goods again: the RPC checks the status under a lock.
+      const { error: sentErr } = await supabase.rpc("mark_request_sent", {
+        p_request_id: sendRow.id,
+        p_qty: qty,
+      });
+      if (sentErr) throw sentErr;
 
       await logActivity({
         entityType: "stock_transfer",
@@ -361,7 +364,7 @@ export default function RequestInboxPage() {
 
     for (const r of rows) byRef.set((r as any).request_no || r.id, r.status);
 
-    const n = { pending: 0, approved: 0, received: 0, rejected: 0 } as Record<string, number>;
+    const n = { pending: 0, approved: 0, sent: 0, received: 0, rejected: 0 } as Record<string, number>;
 
     for (const st of byRef.values()) if (st in n) n[st] += 1;
 
@@ -445,7 +448,7 @@ export default function RequestInboxPage() {
 
              ["approved", t("toSend_title")],
 
-             ["received", t("requestInbox_tabDone")],
+             ["sent", t("requestInbox_tabDone")],
 
              ["rejected", t("returns_status_rejected")]] as const).map(([k, label]) => (
 
