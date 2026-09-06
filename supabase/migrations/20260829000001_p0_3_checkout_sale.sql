@@ -135,9 +135,17 @@ begin
     raise exception 'Discount of % is not valid for a subtotal of %', v_discount_amount, v_subtotal;
   end if;
 
+  -- A loyalty tier sets its own discount, so the till applying it is not
+  -- the cashier granting a favour and needs no sign-off. The entitlement
+  -- is read here rather than trusted from the request.
   if v_discount_amount > 0
      and coalesce(p_payment->>'discount_approved_by','') = ''
-     and not public.is_approver_role(public.my_role()) then
+     and not public.is_approver_role(public.my_role())
+     and not public.checkout_sale_discount_ok(
+       nullif(p_payment->>'customer_id','')::uuid,
+       v_subtotal,
+       v_discount_amount
+     ) then
     raise exception 'This discount needs approval';
   end if;
 
