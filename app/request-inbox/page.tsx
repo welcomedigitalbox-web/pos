@@ -117,6 +117,27 @@ export default function RequestInboxPage() {
 
   // Accepting covers every line filed under the same number, because that
   // is the unit the store asked in and the unit the head answers.
+  // Putting an acceptance back is the head's own correction, so it needs
+  // no reason typed in - the audit log records who did it.
+  async function undoAccept(ref: string, lines: any[]) {
+    setAcceptBusy(ref);
+    try {
+      for (const l of lines) {
+        const { error } = await supabase.rpc("unapprove_stock_request", {
+          p_request_id: l.id,
+          p_reason: null,
+        });
+        if (error) throw error;
+      }
+      showToast(t("requestInbox_undone"));
+      await load();
+    } catch (err) {
+      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setAcceptBusy(null);
+    }
+  }
+
   async function acceptRequest(ref: string, lines: any[], reject = false, reason: string | null = null) {
     setAcceptBusy(ref);
     try {
@@ -512,6 +533,13 @@ export default function RequestInboxPage() {
                           {t("returns_reject")}
                         </button>
                       </>
+                    )}
+                    {g.status === "approved" && canApproveWarehouse && (
+                      <button onClick={() => undoAccept(g.ref, g.lines)}
+                        disabled={acceptBusy === g.ref}
+                        className="text-slate-500 text-xs font-medium">
+                        {acceptBusy === g.ref ? "…" : t("requestInbox_undo")}
+                      </button>
                     )}
                     {g.status === "pending" && !canApproveWarehouse && (
                       <span className="text-xs text-slate-400">{t("requestInbox_awaitingHead")}</span>
