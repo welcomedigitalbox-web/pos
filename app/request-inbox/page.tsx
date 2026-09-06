@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase, fetchSellableItems, upsertStoreInventory, logActivity } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -37,6 +37,7 @@ type RequestRow = {
   sku: string | null;
   availableAtWh: number;
   avgCostAtWh: number;
+  request_no: string | null;
 };
 
 const statusColor: Record<string, string> = {
@@ -64,6 +65,12 @@ export default function RequestInboxPage() {
   const [damageRejectReason, setDamageRejectReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
+  // The head accepts a request into the picking queue; the staff who pick
+  // it see only what has been accepted. One person is often both, and then
+  // the two steps happen back to back on this screen.
+  const [canApproveWarehouse, setCanApproveWarehouse] = useState(false);
+  const [acceptBusy, setAcceptBusy] = useState<string | null>(null);
+  const [openRef, setOpenRef] = useState<string | null>(null);
   const [toast, setToast] = useState("");
 
   const [sendRow, setSendRow] = useState<RequestRow | null>(null);
@@ -82,11 +89,48 @@ export default function RequestInboxPage() {
   }, [defaultWarehouseId, whId]);
 
   useEffect(() => {
+
+    let live = true;
+
+    supabase
+
+      .rpc("can_approve_dept", { p_department: "warehouse" })
+
+      .then(({ data }) => { if (live) setCanApproveWarehouse(!!data); });
+
+    return () => { live = false; };
+
+  }, [profile?.id]);
+
+
+  useEffect(() => {
     if (whId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whId]);
 
   if (!profile || !hasPermission(profile, "request-inbox")) return null;
+
+  // Accepting covers every line filed under the same number, because that
+  // is the unit the store asked in and the unit the head answers.
+  async function acceptRequest(ref: string, lines: any[], reject = false) {
+    setAcceptBusy(ref);
+    try {
+      for (const l of lines) {
+        const { error } = await supabase.rpc("warehouse_accept_request", {
+          p_request_id: l.id,
+          p_reject: reject,
+          p_reason: null,
+        });
+        if (error) throw error;
+      }
+      showToast(reject ? t("returns_status_rejected") : t("stockRequest_approved"));
+      await load();
+    } catch (err) {
+      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setAcceptBusy(null);
+    }
+  }
 
   async function loadDamages() {
     const { data } = await supabase
@@ -268,6 +312,51 @@ export default function RequestInboxPage() {
     () => (statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter)),
     [rows, statusFilter]
   );
+
+
+  // One request is one row here. Its lines open underneath rather than
+
+  // filling the list with an entry per product.
+
+  const groupedRows = useMemo(() => {
+
+    const byRef = new Map<string, typeof visible>();
+
+    for (const r of visible) {
+
+      const k = (r as any).request_no || r.id;
+
+      byRef.set(k, [...(byRef.get(k) || []), r]);
+
+    }
+
+    return Array.from(byRef.entries()).map(([ref, lines]) => {
+
+      const statuses = new Set(lines.map((l) => l.status));
+
+      return {
+
+        ref,
+
+        lines,
+
+        store_id: lines[0].store_id,
+
+        created_at: lines[0].created_at,
+
+        requested_by: lines[0].requested_by,
+
+        totalQty: lines.reduce((n, l) => n + Number(l.requested_qty || 0), 0),
+
+        short: lines.some((l) => l.availableAtWh < l.requested_qty),
+
+        status: statuses.size === 1 ? [...statuses][0] : "mixed",
+
+      };
+
+    });
+
+  }, [visible]);
   const pendingCount = rows.filter((r) => r.status === "pending").length;
 
   return (
@@ -316,57 +405,96 @@ export default function RequestInboxPage() {
             <tr>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
               <th className="text-left px-3 py-2">{t("requestInbox_fromStore")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
+              <th className="text-left px-3 py-2">{t("stockTransfer_lines")}</th>
               <th className="text-left px-3 py-2">{t("stockRequest_requestedQty")}</th>
-              <th className="text-left px-3 py-2">{t("requestInbox_whStock")}</th>
               <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
               <th className="text-left px-3 py-2">{t("returns_requestedBy")}</th>
               <th className="text-left px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && visible.map((r) => {
-              const short = r.availableAtWh < r.requested_qty;
-              return (
-                <tr key={r.id} className={`border-t border-slate-100 ${r.status === "pending" ? "bg-yellow-50" : ""}`}>
-                  <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
-                  <td className="px-3 py-2 font-medium">{r.store_id}</td>
-                  <td className="px-3 py-2">{r.displayName}</td>
-                  <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
-                  <td className="px-3 py-2 font-medium">{r.requested_qty}</td>
-                  <td className={`px-3 py-2 ${short ? "text-red-600 font-medium" : ""}`}>
-                    {r.availableAtWh}
-                    {short && ` ⚠️`}
-                  </td>
+            {loading && <tr><td colSpan={7} className="text-center text-slate-400 py-8">...</td></tr>}
+            {!loading && groupedRows.map((g) => (
+              <React.Fragment key={g.ref}>
+                <tr className={`border-t border-slate-100 ${g.status === "pending" ? "bg-yellow-50" : ""}`}>
                   <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[r.status] || ""}`}>
-                      {r.status === "approved" ? t("requestInbox_sentStatus") : r.status}
-                    </span>
-                    {(r as any).rejected_reason && (
-                      <div className="text-[10px] text-red-600 mt-0.5">{(r as any).rejected_reason}</div>
-                    )}
+                    <button onClick={() => setOpenRef(openRef === g.ref ? null : g.ref)}
+                      className="text-blue-600 font-mono text-xs">
+                      {g.ref}
+                    </button>
+                    <div className="text-[10px] text-slate-400">
+                      {new Date(g.created_at).toLocaleString()}
+                    </div>
                   </td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{r.requested_by || "-"}</td>
-                  <td className="px-3 py-2 text-right space-x-3">
-                    {r.status === "pending" && (
+                  <td className="px-3 py-2 font-medium">{g.store_id}</td>
+                  <td className="px-3 py-2">
+                    {g.lines.length}
+                    {g.short && <span className="text-red-600 ml-1">⚠️</span>}
+                  </td>
+                  <td className="px-3 py-2 font-medium">{g.totalQty}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      g.status === "mixed" ? "bg-slate-100 text-slate-600" : statusColor[g.status] || ""
+                    }`}>
+                      {g.status === "mixed"
+                        ? t("stockTransfer_statusMixed")
+                        : g.status === "approved" ? t("requestInbox_sentStatus") : g.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-slate-500 text-xs">{g.requested_by || "-"}</td>
+                  <td className="px-3 py-2 text-right space-x-3 whitespace-nowrap">
+                    {/* Pending means the sale side has cleared it and the
+                        warehouse head has not. Only they see the buttons. */}
+                    {g.status === "pending" && canApproveWarehouse && (
                       <>
-                        <button onClick={() => openSend(r)} disabled={r.availableAtWh <= 0}
-                          className="text-blue-600 text-xs font-medium disabled:text-slate-300">
-                          {t("requestInbox_send")}
+                        <button onClick={() => acceptRequest(g.ref, g.lines)}
+                          disabled={acceptBusy === g.ref}
+                          className="text-green-700 text-xs font-medium">
+                          {acceptBusy === g.ref ? "…" : t("stockRequest_approve")}
                         </button>
-                        <button onClick={() => { setRejectRow(r); setRejectReason(""); }} className="text-red-600 text-xs font-medium">
+                        <button onClick={() => acceptRequest(g.ref, g.lines, true)}
+                          disabled={acceptBusy === g.ref}
+                          className="text-red-600 text-xs font-medium">
                           {t("returns_reject")}
                         </button>
                       </>
                     )}
+                    {g.status === "pending" && !canApproveWarehouse && (
+                      <span className="text-xs text-slate-400">{t("requestInbox_awaitingHead")}</span>
+                    )}
                   </td>
                 </tr>
-              );
-            })}
-            {!loading && visible.length === 0 && (
-              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
+
+                {openRef === g.ref && g.lines.map((r) => (
+                  <tr key={r.id} className="bg-slate-50 text-sm">
+                    <td className="px-3 py-2 pl-8" colSpan={2}>{r.displayName}</td>
+                    <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
+                    <td className="px-3 py-2 font-medium">{r.requested_qty}</td>
+                    <td className={`px-3 py-2 ${r.availableAtWh < r.requested_qty ? "text-red-600 font-medium" : ""}`}>
+                      {r.availableAtWh}
+                      {r.availableAtWh < r.requested_qty && " ⚠️"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {(r as any).rejected_reason && (
+                        <span className="text-[10px] text-red-600">{(r as any).rejected_reason}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {/* Picking happens line by line, because stock runs
+                          out one product at a time. */}
+                      {r.status === "approved" && (
+                        <button onClick={() => openSend(r)} disabled={r.availableAtWh <= 0}
+                          className="text-blue-600 text-xs font-medium disabled:text-slate-300">
+                          {t("requestInbox_send")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+            {!loading && groupedRows.length === 0 && (
+              <tr><td colSpan={7} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
