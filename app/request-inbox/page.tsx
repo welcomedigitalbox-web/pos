@@ -132,7 +132,8 @@ export default function RequestInboxPage() {
       showToast(t("requestInbox_undone"));
       await load();
     } catch (err) {
-      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+      showToast("\u274c " + (err instanceof Error ? err.message
+        : (err as any)?.message || (err as any)?.details || JSON.stringify(err)));
     } finally {
       setAcceptBusy(null);
     }
@@ -154,7 +155,8 @@ export default function RequestInboxPage() {
       showToast(reject ? t("returns_status_rejected") : t("stockRequest_approved"));
       await load();
     } catch (err) {
-      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+      showToast("\u274c " + (err instanceof Error ? err.message
+        : (err as any)?.message || (err as any)?.details || JSON.stringify(err)));
     } finally {
       setAcceptBusy(null);
     }
@@ -191,7 +193,8 @@ export default function RequestInboxPage() {
       showToast(reject ? t("returns_status_rejected") : t("stockRequest_approved"));
       await loadDamages();
     } catch (err) {
-      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+      showToast("\u274c " + (err instanceof Error ? err.message
+        : (err as any)?.message || (err as any)?.details || JSON.stringify(err)));
     } finally {
       setDamageBusy(null);
     }
@@ -308,7 +311,8 @@ export default function RequestInboxPage() {
       setSendRow(null);
       await load();
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + (err instanceof Error ? err.message
+        : (err as any)?.message || (err as any)?.details || JSON.stringify(err)));
     } finally {
       setSending(false);
     }
