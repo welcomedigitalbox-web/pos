@@ -14,12 +14,12 @@ import {
 } from "lucide-react";
 import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
-import { PAGE_OPTIONS, GROUP_LABELS, hasPermission } from "./permissions";
+import { PAGE_OPTIONS, GROUP_LABELS, hasPermission, type PageGroup } from "./permissions";
 
 // One tile per area of the business. The order is the order of a working
 // day: sell, check stock, buy, move, review.
 const GROUPS: {
-  group: string;
+  group: PageGroup;
   Icon: LucideIcon;
   tint: string;
 }[] = [
@@ -77,7 +77,7 @@ export default function HomePage() {
             <div className={`w-12 h-12 rounded-xl grid place-items-center mb-3 ${tint}`}>
               <Icon size={24} strokeWidth={1.75} />
             </div>
-            <div className="font-medium">{t(GROUP_LABELS[group as keyof typeof GROUP_LABELS] as any)}</div>
+            <div className="font-medium">{t(GROUP_LABELS[group] as any)}</div>
             <div className="text-xs text-slate-400 mt-0.5">
               {pages.length} {t("home_pages")}
             </div>
