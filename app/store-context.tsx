@@ -4,7 +4,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { supabase, StoreRow } from "@/lib/supabase";
 import { useAuth } from "./auth-context";
 
-const STORE_LOCKED_ROLES = ["cashier", "online_sale", "wholesale"];
+const STORE_LOCKED_ROLES = ["cashier", "online_sale", "wholesale",
+  "warehouse_manager",
+  "warehouse_staff",
+];
 
 type StoreContextType = {
   storeId: string;
