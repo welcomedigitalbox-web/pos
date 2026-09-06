@@ -494,7 +494,12 @@ export default function POSPage() {
         setTimeout(() => style.remove(), 500);
       }, 300);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      // A Supabase error is a plain object, not an Error, so String() on it
+      // gives "[object Object]" and hides the reason the sale was refused.
+      const e = err as { message?: string; hint?: string; details?: string };
+      const message =
+        err instanceof Error ? err.message
+        : e?.message || e?.details || e?.hint || JSON.stringify(err);
       showToast("❌ " + message);
     } finally {
       setLoading(false);
