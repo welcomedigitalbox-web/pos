@@ -268,7 +268,6 @@ export const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
   warehouse: ["warehouse_staff", "warehouse_manager"],
   finance: ["accountant", "finance_manager"],
   office_support: ["it_staff", "hr_manager"],
-  office_support: ["it_staff", "hr_manager"],
   marketing: ["talent", "content_writer", "marketing_assistant", "marketing_executive", "marketing_manager"],
 };
 
