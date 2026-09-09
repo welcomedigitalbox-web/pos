@@ -210,7 +210,7 @@ export default function AdminUsersPage() {
       <div className="flex justify-between items-center mb-3">
         <h2 className="font-semibold text-lg">{t("admin_users_title")}</h2>
         <button
-          onClick={openNew}
+          onClick={() => router.push("/admin/users/new")}
           className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium"
         >
           {t("admin_createUser")}
@@ -252,7 +252,7 @@ export default function AdminUsersPage() {
                   {u.role === "admin" ? "All" : (u.permissions || []).join(", ") || "-"}
                 </td>
                 <td className="px-4 py-2 text-right space-x-2">
-                  <button onClick={() => openEdit(u)} className="text-blue-600 text-xs font-medium">
+                  <button onClick={() => router.push(`/admin/users/${u.id}`)} className="text-blue-600 text-xs font-medium">
                     {t("admin_edit")}
                   </button>
                   {u.id !== profile.id && (
