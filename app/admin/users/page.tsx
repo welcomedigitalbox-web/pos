@@ -154,7 +154,7 @@ export default function AdminUsersPage() {
   // Departments in the order the business runs; anyone without one sorts
   // last, so a missing department shows up rather than hiding in the list.
   const byDepartment = useMemo(() => {
-    const order = ["sale", "merchandising", "warehouse", "finance", "marketing"];
+    const order = ["sale", "merchandising", "warehouse", "finance", "marketing", "office_support"];
     const map = new Map<string, typeof users>();
     for (const u of users) {
       const k = (u as any).department || "_none";
