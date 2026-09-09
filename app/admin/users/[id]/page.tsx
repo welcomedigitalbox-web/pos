@@ -29,6 +29,8 @@ export default function UserFormPage() {
   const isNew = params.id === "new";
   const [users, setUsers] = useState<UserRow[]>([]);
   const [toast, setToast] = useState("");
+
+  const [showForm, setShowForm] = useState(false);
   const [openDept, setOpenDept] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [email, setEmail] = useState("");
@@ -204,13 +206,8 @@ export default function UserFormPage() {
     }
   }
 
-  return (
-    <div className="pt-4">
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="font-semibold text-lg">{t("admin_users_title")}</h2>
-        <button
-          onClick={openNew}
-          className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium"
+  // The list has already loaded by the time this runs; find the row and
+  // fill the form from it, exactly as the modal used to.
   useEffect(() => {
     if (isNew || !users.length) return;
     const u = users.find((x) => x.id === params.id);
@@ -222,8 +219,9 @@ export default function UserFormPage() {
     <div className="pt-4 max-w-2xl mx-auto pb-16">
       <button onClick={() => router.push("/admin/users")}
         className="text-blue-600 text-sm font-medium mb-4">
-        ← {t("nav_admin")}
+        ← Users
       </button>
+
 <div className="">
           <form
             onSubmit={handleSave}
@@ -386,7 +384,7 @@ export default function UserFormPage() {
             <div className="flex gap-2 mt-2">
               <button
                 type="button"
-                onClick={() => router.push("/admin/users")}
+                onClick={() => setShowForm(false)}
                 className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
               >
                 {t("admin_cancel")}
@@ -400,6 +398,8 @@ export default function UserFormPage() {
               </button>
             </div>
           </form>
+        </div>
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm z-50">
           {toast}
