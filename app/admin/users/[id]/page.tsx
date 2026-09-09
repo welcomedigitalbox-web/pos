@@ -194,6 +194,24 @@ export default function UserFormPage() {
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
+
+        // The create function predates the org structure and only knows
+        // about role, store and permissions - so the department, reporting
+        // line and scope go on straight afterwards rather than being
+        // silently dropped and typed in again on the edit screen.
+        const created_id = data?.user_id || data?.user?.id;
+        if (created_id) {
+          await supabase
+            .from("profiles")
+            .update({
+              department: department || null,
+              reports_to: reportsTo || null,
+              is_dept_head: isDeptHead,
+            })
+            .eq("id", created_id);
+          await saveScope(created_id);
+        }
+
         showToast(t("admin_userCreated"));
       }
       router.push("/admin/users");
