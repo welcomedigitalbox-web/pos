@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
@@ -25,6 +25,12 @@ export default function AdminUsersPage() {
   const router = useRouter();
 
   const [users, setUsers] = useState<UserRow[]>([]);
+
+  // A flat list of seventy accounts is a list nobody reads. The org
+
+  // chart already groups them, so the screen follows it.
+
+  const [openDept, setOpenDept] = useState<string | null>(null);
   const [toast, setToast] = useState("");
 
   const [showForm, setShowForm] = useState(false);
@@ -150,6 +156,26 @@ export default function AdminUsersPage() {
     }
   }
 
+  // Departments in the order the business runs, with the unassigned last
+  // so a missing department is visible rather than hidden among the rest.
+  const DEPT_ORDER = ["sale", "merchandising", "warehouse", "finance", "marketing"];
+
+  const byDepartment = useMemo(() => {
+    const map = new Map<string, typeof users>();
+    for (const u of users) {
+      const key = (u as any).department || "_none";
+      map.set(key, [...(map.get(key) || []), u]);
+    }
+    const ordered: [string, typeof users][] = [];
+    for (const d of DEPT_ORDER) {
+      if (map.has(d)) ordered.push([d, map.get(d)!]);
+    }
+    for (const [k, v] of map) {
+      if (!DEPT_ORDER.includes(k)) ordered.push([k, v]);
+    }
+    return ordered;
+  }, [users]);
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -213,7 +239,22 @@ export default function AdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {byDepartment.map(([dept, list]) => (
+              <React.Fragment key={dept}>
+                <tr className="bg-slate-50 border-t border-slate-200">
+                  <td colSpan={5} className="px-3 py-2">
+                    <button
+                      onClick={() => setOpenDept(openDept === dept ? null : dept)}
+                      className="flex items-center gap-2 text-sm font-medium"
+                    >
+                      <span className="text-slate-400">{openDept === dept ? "\u2212" : "+"}</span>
+                      {dept === "_none" ? t("admin_noDepartment") : t(`admin_dept_${dept}` as any)}
+                      <span className="text-xs text-slate-400 font-normal">({list.length})</span>
+                    </button>
+                  </td>
+                </tr>
+                {openDept === dept && list.map((u) => (
+
               <tr key={u.id} className="border-t border-slate-100">
                 <td className="px-4 py-2">{u.email}</td>
                 <td className="px-4 py-2 capitalize">{u.role}</td>
@@ -233,6 +274,9 @@ export default function AdminUsersPage() {
                 </td>
               </tr>
             ))}
+              </React.Fragment>
+            ))}
+      ))}
           </tbody>
         </table>
       </div>
