@@ -49,6 +49,8 @@ export type UserRole =
   | "warehouse_manager"
   | "finance_manager"
   | "marketing_manager"
+  | "hr_manager"
+  | "it_staff"
   | "marketing_executive"
   | "marketing_assistant"
   | "content_writer"
@@ -173,6 +175,14 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "history", "order-lookup", "cash-drawer", "sales-performance", "suppliers",
     ...COMMON_ALL_ROLES,
   ],
+  hr_manager: [
+    ...pagesIn("reports"),
+    ...COMMON_ALL_ROLES,
+  ],
+  // The cameras are not the till. IT sees the system, not the takings.
+  it_staff: [
+    ...COMMON_ALL_ROLES,
+  ],
   marketing_executive: [
     ...pagesIn("reports"),
     "customers", "loyalty-tiers", "products", "campaigns",
@@ -212,6 +222,8 @@ export const ROLE_OPTIONS: UserRole[] = [
   "warehouse_manager",
   "finance_manager",
   "marketing_manager",
+  "hr_manager",
+  "it_staff",
   "marketing_executive",
   "marketing_assistant",
   "content_writer",
