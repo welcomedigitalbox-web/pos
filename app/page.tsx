@@ -58,6 +58,17 @@ export default function HomePage() {
 
   return (
     <div className="pt-6 max-w-4xl mx-auto">
+
+      <a href="https://reports-topaz-three.vercel.app/"
+
+        target="_blank" rel="noopener noreferrer"
+
+        className="inline-block px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold mb-6">
+
+        {t("home_sendReport")}
+
+      </a>
+
       <div className="mb-8">
         <h1 className="text-2xl font-semibold">
           {t("home_greeting")} {profile.email?.split("@")[0]}
