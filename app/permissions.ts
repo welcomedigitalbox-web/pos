@@ -49,6 +49,10 @@ export type UserRole =
   | "warehouse_manager"
   | "finance_manager"
   | "marketing_manager"
+  | "marketing_executive"
+  | "marketing_assistant"
+  | "content_writer"
+  | "talent"
   | "operation_director"
   | "owner"
   | "admin";
@@ -169,6 +173,23 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     "history", "order-lookup", "cash-drawer", "sales-performance", "suppliers",
     ...COMMON_ALL_ROLES,
   ],
+  marketing_executive: [
+    ...pagesIn("reports"),
+    "customers", "loyalty-tiers", "products", "campaigns",
+    ...COMMON_ALL_ROLES,
+  ],
+  marketing_assistant: [
+    "campaigns", "customers", "products",
+    ...COMMON_ALL_ROLES,
+  ],
+  content_writer: [
+    "campaigns", "products",
+    ...COMMON_ALL_ROLES,
+  ],
+  talent: [
+    "campaigns",
+    ...COMMON_ALL_ROLES,
+  ],
   marketing_manager: [
     ...pagesIn("reports"),
     "customers", "loyalty-tiers", "products",
@@ -191,6 +212,10 @@ export const ROLE_OPTIONS: UserRole[] = [
   "warehouse_manager",
   "finance_manager",
   "marketing_manager",
+  "marketing_executive",
+  "marketing_assistant",
+  "content_writer",
+  "talent",
   "operation_director",
   "owner",
   "admin",
@@ -230,7 +255,7 @@ export const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
   merchandising: ["merchandising_staff", "merchandising_manager"],
   warehouse: ["warehouse_staff", "warehouse_manager"],
   finance: ["accountant", "finance_manager"],
-  marketing: ["marketing_manager"],
+  marketing: ["talent", "content_writer", "marketing_assistant", "marketing_executive", "marketing_manager"],
 };
 
 // Company-wide posts that sit outside any one department.
