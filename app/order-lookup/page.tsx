@@ -7,6 +7,7 @@ import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 import { hasPermission } from "../permissions";
+import type { TranslationKey } from "../i18n";
 
 function fmt(n: number) {
   return Number(n || 0).toLocaleString() + " MMK";
@@ -48,6 +49,41 @@ type Order = {
   note: string | null;
 };
 
+// Rows from the shared lookup_order function — the shop, the finance app and the
+// Messenger CRM all answer the same search, so an online buyer can be found at the till
+type LookupRow = {
+  source: "pos" | "online";
+  id: string;
+  reference: string | null;
+  occurred_at: string;
+  store_id: string | null;
+  store_name: string | null;
+  customer_name: string | null;
+  phone: string | null;
+  total: number;
+  paid: number;
+  balance: number;
+  payment_method: string | null;
+  payment_status: "paid" | "partial" | "unpaid";
+  fulfilment_status: string | null;
+  sale_type: "walk_in" | "wholesale" | "online_retail" | "online_wholesale";
+  voucher_no: string | null;
+  note: string | null;
+};
+
+type LookupItem = {
+  description: string;
+  qty: number;
+  unit_price: number;
+  line_total: number;
+};
+
+const PAY_STATUS_CLASS: Record<LookupRow["payment_status"], string> = {
+  paid: "bg-green-100 text-green-700",
+  partial: "bg-amber-100 text-amber-700",
+  unpaid: "bg-orange-100 text-orange-700",
+};
+
 export default function OrderLookupPage() {
   const { profile } = useAuth();
   const { t } = useLanguage();
@@ -64,6 +100,11 @@ export default function OrderLookupPage() {
   const [refundTotal, setRefundTotal] = useState(0);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [online, setOnline] = useState<LookupRow[]>([]);
+  const [lookupError, setLookupError] = useState("");
+  const [onlineSelected, setOnlineSelected] = useState<LookupRow | null>(null);
+  const [onlineItems, setOnlineItems] = useState<LookupItem[]>([]);
+  const [onlineItemsLoading, setOnlineItemsLoading] = useState(false);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "order-lookup")) router.replace("/");
@@ -71,7 +112,10 @@ export default function OrderLookupPage() {
   }, [profile]);
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search), search ? 350 : 0);
+    const timer = setTimeout(() => {
+      load(search);
+      loadLookup(search);
+    }, search ? 350 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
@@ -126,6 +170,43 @@ export default function OrderLookupPage() {
     );
 
     setLoading(false);
+  }
+
+  // One keystroke searches both sides; the shared function already limits what the
+  // caller is allowed to see, so nothing extra is exposed here
+  async function loadLookup(term = "") {
+    const q = term.trim();
+    if (!q) {
+      setOnline([]);
+      setLookupError("");
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("lookup_order", { p_query: q, p_limit: 25 });
+    if (error) {
+      setLookupError(error.message);
+      setOnline([]);
+      return;
+    }
+    setLookupError("");
+    setOnline(((data as LookupRow[]) || []).filter((r) => r.source === "online"));
+  }
+
+  async function openOnline(row: LookupRow) {
+    setOnlineSelected(row);
+    setOnlineItems([]);
+    setOnlineItemsLoading(true);
+    const { data, error } = await supabase.rpc("lookup_order_items", {
+      p_source: "online",
+      p_id: row.id,
+    });
+    if (error) setLookupError(error.message);
+    else setOnlineItems((data as LookupItem[]) || []);
+    setOnlineItemsLoading(false);
+  }
+
+  function saleTypeLabel(saleType: LookupRow["sale_type"]) {
+    return t(`lookup_type_${saleType}` as TranslationKey);
   }
 
   async function openOrder(o: Order) {
@@ -243,6 +324,8 @@ export default function OrderLookupPage() {
         onChange={(e) => setSearch(e.target.value)}
       />
 
+      <h3 className="font-semibold text-sm mb-2">{t("lookup_posResults")}</h3>
+
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[980px]">
           <thead className="bg-slate-50 text-slate-500">
@@ -290,6 +373,64 @@ export default function OrderLookupPage() {
           </tbody>
         </table>
       </div>
+
+      {lookupError && (
+        <p className="text-sm text-red-600 mt-4">{lookupError}</p>
+      )}
+
+      {search.trim() !== "" && online.length > 0 && (
+        <div className="mt-6">
+          <h3 className="font-semibold text-sm">{t("lookup_onlineResults")}</h3>
+          <p className="text-xs text-slate-500 mb-2">{t("lookup_onlineHint")}</p>
+
+          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm min-w-[980px]">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left px-3 py-2">{t("orderLookup_orderId")}</th>
+                  <th className="text-left px-3 py-2">{t("history_time")}</th>
+                  <th className="text-left px-3 py-2">{t("admin_store")}</th>
+                  <th className="text-left px-3 py-2">{t("pos_customer")}</th>
+                  <th className="text-left px-3 py-2">{t("lookup_phone")}</th>
+                  <th className="text-left px-3 py-2">{t("lookup_saleType")}</th>
+                  <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
+                  <th className="text-left px-3 py-2">{t("lookup_delivery")}</th>
+                  <th className="text-left px-3 py-2">{t("pos_total")}</th>
+                  <th className="text-left px-3 py-2">{t("lookup_paid")}</th>
+                  <th className="text-left px-3 py-2">{t("lookup_balance")}</th>
+                  <th className="text-left px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {online.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-mono text-xs">{r.reference || r.id.slice(0, 8).toUpperCase()}</td>
+                    <td className="px-3 py-2">{new Date(r.occurred_at).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-slate-500">{r.store_name || r.store_id || "-"}</td>
+                    <td className="px-3 py-2">{r.customer_name || "-"}</td>
+                    <td className="px-3 py-2 text-slate-500">{r.phone || "-"}</td>
+                    <td className="px-3 py-2 text-xs">{saleTypeLabel(r.sale_type)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${PAY_STATUS_CLASS[r.payment_status]}`}>
+                        {r.payment_status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500">{r.fulfilment_status || "-"}</td>
+                    <td className="px-3 py-2 font-medium">{fmt(r.total)}</td>
+                    <td className="px-3 py-2">{fmt(r.paid)}</td>
+                    <td className="px-3 py-2">{fmt(r.balance)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => openOnline(r)} className="text-blue-600 text-xs font-medium">
+                        {t("lookup_detail")}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <Receipt data={receipt} />
 
@@ -414,6 +555,97 @@ export default function OrderLookupPage() {
                   <span>{t("dashboard_gp")}</span><span>{fmt(gp)}</span>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {onlineSelected && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto"
+          onClick={() => setOnlineSelected(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-lg my-8"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="font-semibold text-lg font-mono">
+                  {onlineSelected.reference || onlineSelected.id.slice(0, 8).toUpperCase()}
+                </h3>
+                <p className="text-sm text-slate-500">{new Date(onlineSelected.occurred_at).toLocaleString()}</p>
+              </div>
+              {/* Read only — a CRM order must not be edited from the till */}
+              <button onClick={() => setOnlineSelected(null)} className="text-slate-400 text-xl leading-none">✕</button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm mb-4">
+              <div><div className="text-xs text-slate-400 uppercase">{t("admin_store")}</div><div>{onlineSelected.store_name || onlineSelected.store_id || "-"}</div></div>
+              <div><div className="text-xs text-slate-400 uppercase">{t("pos_customer")}</div><div>{onlineSelected.customer_name || "-"}</div></div>
+              <div><div className="text-xs text-slate-400 uppercase">{t("lookup_phone")}</div><div>{onlineSelected.phone || "-"}</div></div>
+              <div><div className="text-xs text-slate-400 uppercase">{t("lookup_saleType")}</div><div>{saleTypeLabel(onlineSelected.sale_type)}</div></div>
+              <div><div className="text-xs text-slate-400 uppercase">{t("pos_paymentMethod")}</div><div>{onlineSelected.payment_method || "-"}</div></div>
+              <div>
+                <div className="text-xs text-slate-400 uppercase">{t("saleOrder_status")}</div>
+                <div>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${PAY_STATUS_CLASS[onlineSelected.payment_status]}`}>
+                    {onlineSelected.payment_status}
+                  </span>
+                </div>
+              </div>
+              <div><div className="text-xs text-slate-400 uppercase">{t("lookup_delivery")}</div><div>{onlineSelected.fulfilment_status || "-"}</div></div>
+              {onlineSelected.voucher_no && (
+                <div><div className="text-xs text-slate-400 uppercase">{t("lookup_voucher")}</div><div className="font-mono text-xs">{onlineSelected.voucher_no}</div></div>
+              )}
+              {onlineSelected.note && (
+                <div className="col-span-2 sm:col-span-3">
+                  <div className="text-xs text-slate-400 uppercase">{t("pos_note")}</div>
+                  <div>{onlineSelected.note}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="border border-slate-200 rounded-lg overflow-x-auto mb-4">
+              <table className="w-full text-sm min-w-[420px]">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
+                    <th className="text-left px-3 py-2">{t("ledger_qty")}</th>
+                    <th className="text-left px-3 py-2">{t("products_price")}</th>
+                    <th className="text-left px-3 py-2">{t("pos_total")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {onlineItemsLoading && <tr><td colSpan={4} className="text-center text-slate-400 py-4">...</td></tr>}
+                  {!onlineItemsLoading && onlineItems.map((i, idx) => (
+                    <tr key={idx} className="border-t border-slate-100">
+                      <td className="px-3 py-2">{i.description}</td>
+                      <td className="px-3 py-2">{i.qty}</td>
+                      <td className="px-3 py-2">{fmt(i.unit_price)}</td>
+                      <td className="px-3 py-2 font-medium">{fmt(i.line_total)}</td>
+                    </tr>
+                  ))}
+                  {!onlineItemsLoading && onlineItems.length === 0 && (
+                    <tr><td colSpan={4} className="text-center text-slate-400 py-4">-</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between font-bold text-base border-t border-slate-200 pt-2">
+                <span>{t("pos_total")}</span><span>{fmt(onlineSelected.total)}</span>
+              </div>
+              <div className="flex justify-between text-slate-500">
+                <span>{t("lookup_paid")}</span><span>{fmt(onlineSelected.paid)}</span>
+              </div>
+              <div className="flex justify-between text-orange-600 font-medium">
+                <span>{t("lookup_balance")}</span><span>{fmt(onlineSelected.balance)}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button onClick={() => setOnlineSelected(null)}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium">
+                {t("products_cancel")}
+              </button>
             </div>
           </div>
         </div>
