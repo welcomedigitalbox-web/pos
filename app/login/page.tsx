@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "../language-context";
+import { safeNext } from "@/lib/apps";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const params = useSearchParams();
   const { t, lang, setLang } = useLanguage();
 
   async function handleLogin(e: React.FormEvent) {
@@ -21,6 +23,16 @@ export default function LoginPage() {
     setLoading(false);
     if (error) {
       setError(t("login_error"));
+      return;
+    }
+
+    // This screen now signs people in to the reports, finance and online-order
+    // apps as well, so send them back wherever they came from. safeNext turns
+    // down anything off our own domain, so a crafted ?next= cannot bounce
+    // someone to a lookalike site with a live session.
+    const next = safeNext(params.get("next"));
+    if (next) {
+      window.location.replace(next);
       return;
     }
     router.replace("/");
@@ -84,5 +96,15 @@ export default function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+// useSearchParams has to sit inside a Suspense boundary or the production
+// build fails, even though `next dev` is happy without one.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <LoginForm />
+    </Suspense>
   );
 }
