@@ -86,6 +86,35 @@ serve(async (req) => {
       });
     }
 
+    if (action === "reset_password") {
+      const { user_id, password: newPassword } = body;
+      if (!user_id || !newPassword) {
+        return new Response(JSON.stringify({ error: "Missing user_id or password" }), {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+      if (String(newPassword).length < 8) {
+        return new Response(JSON.stringify({ error: "Password must be at least 8 characters" }), {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+      const { error: resetErr } = await adminClient.auth.admin.updateUserById(user_id, {
+        password: newPassword,
+      });
+      if (resetErr) {
+        return new Response(JSON.stringify({ error: resetErr.message }), {
+          status: 400,
+          headers: corsHeaders,
+        });
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // default action: create
     const { email, password, role, store_id, permissions } = body;
 
