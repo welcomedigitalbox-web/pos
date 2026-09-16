@@ -1,10 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
+import { cookieStorage } from "./cookie-storage";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
+// The session goes in a cookie on .edubabyhouse.store rather than
+// localStorage, so signing in here also signs you in to the reports,
+// finance and online-order apps.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: cookieStorage,
+    storageKey: "ebh",
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 export type Product = {
   id: string;
   name: string;
