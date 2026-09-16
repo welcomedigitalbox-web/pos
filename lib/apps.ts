@@ -21,7 +21,7 @@ const ALLOWED_DEPARTMENTS: Record<AppKey, string[]> = {
   pos: ["sale", "warehouse", "office"],
   report: ["*"],
   finance: ["finance"],
-  onlineorder: ["sale", "office"],
+  onlineorder: ["sale", "marketing", "office"],
 };
 
 export function canAccess(

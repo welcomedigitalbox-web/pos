@@ -7,6 +7,7 @@ import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
 import { PAGE_OPTIONS, PageGroup, hasPermission } from "./permissions";
+import { APP_URL, canAccess, type AppKey } from "@/lib/apps";
 
 type DeptKey = PageGroup | "admin";
 
@@ -19,6 +20,16 @@ const DEPARTMENTS: { key: DeptKey; icon: string; labelKey: string }[] = [
   { key: "admin", icon: "⚙️", labelKey: "nav_admin" },
   { key: "ai-agent", icon: "🤖", labelKey: "dept_aiAgent" },
   { key: "profile", icon: "👤", labelKey: "dept_profile" },
+];
+
+// The other Edu Baby House apps. They sign in off the same session, so these
+// are plain links — no second login on the way over. Each only shows for
+// someone whose department covers it, since landing on a "no access" page is
+// a worse answer than never seeing the icon.
+const SIBLING_APPS: { key: AppKey; icon: string; labelKey: string }[] = [
+  { key: "onlineorder", icon: "\u{1F4AC}", labelKey: "dept_onlineOrder" },
+  { key: "report", icon: "\u{1F4DD}", labelKey: "dept_dailyReport" },
+  { key: "finance", icon: "\u{1F4B0}", labelKey: "dept_finance" },
 ];
 
 export default function Nav() {
@@ -40,6 +51,8 @@ export default function Nav() {
     if (d.key === "admin") return profile.role === "admin";
     return PAGE_OPTIONS.some((p) => p.group === d.key && hasPermission(profile, p.key));
   });
+
+  const visibleApps = SIBLING_APPS.filter((a) => canAccess(a.key, profile));
 
   function deptHref(deptKey: DeptKey): string {
     if (deptKey === "admin") return "/admin/users";
@@ -78,6 +91,22 @@ export default function Nav() {
             <span className="text-xl">{d.icon}</span>
             <span className="mt-0.5 text-[10px] leading-tight text-center px-0.5">{t(d.labelKey as any)}</span>
           </Link>
+        ))}
+
+        {visibleApps.length > 0 && (
+          <div className="w-10 border-t border-slate-200 my-1.5 shrink-0" />
+        )}
+        {visibleApps.map((a) => (
+          <a
+            key={a.key}
+            href={APP_URL[a.key]}
+            className="w-16 flex flex-col items-center py-2 rounded-lg text-xs shrink-0 text-slate-500 hover:bg-slate-50"
+          >
+            <span className="text-xl">{a.icon}</span>
+            <span className="mt-0.5 text-[10px] leading-tight text-center px-0.5">
+              {t(a.labelKey as any)}
+            </span>
+          </a>
         ))}
       </aside>
 
