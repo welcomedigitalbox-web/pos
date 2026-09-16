@@ -59,7 +59,7 @@ export default function HomePage() {
   return (
     <div className="pt-6 max-w-4xl mx-auto">
 
-      <a href="https://reports-topaz-three.vercel.app/"
+      <a href="https://report.edubabyhouse.store"
 
         target="_blank" rel="noopener noreferrer"
 

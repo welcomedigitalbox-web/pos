@@ -15,7 +15,7 @@ export default function AiAgentPage() {
         <div className="text-5xl mb-3">🤖</div>
         <h2 className="font-semibold text-lg mb-2">{t("aiAgent_title")}</h2>
         {/* The marketing side runs as its own app; this is the door to it. */}
-        <a href="https://edu-page-lime.vercel.app/" target="_blank" rel="noopener noreferrer"
+        <a href="https://onlineorder.edubabyhouse.store" target="_blank" rel="noopener noreferrer"
           className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold mb-4">
           Marketing AI
         </a>
