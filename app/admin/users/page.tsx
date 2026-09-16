@@ -125,6 +125,29 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleResetPassword(u: UserRow) {
+    const next = prompt(`${t("admin_resetPwPrompt")} (${u.email})`);
+    if (next === null) return;
+    if (next.length < 8) {
+      showToast("\u274C " + t("admin_pwTooShort"));
+      return;
+    }
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      const { data, error } = await supabase.functions.invoke("admin-create-user", {
+        body: { action: "reset_password", user_id: u.id, password: next },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      showToast(t("admin_pwReset"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast("\u274C " + message);
+    }
+  }
+
   async function loadScope(userId: string) {
     const [{ data: st }, { data: ch }] = await Promise.all([
       supabase.from("user_stores").select("store_id").eq("user_id", userId),
@@ -254,6 +277,12 @@ export default function AdminUsersPage() {
                 <td className="px-4 py-2 text-right space-x-2">
                   <button onClick={() => router.push(`/admin/users/${u.id}`)} className="text-blue-600 text-xs font-medium">
                     {t("admin_edit")}
+                  </button>
+                  <button
+                    onClick={() => handleResetPassword(u)}
+                    className="text-slate-600 text-xs font-medium"
+                  >
+                    {t("admin_resetPw")}
                   </button>
                   {u.id !== profile.id && (
                     <button onClick={() => handleDeleteUser(u)} className="text-red-600 text-xs font-medium">
