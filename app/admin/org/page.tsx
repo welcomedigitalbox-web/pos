@@ -8,13 +8,15 @@ type Role = { key: string; label_en: string; label_my: string | null; tier: stri
 type Person = { id: string; email: string; role: string | null; department: string | null; reports_to: string | null; is_dept_head: boolean | null };
 
 const TIERS = ["staff", "head", "director"];
-const TABS = [["dept", "Departments"], ["role", "Roles"], ["people", "People"]];
+const TABS = [["dept", "Departments"], ["role", "Roles"], ["people", "People"], ["apps", "Apps"]];
+const APPS = ["pos", "report", "finance", "onlineorder"];
 
 export default function OrgPage() {
   const [tab, setTab] = useState("dept");
   const [depts, setDepts] = useState<Dept[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [access, setAccess] = useState<{ app: string; department: string }[]>([]);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -29,11 +31,13 @@ export default function OrgPage() {
 
   async function load() {
     setLoading(true);
-    const [d, r, p] = await Promise.all([
+    const [d, r, p, ac] = await Promise.all([
       supabase.from("departments").select("*").order("code"),
       supabase.from("org_roles").select("*").order("sort_order"),
       supabase.from("profiles").select("id, email, role, department, reports_to, is_dept_head").order("email"),
+      supabase.from("org_app_access").select("app, department"),
     ]);
+    setAccess((ac.data as { app: string; department: string }[]) || []);
     setDepts((d.data as Dept[]) || []);
     setRoles((r.data as Role[]) || []);
     setPeople((p.data as Person[]) || []);
@@ -166,6 +170,41 @@ export default function OrgPage() {
               </label>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === "apps" && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 overflow-x-auto">
+          <table className="text-sm">
+            <thead>
+              <tr>
+                <th className="text-left font-medium pb-2 pr-6">Department</th>
+                {APPS.map((ap) => (
+                  <th key={ap} className="font-medium pb-2 px-3 capitalize">{ap}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {depts.map((dp) => (
+                <tr key={dp.code} className="border-t border-slate-100">
+                  <td className="py-2 pr-6">{dp.name}</td>
+                  {APPS.map((ap) => {
+                    const on = access.some((x) => x.app === ap && x.department === dp.code);
+                    return (
+                      <td key={ap} className="text-center px-3">
+                        <input type="checkbox" checked={on}
+                          onChange={() => run(
+                            on
+                              ? supabase.from("org_app_access").delete().eq("app", ap).eq("department", dp.code)
+                              : supabase.from("org_app_access").insert({ app: ap, department: dp.code }),
+                            "saved")} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
