@@ -24,17 +24,27 @@ const ALLOWED_DEPARTMENTS: Record<AppKey, string[]> = {
   onlineorder: ["sale", "marketing", "office"],
 };
 
-export function canAccess(
-  app: AppKey,
-  profile: { role?: string | null; department?: string | null } | null
-): boolean {
+// Which departments may open which app is a setting, not a constant: the
+// table above is only the fallback until org_app_access has loaded.
+const ACCESS: Record<string, Set<string>> = {};
+
+export function applyAppAccess(rows: { app: string; department: string }[]): void {
+  for (const r of rows) {
+    if (!ACCESS[r.app]) ACCESS[r.app] = new Set();
+    ACCESS[r.app].add(r.department);
+  }
+}
+
+export function canAccess(app: AppKey, profile: { role?: string | null; department?: string | null } | null): boolean {
   if (!profile) return false;
   if (profile.role && OVERRIDE_ROLES.includes(profile.role)) return true;
   if (!profile.department) return false;
-
-  const allowed = ALLOWED_DEPARTMENTS[app];
+  const live = ACCESS[app];
+  if (live && live.size > 0) return live.has(profile.department);
+  const allowed = ALLOWED_DEPARTMENTS[app] || [];
   return allowed.includes("*") || allowed.includes(profile.department);
 }
+
 
 // Apps this person should see in the switcher, current app excluded.
 export function appsFor(

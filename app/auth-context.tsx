@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { applyAppAccess } from "@/lib/apps";
 import { useRouter, usePathname } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 
@@ -52,6 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function loadProfile(userId: string) {
+    const { data: acc } = await supabase.from("org_app_access").select("app, department");
+    applyAppAccess((acc as { app: string; department: string }[]) || []);
     const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
     setProfile(data as Profile);
     setLoading(false);
