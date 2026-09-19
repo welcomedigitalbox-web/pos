@@ -17,6 +17,8 @@ export default function OrgPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [access, setAccess] = useState<{ app: string; department: string }[]>([]);
+  const [pDept, setPDept] = useState("");
+  const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -43,6 +45,12 @@ export default function OrgPage() {
     setPeople((p.data as Person[]) || []);
     setLoading(false);
   }
+
+  const liveDepts = depts.filter((d) => d.active);
+
+  const shown = people.filter((x) =>
+    (!pDept || (x.department || "") === pDept) &&
+    (!q || x.email.toLowerCase().includes(q.toLowerCase())));
 
   function say(t: string) { setMsg(t); setTimeout(() => setMsg(""), 3000); }
 
@@ -141,8 +149,21 @@ export default function OrgPage() {
       )}
 
       {tab === "people" && (
+        <div>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <select value={pDept} onChange={(e) => setPDept(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white">
+            <option value="">All departments</option>
+            {liveDepts.map((dd) => (
+              <option key={dd.code} value={dd.code}>{dd.name}</option>
+            ))}
+          </select>
+          <input placeholder="search email" value={q} onChange={(e) => setQ(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+          <span className="text-xs text-slate-400 ml-auto">{shown.length}</span>
+        </div>
         <div className="bg-white border border-slate-200 rounded-xl">
-          {people.map((p) => (
+          {shown.map((p) => (
             <div key={p.id} className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 last:border-0">
               <span className="text-sm w-56 shrink-0 truncate">{p.email}</span>
               <select value={p.role || ""}
@@ -170,6 +191,7 @@ export default function OrgPage() {
               </label>
             </div>
           ))}
+        </div>
         </div>
       )}
 
