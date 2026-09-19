@@ -52,6 +52,71 @@ export default function OrgPage() {
     (!pDept || (x.department || "") === pDept) &&
     (!q || x.email.toLowerCase().includes(q.toLowerCase())));
 
+
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [meId, setMeId] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [nEmail, setNEmail] = useState("");
+  const [nPass, setNPass] = useState("");
+  const [nRole, setNRole] = useState("cashier");
+  const [nDept, setNDept] = useState("");
+  const [nStore, setNStore] = useState("");
+
+  useEffect(() => {
+    supabase.from("stores").select("id, name").order("name")
+      .then(({ data }) => setStores((data as { id: string; name: string }[]) || []));
+    supabase.auth.getUser().then(({ data }) => setMeId(data.user?.id || ""));
+  }, []);
+
+  async function callAdmin(body: Record<string, unknown>) {
+    const { data: sess } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke("admin-create-user", {
+      body,
+      headers: { Authorization: "Bearer " + (sess.session?.access_token || "") },
+    });
+    if (error) throw error;
+    if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  }
+
+  async function createUser() {
+    try {
+      await callAdmin({ email: nEmail, password: nPass, role: nRole, store_id: nStore || null, permissions: [] });
+      if (nDept) {
+        const { data: fresh } = await supabase.from("profiles").select("id").eq("email", nEmail).maybeSingle();
+        if (fresh) await supabase.from("profiles").update({ department: nDept }).eq("id", (fresh as { id: string }).id);
+      }
+      setShowNew(false);
+      setNEmail(""); setNPass("");
+      say("user created");
+      await load();
+    } catch (e) {
+      say("error: " + ((e as { message?: string }).message || String(e)));
+    }
+  }
+
+  async function resetPassword(u: Person) {
+    const next = window.prompt("New password for " + u.email);
+    if (next === null) return;
+    if (next.length < 8) return say("at least 8 characters");
+    try {
+      await callAdmin({ action: "reset_password", user_id: u.id, password: next });
+      say("password changed");
+    } catch (e) {
+      say("error: " + ((e as { message?: string }).message || String(e)));
+    }
+  }
+
+  async function deleteUser(u: Person) {
+    if (!window.confirm("Delete " + u.email + "?")) return;
+    try {
+      await callAdmin({ action: "delete", user_id: u.id });
+      say("deleted");
+      await load();
+    } catch (e) {
+      say("error: " + ((e as { message?: string }).message || String(e)));
+    }
+  }
+
   function say(t: string) { setMsg(t); setTimeout(() => setMsg(""), 3000); }
 
   async function run(q: PromiseLike<{ error: unknown }>, ok: string) {
@@ -161,7 +226,34 @@ export default function OrgPage() {
           <input placeholder="search email" value={q} onChange={(e) => setQ(e.target.value)}
             className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
           <span className="text-xs text-slate-400 ml-auto">{shown.length}</span>
+          <button onClick={() => setShowNew(!showNew)}
+            className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium">
+            {showNew ? "Close" : "+ New user"}</button>
         </div>
+        {showNew && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-3 flex flex-wrap gap-2">
+          <input placeholder="email" value={nEmail} onChange={(e) => setNEmail(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+          <input placeholder="password" type="text" value={nPass} onChange={(e) => setNPass(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+          <select value={nRole} onChange={(e) => setNRole(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
+            {roles.map((r) => (<option key={r.key} value={r.key}>{r.label_en}</option>))}
+          </select>
+          <select value={nDept} onChange={(e) => setNDept(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
+            <option value="">(no department)</option>
+            {liveDepts.map((dd) => (<option key={dd.code} value={dd.code}>{dd.name}</option>))}
+          </select>
+          <select value={nStore} onChange={(e) => setNStore(e.target.value)}
+            className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
+            <option value="">(no store)</option>
+            {stores.map((st) => (<option key={st.id} value={st.id}>{st.name}</option>))}
+          </select>
+          <button disabled={!nEmail || nPass.length < 8} onClick={createUser}
+            className="px-4 py-1.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">Create</button>
+        </div>
+        )}
         <div className="bg-white border border-slate-200 rounded-xl">
           {shown.map((p) => (
             <div key={p.id} className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 last:border-0">
@@ -189,6 +281,10 @@ export default function OrgPage() {
                   onChange={(e) => run(supabase.from("profiles").update({ is_dept_head: e.target.checked }).eq("id", p.id), "saved")} />
                 dept head
               </label>
+              <button onClick={() => resetPassword(p)} className="text-xs text-slate-600 ml-auto">password</button>
+              {p.id !== meId && (
+                <button onClick={() => deleteUser(p)} className="text-xs text-red-600">delete</button>
+              )}
             </div>
           ))}
         </div>
