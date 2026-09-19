@@ -17,6 +17,7 @@ export default function OrgPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [access, setAccess] = useState<{ app: string; department: string }[]>([]);
+  const [openDept, setOpenDept] = useState<string | null>(null);
   const [pDept, setPDept] = useState("");
   const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
@@ -116,6 +117,11 @@ export default function OrgPage() {
       say("error: " + ((e as { message?: string }).message || String(e)));
     }
   }
+
+  const groups = liveDepts
+    .map((d) => [d.code, d.name, shown.filter((x) => (x.department || "") === d.code)] as const)
+    .concat([["_none", "(no department)", shown.filter((x) => !x.department)] as const])
+    .filter((g) => g[2].length > 0);
 
   function say(t: string) { setMsg(t); setTimeout(() => setMsg(""), 3000); }
 
@@ -255,7 +261,15 @@ export default function OrgPage() {
         </div>
         )}
         <div className="bg-white border border-slate-200 rounded-xl">
-          {shown.map((p) => (
+          {groups.map(([code, name, list]) => (
+            <div key={code}>
+              <button onClick={() => setOpenDept(openDept === code ? null : code)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100 text-sm font-medium text-left">
+                <span className="text-slate-400 w-3">{openDept === code ? "-" : "+"}</span>
+                {name}
+                <span className="text-xs text-slate-400 font-normal">({list.length})</span>
+              </button>
+              {openDept === code && list.map((p) => (
             <div key={p.id} className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 last:border-0">
               <span className="text-sm w-56 shrink-0 truncate">{p.email}</span>
               <select value={p.role || ""}
@@ -285,6 +299,8 @@ export default function OrgPage() {
               {p.id !== meId && (
                 <button onClick={() => deleteUser(p)} className="text-xs text-red-600">delete</button>
               )}
+            </div>
+              ))}
             </div>
           ))}
         </div>
