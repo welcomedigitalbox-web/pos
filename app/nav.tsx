@@ -189,6 +189,7 @@ export default function Nav() {
             <div className="px-3 sm:px-4 flex gap-1 overflow-x-auto scrollbar-none">
               {[
                 { href: "/admin/users", label: t("admin_users_title") },
+                { href: "/admin/org", label: "Organization" },
                 { href: "/admin/stores", label: t("admin_stores_title") },
                 { href: "/admin/settings", label: t("admin_settings_title") },
                 { href: "/admin/payment-methods", label: t("admin_paymentMethods_title") },
