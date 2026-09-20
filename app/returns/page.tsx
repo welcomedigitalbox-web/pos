@@ -108,7 +108,7 @@ export default function ReturnsPage() {
     setReturns((data as SaleReturn[]) || []);
 
     const { data: pm } = await supabase
-      .from("payment_methods").select("code, name").eq("is_active", true).order("name");
+      .from("pay_methods_v").select("code, name").eq("is_active", true).order("name");
     setPaymentMethods((pm as any[]) || []);
     if (!refundPaymentMethod && pm?.length) setRefundPaymentMethod(pm[0].code);
 

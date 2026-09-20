@@ -112,9 +112,9 @@ export default function POSPage() {
 
   async function loadPaymentMethods() {
     const { data } = await supabase
-      .from("payment_methods")
+      .from("pay_methods_v")
       .select("*")
-      .eq("is_active", true)
+      .eq("use_in_pos", true)
       .order("sort_order");
     setPaymentMethods(data || []);
     if (data && data.length > 0) setPaymentMethod(data[0].code);

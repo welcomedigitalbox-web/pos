@@ -192,7 +192,6 @@ export default function Nav() {
                 { href: "/admin/org", label: "Organization" },
                 { href: "/admin/stores", label: t("admin_stores_title") },
                 { href: "/admin/settings", label: t("admin_settings_title") },
-                { href: "/admin/payment-methods", label: t("admin_paymentMethods_title") },
               ].map((tab) => (
                 <Link
                   key={tab.href}
