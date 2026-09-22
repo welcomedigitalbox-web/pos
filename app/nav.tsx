@@ -190,6 +190,7 @@ export default function Nav() {
               {[
                 { href: "/admin/users", label: t("admin_users_title") },
                 { href: "/admin/org", label: "Organization" },
+                { href: "/admin/uoms", label: "Units" },
                 { href: "/admin/role-pages", label: "Role Pages" },
                 { href: "/admin/acting", label: "Acting" },
                 { href: "/admin/stores", label: t("admin_stores_title") },
