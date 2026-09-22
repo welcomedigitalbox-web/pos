@@ -190,6 +190,8 @@ export default function Nav() {
               {[
                 { href: "/admin/users", label: t("admin_users_title") },
                 { href: "/admin/org", label: "Organization" },
+                { href: "/admin/role-pages", label: "Role Pages" },
+                { href: "/admin/acting", label: "Acting" },
                 { href: "/admin/stores", label: t("admin_stores_title") },
                 { href: "/admin/settings", label: t("admin_settings_title") },
               ].map((tab) => (
