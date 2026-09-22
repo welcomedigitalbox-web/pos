@@ -235,12 +235,21 @@ export const ROLE_OPTIONS: UserRole[] = [
   "admin",
 ];
 
+// Pages a role opens on its own, loaded once at sign-in. A person keeps
+// whatever they were given one by one; the role only adds to it.
+const ROLE_PAGES = new Set<string>();
+export function applyRolePages(keys: string[]) {
+  ROLE_PAGES.clear();
+  for (const k of keys) ROLE_PAGES.add(k);
+}
+
 export function hasPermission(
   profile: { role: string; permissions: string[] } | null,
   key: PageKey
 ): boolean {
   if (!profile) return false;
   if (profile.role === "admin") return true;
+  if (ROLE_PAGES.has(key)) return true;
   return profile.permissions?.includes(key) ?? false;
 }
 
