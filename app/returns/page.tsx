@@ -415,6 +415,15 @@ export default function ReturnsPage() {
     const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
+      // Approve FIRST. The RPC is the only thing that checks the approver and
+      // it refuses a return that is not still pending, so putting it ahead of
+      // the stock writes is what stops an unauthorised click - or a retry after
+      // a failure - from putting the goods back on the shelf a second time.
+      const { error: apprErr } = await supabase.rpc("approve_sale_return", {
+        p_return_id: reviewRow.id,
+      });
+      if (apprErr) throw apprErr;
+
       const handledAt = (reviewRow as any).processed_store_id || reviewRow.store_id;
       const isCrossStore = handledAt !== reviewRow.store_id;
       // Same-store returns land in that store. Cross-store returns belong to the
@@ -543,13 +552,6 @@ export default function ReturnsPage() {
           created_by: profile?.email || null,
         });
       }
-
-      // The RPC checks the approver against the selling store's reporting
-      // line; a direct update to these columns is refused.
-      const { error: apprErr } = await supabase.rpc("approve_sale_return", {
-        p_return_id: reviewRow.id,
-      });
-      if (apprErr) throw apprErr;
 
       await logActivity({
         entityType: "sale_return",
