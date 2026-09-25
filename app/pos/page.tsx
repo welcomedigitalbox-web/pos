@@ -19,7 +19,13 @@ type CartItem = {
   qty: number;
   stock_qty: number;
   avg_cost: number;
+  base_price?: number;   // price of one base unit (pc)
+  uom_code?: string;
+  uom_name?: string;
+  factor?: number;       // base units in one selling unit
 };
+
+type Uom = { id: string; product_id: string; code: string; name: string; factor: number; price: number | null; is_base: boolean };
 
 type PromoItem = { product_id: string | null; category_id: string | null; role: string; qty: number | null };
 type Promo = {
@@ -54,6 +60,7 @@ export default function POSPage() {
   const [noDiscount, setNoDiscount] = useState<Record<string, string>>({});
   const [minPrice, setMinPrice] = useState<Record<string, number>>({});
   const [noPromo, setNoPromo] = useState<Record<string, boolean>>({});
+  const [uoms, setUoms] = useState<Record<string, Uom[]>>({});
   const idempotencyKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
@@ -376,6 +383,13 @@ export default function POSPage() {
         }
         setNoDiscount(no); setMinPrice(mn); setNoPromo(np);
       });
+    supabase.from("product_uoms").select("*").eq("is_active", true)
+      .order("factor")
+      .then(({ data }) => {
+        const by: Record<string, Uom[]> = {};
+        for (const u of ((data as Uom[]) || [])) (by[u.product_id] ||= []).push(u);
+        setUoms(by);
+      });
   }, []);
 
   // Offers are decided by merchandising and only read here, so a promo that
@@ -393,7 +407,8 @@ export default function POSPage() {
       p_store: storeId,
       p_items: cart.map((c, i) => ({
         line: i, product_id: c.product_id, variant_id: c.variant_id,
-        qty: c.qty, unit_price: c.price,
+        qty: c.qty * (c.factor ?? 1),
+        unit_price: c.price / (c.factor ?? 1),
       })),
       p_date: new Date().toISOString().slice(0, 10),
     }).then(({ data }) => {
@@ -419,6 +434,24 @@ export default function POSPage() {
   }, [cartKey, storeId]);
 
   const promoTotal = Object.values(promoLines).reduce((n, x) => n + x.amount, 0);
+
+  // Stock is kept in base units, so a unit change only alters what one line
+  // costs and how many base units it stands for.
+  function setLineUom(key: string, code: string) {
+    setCart((old) => old.map((c) => {
+      if (c.key !== key) return c;
+      const base = c.base_price ?? c.price / (c.factor ?? 1);
+      const list = uoms[c.product_id] || [];
+      const u = list.find((x) => x.code === code);
+      if (!u) return { ...c, base_price: base, uom_code: undefined, uom_name: undefined, factor: 1, price: base };
+      const f = Number(u.factor) || 1;
+      return {
+        ...c, base_price: base, uom_code: u.code, uom_name: u.name, factor: f,
+        price: u.price != null ? Number(u.price) : base * f,
+      };
+    }));
+  }
+
 
   // ---- Calculations ----
   const grossTotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
@@ -477,6 +510,10 @@ export default function POSPage() {
     if (isCashMethod && amountReceivedNum < grandTotal) {
       return showToast(t("pos_amountInsufficient"));
     }
+    const short = cart.filter((c) => c.qty * (c.factor ?? 1) > c.stock_qty);
+    if (short.length > 0) {
+      return showToast("Not enough stock: " + short.map((c) => c.name).join(", "));
+    }
     if (underFloor.length > 0 && !canApproveDiscount) {
       return showToast("Below minimum price: " + underFloor.map((c) => c.name).join(", "));
     }
@@ -497,8 +534,12 @@ export default function POSPage() {
           product_id: c.product_id,
           variant_id: c.variant_id,
           product_name: c.name,
-          qty: c.qty,
-          unit_price: c.price,
+          qty: c.qty * (c.factor ?? 1),
+          unit_price: c.price / (c.factor ?? 1),
+          uom_code: c.uom_code ?? null,
+          uom_name: c.uom_name ?? null,
+          uom_qty: c.qty,
+          uom_factor: c.factor ?? 1,
           promo_discount: promoLines[c.key]?.amount ?? 0,
           promotion_id: promoLines[c.key]?.promotion_id ?? null,
           is_free_gift: promoLines[c.key]?.free ?? false,
@@ -700,6 +741,19 @@ export default function POSPage() {
                 <div>
                   <div>{c.name}</div>
                   <div className="text-slate-400">{fmt(c.price)}</div>
+                  {(uoms[c.product_id]?.length ?? 0) > 1 && (
+                    <select
+                      className="mt-1 border border-slate-200 rounded px-1 py-0.5 text-xs"
+                      value={c.uom_code ?? ""}
+                      onChange={(e) => setLineUom(c.key, e.target.value)}
+                    >
+                      {uoms[c.product_id].map((u) => (
+                        <option key={u.id} value={u.code}>
+                          {u.name} {Number(u.factor) > 1 ? `(${u.factor})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
