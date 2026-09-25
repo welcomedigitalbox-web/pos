@@ -34,14 +34,6 @@ export default function ProductDetailPage() {
   const [variantRows, setVariantRows] = useState<SellableItem[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [units, setUnits] = useState<{ id: string; code: string; name: string; factor: number; barcode: string | null; price: number | null; is_base: boolean }[]>([]);
-  const [units, setUnits] = useState<{ id: string; code: string; name: string; factor: number; barcode: string | null; price: number | null; is_base: boolean }[]>([]);
-
-  useEffect(() => {
-    if (!id) return;
-    supabase.from("product_uoms").select("id, code, name, factor, barcode, price, is_base")
-      .eq("product_id", id).eq("is_active", true).order("factor")
-      .then(({ data }) => setUnits((data as typeof units) || []));
-  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -384,49 +376,6 @@ export default function ProductDetailPage() {
           </tbody>
         </table>
       </div>
-
-      {units.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-5">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <h2 className="text-sm font-semibold">Units of measure</h2>
-            <Link href="/uom-import" className="text-xs text-blue-600">Edit</Link>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Unit</th>
-                <th className="px-3 py-2 text-left font-medium">Code</th>
-                <th className="px-3 py-2 text-right font-medium">Holds</th>
-                <th className="px-3 py-2 text-right font-medium">Price</th>
-                <th className="px-3 py-2 text-left font-medium">Barcode</th>
-              </tr>
-            </thead>
-            <tbody>
-              {units.map((u) => (
-                <tr key={u.id} className="border-t border-slate-100">
-                  <td className="px-4 py-2">
-                    {u.name}
-                    {u.is_base && <span className="ml-2 text-xs text-slate-400">base</span>}
-                  </td>
-                  <td className="px-3 py-2 text-slate-500">{u.code}</td>
-                  <td className="px-3 py-2 text-right">
-                    {Number(u.factor) === 1 ? "1" : `${u.factor} × base`}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {u.price == null
-                      ? <span className="text-slate-400">{fmt((product?.price ?? 0) * Number(u.factor))}</span>
-                      : fmt(Number(u.price))}
-                  </td>
-                  <td className="px-3 py-2 text-slate-500">{u.barcode || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="px-4 py-2 text-xs text-slate-400 border-t border-slate-100">
-            A greyed price is worked out from the base price; set one on the unit to override it.
-          </p>
-        </div>
-      )}
 
       {units.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-5">
