@@ -197,7 +197,7 @@ export default function OrgPage() {
               onClick={() => run(supabase.from("org_roles").insert({ key: rKey, label_en: rLabel, tier: rTier, department: rDept || null }), "added").then(() => { setRKey(""); setRLabel(""); })}
               className="px-4 py-1.5 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">Add</button>
           </div>
-          {roles.map((r) => (
+          {roles.filter((r) => !rDept || (r.department || "") === rDept).map((r) => (
             <div key={r.key} className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 last:border-0">
               <span className="text-xs text-slate-400 w-48 shrink-0">{r.key}</span>
               <input defaultValue={r.label_en}
