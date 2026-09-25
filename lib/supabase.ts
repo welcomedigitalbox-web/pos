@@ -15,6 +15,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 export type Product = {
+  allow_discount?: boolean | null;
+  allow_promotion?: boolean | null;
+  min_price?: number | null;
   id: string;
   name: string;
   sku: string | null;
