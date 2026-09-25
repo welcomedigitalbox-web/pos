@@ -17,7 +17,7 @@ export type ReceiptData = {
   logoText: string | null;
   saleRef: string;
   createdAt: string;
-  items: { name: string; qty: number; price: number; lineTotal: number }[];
+  items: { name: string; qty: number; price: number; lineTotal: number; unit?: string | null }[];
   subtotal: number;
   discountLabel: string;
   discountAmount: number;
@@ -91,7 +91,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
             <span style={{ whiteSpace: "nowrap" }}>{fmt(item.lineTotal)}</span>
           </div>
           <div style={{ ...MUTED, fontSize: 11 }}>
-            {item.qty} × {fmt(item.price)}
+            {item.qty}{item.unit ? " " + item.unit : ""} × {fmt(item.price)}
           </div>
         </div>
       ))}

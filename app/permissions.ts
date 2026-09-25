@@ -39,6 +39,7 @@ export type PageKey =
   | "product-grid"
   | "product-import"
   | "stock-import"
+  | "uom-import"
   | "ai-agent"
   | "profile"
   | "admin";
@@ -83,6 +84,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "product-grid", href: "/product-grid", labelKey: "nav_productGrid", group: "merchandising" },
   { key: "product-import", href: "/product-import", labelKey: "nav_productImport", group: "merchandising" },
   { key: "stock-import", href: "/stock-import", labelKey: "nav_stockImport", group: "merchandising" },
+  { key: "uom-import", href: "/uom-import", labelKey: "nav_uomImport", group: "merchandising" },
   { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },

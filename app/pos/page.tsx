@@ -582,6 +582,7 @@ export default function POSPage() {
         saleRef: sale.sale_ref,
         createdAt: sale.created_at,
         items: cart.map((c) => ({
+          unit: c.uom_name ?? null,
           name: c.name,
           qty: c.qty,
           price: c.price,
