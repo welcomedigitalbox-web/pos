@@ -415,143 +415,16 @@ export default function ReturnsPage() {
     const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
-      // Approve FIRST. The RPC is the only thing that checks the approver and
-      // it refuses a return that is not still pending, so putting it ahead of
-      // the stock writes is what stops an unauthorised click - or a retry after
-      // a failure - from putting the goods back on the shelf a second time.
-      const { error: apprErr } = await supabase.rpc("approve_sale_return", {
+      // One call, one transaction. The server checks the approver, moves the
+      // stock, files any damage, books an exchange and posts the journal — or
+      // none of it. Doing this from the browser meant a refused approval had
+      // already put the goods back on the shelf.
+      const { error: apprErr } = await supabase.rpc("approve_sale_return_full", {
         p_return_id: reviewRow.id,
+        p_reject: false,
+        p_reason: null,
       });
       if (apprErr) throw apprErr;
-
-      const handledAt = (reviewRow as any).processed_store_id || reviewRow.store_id;
-      const isCrossStore = handledAt !== reviewRow.store_id;
-      // Same-store returns land in that store. Cross-store returns belong to the
-      // selling branch, so they bypass this store's books entirely.
-      let approvalTransferId: string | null = null;
-      const stockStore = handledAt;
-      for (const item of reviewItems.filter((i) => i.line_type !== "exchange")) {
-        if (isCrossStore && item.condition === "good") {
-          // Straight into transit — never added to the handling store's stock
-          const { data: transitRow } = await supabase.from("stock_transfers").insert({
-            product_id: item.product_id,
-            variant_id: item.variant_id,
-            from_store_id: handledAt,
-            to_store_id: reviewRow.store_id,
-            qty: item.qty,
-            status: "in_transit",
-            transferred_by: profile?.email || null,
-            sale_return_id: reviewRow.id,
-          }).select("id").single();
-          // Recording this is what hides "Send back" - without it the operator
-          // can open a second transfer for goods already in transit.
-          if (transitRow && !approvalTransferId) {
-            approvalTransferId = transitRow.id;
-            await supabase.from("sale_returns")
-              .update({ return_transfer_id: transitRow.id }).eq("id", reviewRow.id);
-          }
-          continue;
-        }
-
-        if (item.condition === "good") {
-          // Sellable again — put it back on the shelf at its original cost
-          const { data: inv } = await (item.variant_id
-            ? supabase.from("store_inventory").select("*").eq("store_id", stockStore)
-                .eq("product_id", item.product_id).eq("variant_id", item.variant_id).maybeSingle()
-            : supabase.from("store_inventory").select("*").eq("store_id", stockStore)
-                .eq("product_id", item.product_id).is("variant_id", null).maybeSingle());
-
-          await upsertStoreInventory(stockStore, item.product_id, item.variant_id, {
-            stock_qty: Number(inv?.stock_qty || 0) + Number(item.qty),
-          });
-        } else {
-          // Damaged goods never re-enter sellable stock; log them as a write-off
-          await supabase.from("stock_damages").insert({
-            store_id: stockStore,
-            product_id: item.product_id,
-            variant_id: item.variant_id,
-            qty: item.qty,
-            reason: `Return ${reviewRow.return_number}`,
-            reported_by: profile?.email || null,
-          });
-        }
-      }
-
-      // A cross-store return with nothing in good condition has nothing to
-      // send anywhere - the damaged goods are written off where they were
-      // handed in. Mark it settled so "Send back" stops offering a transfer
-      // that would move stock that does not exist.
-      if (isCrossStore && !approvalTransferId) {
-        const anyGood = reviewItems.some(
-          (i) => i.line_type !== "exchange" && i.condition === "good"
-        );
-        if (!anyGood) {
-          await supabase.from("sale_returns")
-            .update({ no_transfer_needed: true }).eq("id", reviewRow.id);
-        }
-      }
-
-      // Replacement goods are a real sale: booking one keeps stock, COGS and
-      // every downstream report correct without special-casing exchanges.
-      const outLines = reviewItems.filter((i) => i.line_type === "exchange");
-      if (outLines.length) {
-        const exchangeTotal = outLines.reduce((sum, i) => sum + Number(i.qty) * Number(i.unit_price), 0);
-        const { data: exSale, error: exErr } = await supabase
-          .from("sales")
-          .insert({
-            store_id: stockStore,
-            subtotal: exchangeTotal,
-            total: exchangeTotal,
-            payment_method: "exchange",
-            order_type: "pos",
-            customer_id: reviewRow.customer_id,
-            customer_name: reviewRow.customer_name,
-            cashier_email: reviewRow.requested_by,
-            note: `Exchange for ${reviewRow.return_number}`,
-          })
-          .select()
-          .single();
-        if (exErr) throw exErr;
-
-        await supabase.from("sale_items").insert(
-          outLines.map((i) => ({
-            sale_id: exSale.id,
-            product_id: i.product_id,
-            variant_id: i.variant_id,
-            product_name: i.product_name,
-            qty: i.qty,
-            unit_price: i.unit_price,
-            line_total: Number(i.qty) * Number(i.unit_price),
-            unit_cost: i.unit_cogs,
-            line_cogs: Number(i.qty) * Number(i.unit_cogs),
-          }))
-        );
-
-        for (const i of outLines) {
-          const { data: inv } = await (i.variant_id
-            ? supabase.from("store_inventory").select("*").eq("store_id", stockStore)
-                .eq("product_id", i.product_id).eq("variant_id", i.variant_id).maybeSingle()
-            : supabase.from("store_inventory").select("*").eq("store_id", stockStore)
-                .eq("product_id", i.product_id).is("variant_id", null).maybeSingle());
-          await upsertStoreInventory(stockStore, i.product_id, i.variant_id, {
-            stock_qty: Number(inv?.stock_qty || 0) - Number(i.qty),
-          });
-        }
-
-        await supabase.from("sale_returns").update({ exchange_sale_id: exSale.id }).eq("id", reviewRow.id);
-      }
-
-      if (isCrossStore && Number(reviewRow.refund_amount) > 0) {
-        await supabase.from("inter_store_settlements").insert({
-          owing_store_id: reviewRow.store_id,
-          owed_store_id: handledAt,
-          amount: reviewRow.refund_amount,
-          reason: "cross_store_refund",
-          sale_return_id: reviewRow.id,
-          note: reviewRow.return_number,
-          created_by: profile?.email || null,
-        });
-      }
 
       await logActivity({
         entityType: "sale_return",
