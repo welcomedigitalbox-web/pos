@@ -54,8 +54,6 @@ export default function POSPage() {
   const [noDiscount, setNoDiscount] = useState<Record<string, string>>({});
   const [minPrice, setMinPrice] = useState<Record<string, number>>({});
   const [noPromo, setNoPromo] = useState<Record<string, boolean>>({});
-  const [promos, setPromos] = useState<Promo[]>([]);
-  const [catOf, setCatOf] = useState<Record<string, string>>({});
   const idempotencyKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
@@ -371,94 +369,54 @@ export default function POSPage() {
         const no: Record<string, string> = {};
         const mn: Record<string, number> = {};
         const np: Record<string, boolean> = {};
-        const cm: Record<string, string> = {};
         for (const r of (data as { id: string; name: string; allow_discount: boolean | null; allow_promotion: boolean | null; min_price: number | null; category_id: string | null }[]) || []) {
           if (r.allow_discount === false) no[r.id] = r.name;
           if (r.min_price != null) mn[r.id] = Number(r.min_price);
           if (r.allow_promotion === false) np[r.id] = true;
-          if (r.category_id) cm[r.id] = r.category_id;
         }
-        setNoDiscount(no); setMinPrice(mn); setNoPromo(np); setCatOf(cm);
+        setNoDiscount(no); setMinPrice(mn); setNoPromo(np);
       });
   }, []);
 
   // Offers are decided by merchandising and only read here, so a promo that
   // starts tomorrow simply is not in this list today.
+  // The database prices the cart. The till only shows what it is told, so the
+  // screen and the receipt can never disagree.
+  const [promoLines, setPromoLines] = useState<Record<string, { amount: number; promotion_id: string; name: string; free?: boolean }>>({});
+  const [promoNames, setPromoNames] = useState<string[]>([]);
+  const cartKey = cart.map((c) => `${c.key}:${c.qty}:${c.price}`).join("|");
+
   useEffect(() => {
-    if (!storeId) return;
-    supabase.rpc("promos_live", { p_date: new Date().toISOString().slice(0, 10), p_store: storeId })
-      .then(({ data }) => setPromos((data as Promo[]) || []));
-  }, [storeId]);
-
-  // Work out what each cart line owes to a promotion. Offers are taken in
-  // priority order; a line already claimed keeps its first offer unless the
-  // next one is marked stackable.
-  const promoLines = useMemo(() => {
-    const out: Record<string, { amount: number; promotion_id: string; name: string; free?: boolean }> = {};
-    const claimed = new Set<string>();
-    const eligible = (c: CartItem, it: PromoItem[]) =>
-      !noPromo[c.product_id] &&
-      it.some((x) => x.product_id === c.product_id || (x.category_id && catOf[c.product_id] === x.category_id));
-
-    for (const pm of [...promos].sort((a, b) => a.priority - b.priority)) {
-      const buyItems = pm.items.filter((x) => x.role !== "get");
-      const lines = cart.filter((c) => eligible(c, buyItems) && (pm.stackable || !claimed.has(c.key)));
-      if (lines.length === 0) continue;
-
-      const totalQty = lines.reduce((n, c) => n + c.qty, 0);
-      const totalAmt = lines.reduce((n, c) => n + c.price * c.qty, 0);
-      if (pm.min_qty != null && totalQty < pm.min_qty) continue;
-      if (pm.min_amount != null && totalAmt < pm.min_amount) continue;
-
-      const give = (c: CartItem, amount: number, free = false) => {
-        if (amount <= 0) return;
-        const cur = out[c.key];
+    if (!storeId || cart.length === 0) { setPromoLines({}); setPromoNames([]); return; }
+    let live = true;
+    supabase.rpc("price_cart", {
+      p_store: storeId,
+      p_items: cart.map((c, i) => ({
+        line: i, product_id: c.product_id, variant_id: c.variant_id,
+        qty: c.qty, unit_price: c.price,
+      })),
+      p_date: new Date().toISOString().slice(0, 10),
+    }).then(({ data }) => {
+      if (!live) return;
+      const res = data as {
+        lines: { line: number; promo_discount: number; promotion_id: string | null; is_free_gift: boolean }[];
+        names: string[];
+      } | null;
+      const out: Record<string, { amount: number; promotion_id: string; name: string; free?: boolean }> = {};
+      for (const l of res?.lines || []) {
+        const c = cart[l.line];
+        if (!c || !l.promotion_id || Number(l.promo_discount) <= 0) continue;
         out[c.key] = {
-          amount: Math.min((cur?.amount || 0) + amount, c.price * c.qty),
-          promotion_id: pm.id, name: pm.name, free: free || cur?.free,
+          amount: Number(l.promo_discount), promotion_id: l.promotion_id,
+          name: "", free: l.is_free_gift,
         };
-        claimed.add(c.key);
-      };
-
-      if (pm.kind === "percent") {
-        for (const c of lines) give(c, (c.price * c.qty * Number(pm.value || 0)) / 100);
-      } else if (pm.kind === "amount") {
-        for (const c of lines) give(c, Number(pm.value || 0) * c.qty);
-      } else if (pm.kind === "fixed_price") {
-        for (const c of lines) give(c, Math.max(0, c.price - Number(pm.value || 0)) * c.qty);
-      } else if (pm.kind === "bxgy") {
-        const buy = Number(pm.buy_qty || 0), get = Number(pm.get_qty || 0);
-        if (buy > 0 && get > 0) {
-          const giftItems = pm.items.filter((x) => x.role === "get");
-          const pool = (giftItems.length ? cart.filter((c) => eligible(c, giftItems)) : lines)
-            .slice().sort((a, b) => a.price - b.price);
-          let free = Math.floor(totalQty / (buy + get)) * get;
-          for (const c of pool) {
-            if (free <= 0) break;
-            const take = Math.min(free, c.qty);
-            give(c, c.price * take, true);
-            free -= take;
-          }
-        }
-      } else if (pm.kind === "bundle") {
-        const members = pm.items.filter((x) => x.role === "bundle" || x.role === "buy");
-        const have = members.map((m) => cart.find((c) => c.product_id === m.product_id));
-        if (have.every(Boolean)) {
-          const sets = Math.min(...have.map((c) => Math.floor((c as CartItem).qty / 1)));
-          const full = have.reduce((n, c) => n + (c as CartItem).price, 0);
-          let off = Math.max(0, (full - Number(pm.value || 0))) * Math.max(sets, 1);
-          for (const c of have as CartItem[]) {
-            if (off <= 0) break;
-            const take = Math.min(off, c.price * c.qty);
-            give(c, take);
-            off -= take;
-          }
-        }
       }
-    }
-    return out;
+      setPromoLines(out);
+      setPromoNames(res?.names || []);
+    });
+    return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, promos, noPromo, catOf]);
+  }, [cartKey, storeId]);
 
   const promoTotal = Object.values(promoLines).reduce((n, x) => n + x.amount, 0);
 
@@ -862,7 +820,7 @@ export default function POSPage() {
               {promoTotal > 0 && (
                 <div className="text-xs text-green-700 mb-1">
                   Promo −{promoTotal.toLocaleString()} ·{" "}
-                  {Array.from(new Set(Object.values(promoLines).map((x) => x.name))).join(", ")}
+                  {promoNames.join(", ")}
                 </div>
               )}
               {underFloor.length > 0 && (
