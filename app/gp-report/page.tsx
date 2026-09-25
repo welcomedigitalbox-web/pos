@@ -91,7 +91,7 @@ export default function GpReportPage() {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-semibold">Product GP Report</h1>
-          <p className="text-sm text-slate-500">ရောင်းအား၊ ကုန်ကျစရိတ်၊ အမြတ်နဲ့ လက်ကျန်</p>
+          <p className="text-sm text-slate-500">Sales, cost, profit and stock on hand</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
@@ -101,22 +101,22 @@ export default function GpReportPage() {
             className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
           <select value={store} onChange={(e) => setStore(e.target.value)}
             className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-            <option value="">ဆိုင်အားလုံး</option>
+            <option value="">All shops</option>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <button onClick={download}
-            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm">Excel ထုတ်</button>
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm">Export CSV</button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ရှာရန် — code, နာမည်, အမျိုးအစား"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code, name or category"
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-[220px]" />
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={soldOnly} onChange={(e) => setSoldOnly(e.target.checked)} />
-          ရောင်းထားတာပဲ ပြ
+          Sold only
         </label>
-        <span className="text-xs text-slate-400">{shown.length} ခု</span>
+        <span className="text-xs text-slate-400">{shown.length} </span>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
@@ -153,14 +153,14 @@ export default function GpReportPage() {
             ))}
             {shown.length === 0 && (
               <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={11}>
-                {loading ? "…" : "ဒီကာလအတွင်း မရှိပါ။"}
+                {loading ? "…" : "Nothing in this period."}
               </td></tr>
             )}
           </tbody>
           {shown.length > 0 && (
             <tfoot className="bg-slate-50 font-medium">
               <tr className="border-t border-slate-200">
-                <td className="px-3 py-2" colSpan={5}>စုစုပေါင်း</td>
+                <td className="px-3 py-2" colSpan={5}>Total</td>
                 <td className="px-3 py-2 text-right">{n(total.qty)}</td>
                 <td className="px-3 py-2 text-right">{n(total.cost)}</td>
                 <td className="px-3 py-2 text-right">{n(total.price)}</td>

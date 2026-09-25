@@ -65,7 +65,7 @@ export default function ProductGridPage() {
 
   async function saveAll() {
     const ids = Object.keys(dirty);
-    if (ids.length === 0) return setMsg("ပြင်ထားတာ မရှိပါ");
+    if (ids.length === 0) return setMsg("Nothing to save");
     setSaving(true);
     let bad = 0;
     for (const id of ids) {
@@ -79,7 +79,7 @@ export default function ProductGridPage() {
     }
     setSaving(false);
     setDirty({});
-    setMsg(bad ? bad + " ခု မအောင်မြင်ပါ" : ids.length + " ခု သိမ်းပြီး");
+    setMsg(bad ? bad + "  failed" : ids.length + "  saved");
     load();
     setTimeout(() => setMsg(""), 4000);
   }
@@ -93,15 +93,15 @@ export default function ProductGridPage() {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl font-semibold">Product Grid</h1>
-          <p className="text-sm text-slate-500">ကွက်ထဲ တိုက်ရိုက် ပြင်ပြီး အားလုံးကို တစ်ခါတည်း သိမ်းပါ။</p>
+          <p className="text-sm text-slate-500">Edit in place, then save everything at once.</p>
         </div>
         <div className="flex items-center gap-2">
           {Object.keys(dirty).length > 0 && (
-            <span className="text-xs text-amber-700">{Object.keys(dirty).length} ခု ပြင်ထား</span>
+            <span className="text-xs text-amber-700">{Object.keys(dirty).length}  edited</span>
           )}
           <button onClick={saveAll} disabled={saving || Object.keys(dirty).length === 0}
             className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold disabled:opacity-40">
-            {saving ? "သိမ်းနေသည်…" : "သိမ်း"}
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -109,14 +109,14 @@ export default function ProductGridPage() {
       {msg && <div className="mb-3 text-sm px-3 py-2 rounded-lg bg-blue-50 text-blue-700">{msg}</div>}
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="code သို့ နာမည် ရှာရန်"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code or name"
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-[220px]" />
         <select value={cat} onChange={(e) => setCat(e.target.value)}
           className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
-          <option value="">အမျိုးအစား အားလုံး</option>
+          <option value="">All categories</option>
           {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <span className="text-xs text-slate-400">{shown.length} ခု</span>
+        <span className="text-xs text-slate-400">{shown.length} </span>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-auto max-h-[70vh]">
@@ -124,7 +124,7 @@ export default function ProductGridPage() {
           <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
             <tr>
               {["Code", "Description", "Category", "Cost", "Sale Price", "GP %",
-                "အနည်းဆုံးဈေး", "Disc", "Promo", "သုံးဆဲ"].map((h) => (
+                "Min Price", "Disc", "Promo", "Active"].map((h) => (
                 <th key={h} className="border border-slate-200 px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -178,14 +178,14 @@ export default function ProductGridPage() {
               );
             })}
             {shown.length === 0 && (
-              <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={10}>ပစ္စည်း မရှိပါ။</td></tr>
+              <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={10}>No products.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       <p className="text-xs text-slate-400 mt-2">
-        Cost က ဆိုင်အားလုံးရဲ့ ပျမ်းမျှကုန်ကျစရိတ် — ဒီမှာ ပြင်လို့မရပါ။ ကုန်ဝင်တိုင်း အလိုအလျောက် ပြောင်းတယ်။
+        Cost is the weighted average across every shop and is set by goods received, not here.
       </p>
     </div>
   );

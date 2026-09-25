@@ -6,11 +6,11 @@ import { supabase } from "@/lib/supabase";
 type Kind = "percent" | "amount" | "fixed_price" | "bxgy" | "bundle";
 
 const KIND_LABEL: Record<Kind, string> = {
-  percent: "% လျှော့",
-  amount: "ငွေပမာဏ လျှော့",
-  fixed_price: "အထူးဈေး",
-  bxgy: "X ဝယ် Y လက်ဆောင်",
-  bundle: "Bundle ဈေး",
+  percent: "% off",
+  amount: "Amount off",
+  fixed_price: "Special price",
+  bxgy: "Buy X get Y",
+  bundle: "Bundle price",
 };
 
 type Promo = {
@@ -94,8 +94,8 @@ export default function PromotionsPage() {
   const num = (v: string) => (v === "" ? null : Number(v));
 
   async function save() {
-    if (!name.trim()) return setMsg("နာမည် ထည့်ပါ");
-    if (buyIds.length === 0 && catIds.length === 0) return setMsg("ပစ္စည်း သို့ အမျိုးအစား အနည်းဆုံး တစ်ခု ရွေးပါ");
+    if (!name.trim()) return setMsg("Name is required");
+    if (buyIds.length === 0 && catIds.length === 0) return setMsg("Pick at least one product or category");
     const payload = {
       name: name.trim(), kind, value: num(value),
       buy_qty: kind === "bxgy" ? num(buyQty) : null,
@@ -127,7 +127,7 @@ export default function PromotionsPage() {
       const { error } = await supabase.from("promotion_items").insert(rows);
       if (error) return setMsg(error.message);
     }
-    setOpen(null); reset(); setMsg("သိမ်းပြီး");
+    setOpen(null); reset(); setMsg("Saved");
     load();
     setTimeout(() => setMsg(""), 3000);
   }
@@ -138,7 +138,7 @@ export default function PromotionsPage() {
   }
 
   async function remove(p: Promo) {
-    if (!confirm(p.name + " ကို ဖျက်မလား?")) return;
+    if (!confirm(p.name + "  — delete?")) return;
     await supabase.from("promotions").delete().eq("id", p.id);
     load();
   }
@@ -150,10 +150,10 @@ export default function PromotionsPage() {
 
   const state = (p: Promo) => {
     const d = today();
-    if (!p.active) return ["ပိတ်ထား", "bg-slate-100 text-slate-500"];
-    if (p.starts_on > d) return ["စောင့်ဆိုင်းဆဲ", "bg-amber-50 text-amber-700"];
-    if (p.ends_on && p.ends_on < d) return ["ကုန်ဆုံး", "bg-slate-100 text-slate-400"];
-    return ["သက်ရောက်နေ", "bg-green-50 text-green-700"];
+    if (!p.active) return ["Off", "bg-slate-100 text-slate-500"];
+    if (p.starts_on > d) return ["Scheduled", "bg-amber-50 text-amber-700"];
+    if (p.ends_on && p.ends_on < d) return ["Ended", "bg-slate-100 text-slate-400"];
+    return ["Live", "bg-green-50 text-green-700"];
   };
 
   const Pick = ({ list, chosen, set, label }: { list: Named[]; chosen: string[]; set: (v: string[]) => void; label: string }) => (
@@ -167,7 +167,7 @@ export default function PromotionsPage() {
             {x.name}
           </label>
         ))}
-        {list.length === 0 && <div className="px-3 py-2 text-xs text-slate-400">မရှိပါ</div>}
+        {list.length === 0 && <div className="px-3 py-2 text-xs text-slate-400">None</div>}
       </div>
     </div>
   );
@@ -177,10 +177,10 @@ export default function PromotionsPage() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-xl font-semibold">Promotions</h1>
-          <p className="text-sm text-slate-500">ရက်ကြိုပြီး စီစဉ်လို့ရတယ်။ စတင်ရက် ရောက်မှ သက်ရောက်မယ်။</p>
+          <p className="text-sm text-slate-500">Schedule ahead — an offer starts on its start date.</p>
         </div>
         <button onClick={() => { reset(); setOpen("new"); }}
-          className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold">+ အသစ်</button>
+          className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold">+ New</button>
       </div>
 
       {msg && <div className="mb-4 text-sm px-3 py-2 rounded-lg bg-blue-50 text-blue-700">{msg}</div>}
@@ -189,7 +189,7 @@ export default function PromotionsPage() {
         <table className="w-full text-sm min-w-[820px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
-              {["Promotion", "အမျိုးအစား", "တန်ဖိုး", "ကာလ", "ဆိုင်", "အခြေအနေ", ""].map((h) => (
+              {["Promotion", "Type", "Value", "Period", "Shops", "Status", ""].map((h) => (
                 <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
               ))}
             </tr>
@@ -202,28 +202,28 @@ export default function PromotionsPage() {
                 <tr key={p.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">
                     <div className="font-medium">{p.name}</div>
-                    <div className="text-xs text-slate-400">{n} ပစ္စည်း/အမျိုးအစား</div>
+                    <div className="text-xs text-slate-400">{n}  items</div>
                   </td>
                   <td className="px-3 py-2 text-slate-600">{KIND_LABEL[p.kind]}</td>
                   <td className="px-3 py-2">
-                    {p.kind === "bxgy" ? `${fmt(p.buy_qty)} ဝယ် ${fmt(p.get_qty)} လက်ဆောင်`
+                    {p.kind === "bxgy" ? `${fmt(p.buy_qty)}  buy → ${fmt(p.get_qty)} free`
                       : p.kind === "percent" ? `${fmt(p.value)}%` : fmt(p.value)}
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{p.starts_on} → {p.ends_on || "အကန့်အသတ်မရှိ"}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{p.starts_on} → {p.ends_on || "no end"}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">{p.stores?.length ? p.stores.join(", ") : "အားလုံး"}</td>
                   <td className="px-3 py-2">
                     <span className={"text-xs px-2 py-0.5 rounded " + tone}>{label}</span>
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <button onClick={() => edit(p)} className="text-xs text-blue-600 mr-3">ပြင်</button>
-                    <button onClick={() => toggle(p)} className="text-xs text-slate-500 mr-3">{p.active ? "ပိတ်" : "ဖွင့်"}</button>
-                    <button onClick={() => remove(p)} className="text-xs text-red-600">ဖျက်</button>
+                    <button onClick={() => edit(p)} className="text-xs text-blue-600 mr-3">Edit</button>
+                    <button onClick={() => toggle(p)} className="text-xs text-slate-500 mr-3">{p.active ? "Off" : "On"}</button>
+                    <button onClick={() => remove(p)} className="text-xs text-red-600">Delete</button>
                   </td>
                 </tr>
               );
             })}
             {promos.length === 0 && (
-              <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={7}>Promotion မရှိသေးပါ။</td></tr>
+              <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={7}>No promotions yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -231,7 +231,7 @@ export default function PromotionsPage() {
 
       {open && (
         <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h2 className="font-semibold mb-4">{open === "new" ? "Promotion အသစ်" : "ပြင်ဆင်ရန်"}</h2>
+          <h2 className="font-semibold mb-4">{open === "new" ? "New promotion" : "Edit promotion"}</h2>
 
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
             <label className="block text-sm">
@@ -252,12 +252,12 @@ export default function PromotionsPage() {
             {kind === "bxgy" ? (
               <>
                 <label className="block text-sm">
-                  <span className="text-xs text-slate-500 block mb-1">ဝယ်ရမယ့် အရေအတွက်</span>
+                  <span className="text-xs text-slate-500 block mb-1">Buy quantity</span>
                   <input type="number" value={buyQty} onChange={(e) => setBuyQty(e.target.value)}
                     className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
                 </label>
                 <label className="block text-sm">
-                  <span className="text-xs text-slate-500 block mb-1">လက်ဆောင် အရေအတွက်</span>
+                  <span className="text-xs text-slate-500 block mb-1">Free quantity</span>
                   <input type="number" value={getQty} onChange={(e) => setGetQty(e.target.value)}
                     className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
                 </label>
@@ -265,8 +265,8 @@ export default function PromotionsPage() {
             ) : (
               <label className="block text-sm">
                 <span className="text-xs text-slate-500 block mb-1">
-                  {kind === "percent" ? "လျှော့ရာခိုင်နှုန်း" : kind === "amount" ? "လျှော့ငွေ (MMK)"
-                    : kind === "fixed_price" ? "အထူးဈေး (MMK)" : "Bundle ဈေး (MMK)"}
+                  {kind === "percent" ? "Percent off" : kind === "amount" ? "Amount off (MMK)"
+                    : kind === "fixed_price" ? "Special price (MMK)" : "Bundle price (MMK)"}
                 </span>
                 <input type="number" value={value} onChange={(e) => setValue(e.target.value)}
                   className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
@@ -274,55 +274,55 @@ export default function PromotionsPage() {
             )}
 
             <label className="block text-sm">
-              <span className="text-xs text-slate-500 block mb-1">အနည်းဆုံး အရေအတွက် (ရွေးချယ်)</span>
+              <span className="text-xs text-slate-500 block mb-1">Minimum quantity (optional)</span>
               <input type="number" value={minQty} onChange={(e) => setMinQty(e.target.value)}
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
             </label>
             <label className="block text-sm">
-              <span className="text-xs text-slate-500 block mb-1">စတင်ရက်</span>
+              <span className="text-xs text-slate-500 block mb-1">Starts on</span>
               <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
             </label>
             <label className="block text-sm">
-              <span className="text-xs text-slate-500 block mb-1">ပြီးဆုံးရက် (ဗလာ = အကန့်အသတ်မရှိ)</span>
+              <span className="text-xs text-slate-500 block mb-1">ပြီးဆုံးရက် (ဗလာ = no end)</span>
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
             </label>
             <label className="block text-sm">
-              <span className="text-xs text-slate-500 block mb-1">ဦးစားပေး (ငယ်လေ အရင်လေ)</span>
+              <span className="text-xs text-slate-500 block mb-1">Priority (lower wins)</span>
               <input type="number" value={priority} onChange={(e) => setPriority(e.target.value)}
                 className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full" />
             </label>
             <label className="flex items-center gap-2 text-sm mt-5">
               <input type="checkbox" checked={stackable} onChange={(e) => setStackable(e.target.checked)} />
-              တခြား promo နဲ့ ထပ်လို့ရ
+              Can stack with other offers
             </label>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
-            <Pick list={stores} chosen={pickStores} set={setPickStores} label="ဆိုင် (မရွေးရင် အားလုံး)" />
-            <Pick list={cats} chosen={catIds} set={setCatIds} label="အမျိုးအစား တစ်ခုလုံး" />
+            <Pick list={stores} chosen={pickStores} set={setPickStores} label="Shops (none = all)" />
+            <Pick list={cats} chosen={catIds} set={setCatIds} label="Whole categories" />
           </div>
 
           <div className="mb-4">
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ပစ္စည်း ရှာရန်"
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products"
               className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full mb-2" />
             <div className="grid sm:grid-cols-2 gap-4">
               <Pick list={shown} chosen={buyIds} set={setBuyIds}
-                label={kind === "bundle" ? "Bundle ထဲပါမယ့် ပစ္စည်းများ" : "သက်ရောက်မယ့် ပစ္စည်းများ"} />
+                label={kind === "bundle" ? "Bundle members" : "Products it applies to"} />
               {kind === "bxgy" && (
-                <Pick list={shown} chosen={getIds} set={setGetIds} label="လက်ဆောင်ပေးမယ့် ပစ္စည်းများ" />
+                <Pick list={shown} chosen={getIds} set={setGetIds} label="Free items" />
               )}
             </div>
             {buyIds.length > 0 && (
-              <div className="text-xs text-slate-500 mt-1">ရွေးထားသည် {buyIds.length} ခု</div>
+              <div className="text-xs text-slate-500 mt-1">Selected {buyIds.length} </div>
             )}
           </div>
 
           <div className="flex gap-2">
-            <button onClick={save} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold">သိမ်း</button>
+            <button onClick={save} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold">Save</button>
             <button onClick={() => { setOpen(null); reset(); }}
-              className="px-4 py-2 border border-slate-200 rounded-lg text-sm">ပိတ်</button>
+              className="px-4 py-2 border border-slate-200 rounded-lg text-sm">Close</button>
           </div>
         </div>
       )}

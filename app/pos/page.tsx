@@ -520,7 +520,7 @@ export default function POSPage() {
       return showToast(t("pos_amountInsufficient"));
     }
     if (underFloor.length > 0 && !canApproveDiscount) {
-      return showToast("အနည်းဆုံးဈေးအောက် ကျနေတယ်: " + underFloor.map((c) => c.name).join(", "));
+      return showToast("Below minimum price: " + underFloor.map((c) => c.name).join(", "));
     }
     if (requiresDiscountApproval && !discountApproved) {
       return showToast(t("pos_discountApprovalRequired"));
@@ -856,7 +856,7 @@ export default function POSPage() {
               <label className="text-xs text-slate-500">{t("pos_discount")}</label>
               {discountLocked && (
                 <div className="text-xs text-red-600 mb-1">
-                  Discount မရ — {Array.from(new Set(lockedNames)).join(", ")}
+                  No discount — {Array.from(new Set(lockedNames)).join(", ")}
                 </div>
               )}
               {promoTotal > 0 && (
@@ -867,7 +867,7 @@ export default function POSPage() {
               )}
               {underFloor.length > 0 && (
                 <div className="text-xs text-amber-700 mb-1">
-                  အနည်းဆုံးဈေးအောက်: {underFloor.map((c) => c.name).join(", ")}
+                  Below min price: {underFloor.map((c) => c.name).join(", ")}
                 </div>
               )}
               {tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && (

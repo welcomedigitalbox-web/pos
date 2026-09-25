@@ -598,16 +598,16 @@ export default function ProductsPage() {
                 <input type="checkbox"
                   checked={form.allow_discount}
                   onChange={(e) => setForm({ ...form, allow_discount: e.target.checked })} />
-                Discount ပေးလို့ရ
+                Allow discount
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox"
                   checked={form.allow_promotion}
                   onChange={(e) => setForm({ ...form, allow_promotion: e.target.checked })} />
-                Promotion ထဲ ပါလို့ရ
+                Allow promotion
               </label>
               <label className="block text-sm">
-                <span className="text-xs text-slate-500 block mb-1">အနည်းဆုံးဈေး (ဗလာ = ကန့်သတ်မရှိ)</span>
+                <span className="text-xs text-slate-500 block mb-1">Minimum price (blank = none)</span>
                 <input type="number" inputMode="numeric"
                   className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full"
                   value={form.min_price}
