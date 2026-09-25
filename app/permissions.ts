@@ -36,6 +36,7 @@ export type PageKey =
   | "purchase-orders"
   | "promotions"
   | "gp-report"
+  | "product-grid"
   | "ai-agent"
   | "profile"
   | "admin";
@@ -77,6 +78,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
   { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "sale" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
+  { key: "product-grid", href: "/product-grid", labelKey: "nav_productGrid", group: "merchandising" },
   { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
