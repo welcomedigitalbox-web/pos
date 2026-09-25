@@ -84,6 +84,30 @@ export default function ProductGridPage() {
     setTimeout(() => setMsg(""), 4000);
   }
 
+  function exportCsv() {
+    const head = ["Code", "Description", "Category", "Cost", "Sale Price", "GP %",
+      "Min Price", "Allow Discount", "Allow Promotion", "Active"];
+    const esc = (v: unknown) => {
+      const t = String(v ?? "");
+      return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    const catName = (id: string | null) => cats.find((c) => c.id === id)?.name ?? "";
+    const body = shown.map((r) => {
+      const g = r.price > 0 ? ((r.price - r.avg_cost) / r.price) * 100 : null;
+      return [r.sku, r.name, catName(r.category_id), Math.round(r.avg_cost), r.price,
+        g == null ? "" : g.toFixed(1), r.min_price ?? "",
+        r.allow_discount === false ? "No" : "Yes",
+        r.allow_promotion === false ? "No" : "Yes",
+        r.is_active ? "Yes" : "No"].map(esc).join(",");
+    });
+    const csv = "\uFEFF" + [head.join(","), ...body].join("\n");
+    const a2 = document.createElement("a");
+    a2.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a2.download = "products-" + new Date().toISOString().slice(0, 10) + ".csv";
+    a2.click();
+    URL.revokeObjectURL(a2.href);
+  }
+
   const gp = (r: Row) => (r.price > 0 ? ((r.price - r.avg_cost) / r.price) * 100 : null);
   const cell = "border-r border-slate-100 px-2 py-1";
   const input = "w-full bg-transparent outline-none focus:bg-blue-50 px-1 py-0.5 rounded";
@@ -99,6 +123,8 @@ export default function ProductGridPage() {
           {Object.keys(dirty).length > 0 && (
             <span className="text-xs text-amber-700">{Object.keys(dirty).length}  edited</span>
           )}
+          <button onClick={exportCsv}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm">Export</button>
           <button onClick={saveAll} disabled={saving || Object.keys(dirty).length === 0}
             className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold disabled:opacity-40">
             {saving ? "Saving…" : "Save"}
