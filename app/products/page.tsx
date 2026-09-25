@@ -23,9 +23,12 @@ type FormState = {
   category_id: string;
   is_consignment: boolean;
   requires_expiry: boolean;
+  allow_discount: boolean;
+  allow_promotion: boolean;
+  min_price: string;
 };
 
-const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "", category_id: "", is_consignment: false, requires_expiry: false };
+const emptyForm: FormState = { id: null, name: "", sku: "", price: "", stock_qty: "", avg_cost: "", category_id: "", is_consignment: false, requires_expiry: false, allow_discount: true, allow_promotion: true, min_price: "" };
 
 export default function ProductsPage() {
   const { storeId, stores } = useStore();
@@ -171,6 +174,9 @@ export default function ProductsPage() {
       category_id: parent.category_id || "",
       is_consignment: !!parent.is_consignment,
       requires_expiry: !!parent.requires_expiry,
+      allow_discount: parent.allow_discount !== false,
+      allow_promotion: parent.allow_promotion !== false,
+      min_price: parent.min_price == null ? "" : String(parent.min_price),
     });
     await loadVariants(parent.id);
     setShowForm(true);
@@ -203,6 +209,9 @@ export default function ProductsPage() {
             category_id: form.category_id || null,
             is_consignment: form.is_consignment,
             requires_expiry: form.requires_expiry,
+            allow_discount: form.allow_discount,
+            allow_promotion: form.allow_promotion,
+            min_price: form.min_price === "" ? null : Number(form.min_price),
             updated_at: new Date().toISOString(),
           })
           .eq("id", form.id);
@@ -219,6 +228,9 @@ export default function ProductsPage() {
             category_id: form.category_id || null,
             is_consignment: form.is_consignment,
             requires_expiry: form.requires_expiry,
+            allow_discount: form.allow_discount,
+            allow_promotion: form.allow_promotion,
+            min_price: form.min_price === "" ? null : Number(form.min_price),
             store_id: storeId,
           })
           .select()
@@ -581,6 +593,25 @@ export default function ProductsPage() {
                   onChange={(e) => setForm({ ...form, requires_expiry: e.target.checked })}
                 />
                 {t("products_requiresExpiry")}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                  checked={form.allow_discount}
+                  onChange={(e) => setForm({ ...form, allow_discount: e.target.checked })} />
+                Discount ပေးလို့ရ
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                  checked={form.allow_promotion}
+                  onChange={(e) => setForm({ ...form, allow_promotion: e.target.checked })} />
+                Promotion ထဲ ပါလို့ရ
+              </label>
+              <label className="block text-sm">
+                <span className="text-xs text-slate-500 block mb-1">အနည်းဆုံးဈေး (ဗလာ = ကန့်သတ်မရှိ)</span>
+                <input type="number" inputMode="numeric"
+                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-full"
+                  value={form.min_price}
+                  onChange={(e) => setForm({ ...form, min_price: e.target.value })} />
               </label>
             </div>
 

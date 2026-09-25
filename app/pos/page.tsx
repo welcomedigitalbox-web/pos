@@ -43,6 +43,8 @@ export default function POSPage() {
   const [items, setItems] = useState<SellableItem[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [noDiscount, setNoDiscount] = useState<Record<string, string>>({});
+  const [minPrice, setMinPrice] = useState<Record<string, number>>({});
   const idempotencyKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
@@ -350,6 +352,21 @@ export default function POSPage() {
     setShowCustomerDropdown(false);
   }
 
+  // Some items may never be discounted, and some carry a floor price. Both are
+  // set by merchandising on the product itself, so the till just enforces them.
+  useEffect(() => {
+    supabase.from("products").select("id, name, allow_discount, min_price")
+      .then(({ data }) => {
+        const no: Record<string, string> = {};
+        const mn: Record<string, number> = {};
+        for (const r of (data as { id: string; name: string; allow_discount: boolean | null; min_price: number | null }[]) || []) {
+          if (r.allow_discount === false) no[r.id] = r.name;
+          if (r.min_price != null) mn[r.id] = Number(r.min_price);
+        }
+        setNoDiscount(no); setMinPrice(mn);
+      });
+  }, []);
+
   // ---- Calculations ----
   const subtotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
   const discountValueNum = Number(discountValue) || 0;
@@ -362,11 +379,22 @@ export default function POSPage() {
   const loyaltyPercent = tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id);
   const isLoyaltyLocked = loyaltyPercent > 0 && !canApproveDiscount;
   // Manual discounts (no loyalty tier) still need a manager to sign off.
+  // A single no-discount item locks the whole invoice's discount field.
+  const lockedNames = cart.map((c) => noDiscount[c.product_id]).filter(Boolean);
+  const discountLocked = lockedNames.length > 0;
   const requiresDiscountApproval = !isLoyaltyLocked && discountAmount > 0 && !canApproveDiscount;
 
-  const effectiveDiscount = isLoyaltyLocked
+  const effectiveDiscount = discountLocked
+    ? 0
+    : isLoyaltyLocked
     ? (subtotal * loyaltyPercent) / 100
     : Math.min(discountAmount, subtotal);
+  // After the discount, no line may fall under its floor price.
+  const ratio = subtotal > 0 ? effectiveDiscount / subtotal : 0;
+  const underFloor = cart.filter((c) => {
+    const floor = minPrice[c.product_id];
+    return floor != null && c.price * (1 - ratio) < floor;
+  });
   const afterDiscount = Math.max(subtotal - effectiveDiscount, 0);
   const vatPercentNum = vatEnabled ? STANDARD_VAT_PERCENT : 0;
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
@@ -394,6 +422,9 @@ export default function POSPage() {
     if (cart.length === 0) return;
     if (isCashMethod && amountReceivedNum < grandTotal) {
       return showToast(t("pos_amountInsufficient"));
+    }
+    if (underFloor.length > 0 && !canApproveDiscount) {
+      return showToast("အနည်းဆုံးဈေးအောက် ကျနေတယ်: " + underFloor.map((c) => c.name).join(", "));
     }
     if (requiresDiscountApproval && !discountApproved) {
       return showToast(t("pos_discountApprovalRequired"));
@@ -724,6 +755,16 @@ export default function POSPage() {
             {/* Discount */}
             <div className="mb-2">
               <label className="text-xs text-slate-500">{t("pos_discount")}</label>
+              {discountLocked && (
+                <div className="text-xs text-red-600 mb-1">
+                  Discount မရ — {Array.from(new Set(lockedNames)).join(", ")}
+                </div>
+              )}
+              {underFloor.length > 0 && (
+                <div className="text-xs text-amber-700 mb-1">
+                  အနည်းဆုံးဈေးအောက်: {underFloor.map((c) => c.name).join(", ")}
+                </div>
+              )}
               {tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && (
                 <p className="text-xs text-green-600 font-medium mt-0.5">
                   🎖️ {t("customers_loyaltyApplied")} ({tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id)}%)
@@ -734,6 +775,7 @@ export default function POSPage() {
                   type="number"
                   className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   value={isLoyaltyLocked ? String(loyaltyPercent) : discountValue}
+                  disabled={discountLocked}
                   onChange={(e) => setDiscountValue(e.target.value)}
                   placeholder="0"
                   disabled={isLoyaltyLocked}
