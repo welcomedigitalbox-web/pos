@@ -34,6 +34,7 @@ export type PageKey =
   | "product-variant"
   | "suppliers"
   | "purchase-orders"
+  | "promotions"
   | "ai-agent"
   | "profile"
   | "admin";
@@ -93,6 +94,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "merchandising" },
   { key: "purchase-orders", href: "/purchase-orders", labelKey: "nav_purchaseOrders", group: "merchandising" },
   { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
+  { key: "promotions", href: "/promotions", labelKey: "nav_promotions", group: "merchandising" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
   { key: "campaigns", href: "/campaigns", labelKey: "nav_campaigns", group: "reports" },
