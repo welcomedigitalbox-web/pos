@@ -21,6 +21,14 @@ type CartItem = {
   avg_cost: number;
 };
 
+type PromoItem = { product_id: string | null; category_id: string | null; role: string; qty: number | null };
+type Promo = {
+  id: string; name: string; kind: "percent" | "amount" | "fixed_price" | "bxgy" | "bundle";
+  value: number | null; buy_qty: number | null; get_qty: number | null;
+  min_qty: number | null; min_amount: number | null;
+  priority: number; stackable: boolean; items: PromoItem[];
+};
+
 type DiscountType = "percent" | "flat";
 
 const STANDARD_VAT_PERCENT = 5;
@@ -45,6 +53,9 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [noDiscount, setNoDiscount] = useState<Record<string, string>>({});
   const [minPrice, setMinPrice] = useState<Record<string, number>>({});
+  const [noPromo, setNoPromo] = useState<Record<string, boolean>>({});
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [catOf, setCatOf] = useState<Record<string, string>>({});
   const idempotencyKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
@@ -355,20 +366,105 @@ export default function POSPage() {
   // Some items may never be discounted, and some carry a floor price. Both are
   // set by merchandising on the product itself, so the till just enforces them.
   useEffect(() => {
-    supabase.from("products").select("id, name, allow_discount, min_price")
+    supabase.from("products").select("id, name, allow_discount, allow_promotion, min_price, category_id")
       .then(({ data }) => {
         const no: Record<string, string> = {};
         const mn: Record<string, number> = {};
-        for (const r of (data as { id: string; name: string; allow_discount: boolean | null; min_price: number | null }[]) || []) {
+        const np: Record<string, boolean> = {};
+        const cm: Record<string, string> = {};
+        for (const r of (data as { id: string; name: string; allow_discount: boolean | null; allow_promotion: boolean | null; min_price: number | null; category_id: string | null }[]) || []) {
           if (r.allow_discount === false) no[r.id] = r.name;
           if (r.min_price != null) mn[r.id] = Number(r.min_price);
+          if (r.allow_promotion === false) np[r.id] = true;
+          if (r.category_id) cm[r.id] = r.category_id;
         }
-        setNoDiscount(no); setMinPrice(mn);
+        setNoDiscount(no); setMinPrice(mn); setNoPromo(np); setCatOf(cm);
       });
   }, []);
 
+  // Offers are decided by merchandising and only read here, so a promo that
+  // starts tomorrow simply is not in this list today.
+  useEffect(() => {
+    if (!storeId) return;
+    supabase.rpc("promos_live", { p_date: new Date().toISOString().slice(0, 10), p_store: storeId })
+      .then(({ data }) => setPromos((data as Promo[]) || []));
+  }, [storeId]);
+
+  // Work out what each cart line owes to a promotion. Offers are taken in
+  // priority order; a line already claimed keeps its first offer unless the
+  // next one is marked stackable.
+  const promoLines = useMemo(() => {
+    const out: Record<string, { amount: number; promotion_id: string; name: string; free?: boolean }> = {};
+    const claimed = new Set<string>();
+    const eligible = (c: CartItem, it: PromoItem[]) =>
+      !noPromo[c.product_id] &&
+      it.some((x) => x.product_id === c.product_id || (x.category_id && catOf[c.product_id] === x.category_id));
+
+    for (const pm of [...promos].sort((a, b) => a.priority - b.priority)) {
+      const buyItems = pm.items.filter((x) => x.role !== "get");
+      const lines = cart.filter((c) => eligible(c, buyItems) && (pm.stackable || !claimed.has(c.key)));
+      if (lines.length === 0) continue;
+
+      const totalQty = lines.reduce((n, c) => n + c.qty, 0);
+      const totalAmt = lines.reduce((n, c) => n + c.price * c.qty, 0);
+      if (pm.min_qty != null && totalQty < pm.min_qty) continue;
+      if (pm.min_amount != null && totalAmt < pm.min_amount) continue;
+
+      const give = (c: CartItem, amount: number, free = false) => {
+        if (amount <= 0) return;
+        const cur = out[c.key];
+        out[c.key] = {
+          amount: Math.min((cur?.amount || 0) + amount, c.price * c.qty),
+          promotion_id: pm.id, name: pm.name, free: free || cur?.free,
+        };
+        claimed.add(c.key);
+      };
+
+      if (pm.kind === "percent") {
+        for (const c of lines) give(c, (c.price * c.qty * Number(pm.value || 0)) / 100);
+      } else if (pm.kind === "amount") {
+        for (const c of lines) give(c, Number(pm.value || 0) * c.qty);
+      } else if (pm.kind === "fixed_price") {
+        for (const c of lines) give(c, Math.max(0, c.price - Number(pm.value || 0)) * c.qty);
+      } else if (pm.kind === "bxgy") {
+        const buy = Number(pm.buy_qty || 0), get = Number(pm.get_qty || 0);
+        if (buy > 0 && get > 0) {
+          const giftItems = pm.items.filter((x) => x.role === "get");
+          const pool = (giftItems.length ? cart.filter((c) => eligible(c, giftItems)) : lines)
+            .slice().sort((a, b) => a.price - b.price);
+          let free = Math.floor(totalQty / (buy + get)) * get;
+          for (const c of pool) {
+            if (free <= 0) break;
+            const take = Math.min(free, c.qty);
+            give(c, c.price * take, true);
+            free -= take;
+          }
+        }
+      } else if (pm.kind === "bundle") {
+        const members = pm.items.filter((x) => x.role === "bundle" || x.role === "buy");
+        const have = members.map((m) => cart.find((c) => c.product_id === m.product_id));
+        if (have.every(Boolean)) {
+          const sets = Math.min(...have.map((c) => Math.floor((c as CartItem).qty / 1)));
+          const full = have.reduce((n, c) => n + (c as CartItem).price, 0);
+          let off = Math.max(0, (full - Number(pm.value || 0))) * Math.max(sets, 1);
+          for (const c of have as CartItem[]) {
+            if (off <= 0) break;
+            const take = Math.min(off, c.price * c.qty);
+            give(c, take);
+            off -= take;
+          }
+        }
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, promos, noPromo, catOf]);
+
+  const promoTotal = Object.values(promoLines).reduce((n, x) => n + x.amount, 0);
+
   // ---- Calculations ----
-  const subtotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+  const grossTotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+  const subtotal = Math.max(grossTotal - promoTotal, 0);
   const discountValueNum = Number(discountValue) || 0;
   const discountAmount =
     discountType === "percent" ? (subtotal * discountValueNum) / 100 : discountValueNum;
@@ -445,6 +541,9 @@ export default function POSPage() {
           product_name: c.name,
           qty: c.qty,
           unit_price: c.price,
+          promo_discount: promoLines[c.key]?.amount ?? 0,
+          promotion_id: promoLines[c.key]?.promotion_id ?? null,
+          is_free_gift: promoLines[c.key]?.free ?? false,
         })),
         p_payment: {
           payment_method: paymentMethod,
@@ -758,6 +857,12 @@ export default function POSPage() {
               {discountLocked && (
                 <div className="text-xs text-red-600 mb-1">
                   Discount မရ — {Array.from(new Set(lockedNames)).join(", ")}
+                </div>
+              )}
+              {promoTotal > 0 && (
+                <div className="text-xs text-green-700 mb-1">
+                  Promo −{promoTotal.toLocaleString()} ·{" "}
+                  {Array.from(new Set(Object.values(promoLines).map((x) => x.name))).join(", ")}
                 </div>
               )}
               {underFloor.length > 0 && (
