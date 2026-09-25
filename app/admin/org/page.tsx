@@ -230,6 +230,17 @@ export default function OrgPage() {
                 <option value="">-</option>
                 {depts.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
               </select>
+              {(() => {
+                // A role can go only when nobody is carrying it.
+                const n = people.filter((x) => x.role === r.key).length;
+                if (n) return <span className="text-xs text-slate-400 w-24 text-right shrink-0">{n} people</span>;
+                return (
+                  <button
+                    onClick={() => confirm("Delete " + r.label_en + "?") &&
+                      run(supabase.from("org_roles").delete().eq("key", r.key), "deleted")}
+                    className="text-xs text-red-600 w-24 text-right shrink-0">ဖျက်</button>
+                );
+              })()}
             </div>
           ))}
         </div>
