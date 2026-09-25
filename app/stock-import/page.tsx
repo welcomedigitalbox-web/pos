@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import * as XLSX from "xlsx";
 
 type Draft = {
@@ -26,6 +29,16 @@ const asDate = (v: unknown) => {
 };
 
 export default function StockImportPage() {
+  // A page nobody navigated to can still be typed into the address bar,
+  // so the page checks for itself.
+  const { profile } = useAuth();
+  const router = useRouter();
+  const pageBlocked = !profile || !hasPermission(profile, "stock-import");
+  useEffect(() => {
+    if (profile && !hasPermission(profile, "stock-import")) router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const [rows, setRows] = useState<Draft[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [msg, setMsg] = useState("");
@@ -97,6 +110,8 @@ export default function StockImportPage() {
     setMsg(`${res.imported} imported${res.failed ? `, ${res.failed} failed` : ""}`);
     setRows([]);
   }
+
+  if (pageBlocked) return null;
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6">

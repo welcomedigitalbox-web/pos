@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 
 type Kind = "percent" | "amount" | "fixed_price" | "bxgy" | "bundle";
 
@@ -28,6 +31,16 @@ const today = () => new Date().toISOString().slice(0, 10);
 const fmt = (n: unknown) => (n == null || n === "" ? "-" : Number(n).toLocaleString());
 
 export default function PromotionsPage() {
+  // A page nobody navigated to can still be typed into the address bar,
+  // so the page checks for itself.
+  const { profile } = useAuth();
+  const router = useRouter();
+  const pageBlocked = !profile || !hasPermission(profile, "promotions");
+  useEffect(() => {
+    if (profile && !hasPermission(profile, "promotions")) router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const [promos, setPromos] = useState<Promo[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [products, setProducts] = useState<Named[]>([]);
@@ -171,6 +184,8 @@ export default function PromotionsPage() {
       </div>
     </div>
   );
+
+  if (pageBlocked) return null;
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6">

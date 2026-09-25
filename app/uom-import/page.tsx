@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 import * as XLSX from "xlsx";
 
 type Draft = {
@@ -14,6 +17,16 @@ const HEADERS = ["SKU", "Unit Code", "Unit Name", "Factor", "Barcode", "Unit Pri
 const num = (v: unknown) => Number(String(v ?? "").replace(/[, ]/g, "")) || 0;
 
 export default function UomImportPage() {
+  // A page nobody navigated to can still be typed into the address bar,
+  // so the page checks for itself.
+  const { profile } = useAuth();
+  const router = useRouter();
+  const pageBlocked = !profile || !hasPermission(profile, "uom-import");
+  useEffect(() => {
+    if (profile && !hasPermission(profile, "uom-import")) router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const [rows, setRows] = useState<Draft[]>([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -113,6 +126,8 @@ export default function UomImportPage() {
     setMsg(`${ok} imported${bad ? `, ${bad} failed` : ""}`);
     setRows([]);
   }
+
+  if (pageBlocked) return null;
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6">

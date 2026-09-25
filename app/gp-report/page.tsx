@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 
 type Row = {
   code: string | null; description: string; category: string | null;
@@ -15,6 +18,16 @@ const monthStart = () => { const d = new Date(); d.setDate(1); return iso(d); };
 const n = (v: unknown) => Number(v || 0).toLocaleString();
 
 export default function GpReportPage() {
+  // A page nobody navigated to can still be typed into the address bar,
+  // so the page checks for itself.
+  const { profile } = useAuth();
+  const router = useRouter();
+  const pageBlocked = !profile || !hasPermission(profile, "gp-report");
+  useEffect(() => {
+    if (profile && !hasPermission(profile, "gp-report")) router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(iso(new Date()));
   const [store, setStore] = useState("");
@@ -85,6 +98,8 @@ export default function GpReportPage() {
     a.click();
     URL.revokeObjectURL(a.href);
   }
+
+  if (pageBlocked) return null;
 
   return (
     <div className="max-w-full mx-auto p-4 sm:p-6">

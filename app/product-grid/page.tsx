@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../auth-context";
+import { hasPermission } from "../permissions";
 
 type Row = {
   id: string; sku: string | null; name: string; category_id: string | null;
@@ -14,6 +17,16 @@ type Cat = { id: string; name: string };
 const n = (v: unknown) => Number(v || 0).toLocaleString();
 
 export default function ProductGridPage() {
+  // A page nobody navigated to can still be typed into the address bar,
+  // so the page checks for itself.
+  const { profile } = useAuth();
+  const router = useRouter();
+  const pageBlocked = !profile || !hasPermission(profile, "product-grid");
+  useEffect(() => {
+    if (profile && !hasPermission(profile, "product-grid")) router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
   const [rows, setRows] = useState<Row[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
@@ -134,6 +147,8 @@ export default function ProductGridPage() {
   const gp = (r: Row) => (r.price > 0 ? ((r.price - r.avg_cost) / r.price) * 100 : null);
   const cell = "border-r border-slate-100 px-2 py-1";
   const input = "w-full bg-transparent outline-none focus:bg-blue-50 px-1 py-0.5 rounded";
+
+  if (pageBlocked) return null;
 
   return (
     <div className="max-w-full p-4 sm:p-6">
