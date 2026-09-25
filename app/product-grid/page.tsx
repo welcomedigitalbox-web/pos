@@ -16,6 +16,9 @@ const n = (v: unknown) => Number(v || 0).toLocaleString();
 export default function ProductGridPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [byStore, setByStore] = useState<Record<string, Record<string, number>>>({});
+  const [onOrder, setOnOrder] = useState<Record<string, number>>({});
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [dirty, setDirty] = useState<Record<string, Partial<Row>>>({});
@@ -46,6 +49,20 @@ export default function ProductGridPage() {
       return { ...r, avg_cost: e && e.qty > 0 ? e.value / e.qty : e?.last || 0 };
     }));
     setCats((c.data as Cat[]) || []);
+
+    const [st, mx, oo] = await Promise.all([
+      supabase.from("stores").select("id,name").order("id"),
+      supabase.rpc("product_stock_matrix"),
+      supabase.rpc("product_on_order"),
+    ]);
+    setStores((st.data as { id: string; name: string }[]) || []);
+    const grid: Record<string, Record<string, number>> = {};
+    for (const r of ((mx.data as { product_id: string; store_id: string; stock_qty: number }[]) || [])) {
+      (grid[r.product_id] ||= {})[r.store_id] = Number(r.stock_qty || 0);
+    }
+    setByStore(grid);
+    setOnOrder(Object.fromEntries(((oo.data as { product_id: string; on_order: number }[]) || [])
+      .map((r) => [r.product_id, Number(r.on_order || 0)])));
   }
 
   const shown = useMemo(() => {
@@ -86,7 +103,8 @@ export default function ProductGridPage() {
 
   function exportCsv() {
     const head = ["Code", "Description", "Category", "Cost", "Sale Price", "GP %",
-      "Min Price", "Allow Discount", "Allow Promotion", "Active"];
+      "Min Price", "Allow Discount", "Allow Promotion", "Active",
+      ...stores.map((s2) => s2.name), "Total Stock", "On Order", "Stock Value"];
     const esc = (v: unknown) => {
       const t = String(v ?? "");
       return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
@@ -98,7 +116,12 @@ export default function ProductGridPage() {
         g == null ? "" : g.toFixed(1), r.min_price ?? "",
         r.allow_discount === false ? "No" : "Yes",
         r.allow_promotion === false ? "No" : "Yes",
-        r.is_active ? "Yes" : "No"].map(esc).join(",");
+        r.is_active ? "Yes" : "No",
+        ...stores.map((s2) => byStore[r.id]?.[s2.id] ?? 0),
+        stores.reduce((t, s2) => t + (byStore[r.id]?.[s2.id] ?? 0), 0),
+        onOrder[r.id] ?? 0,
+        Math.round(stores.reduce((t, s2) => t + (byStore[r.id]?.[s2.id] ?? 0), 0) * r.avg_cost),
+      ].map(esc).join(",");
     });
     const csv = "\uFEFF" + [head.join(","), ...body].join("\n");
     const a2 = document.createElement("a");
@@ -150,7 +173,8 @@ export default function ProductGridPage() {
           <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
             <tr>
               {["Code", "Description", "Category", "Cost", "Sale Price", "GP %",
-                "Min Price", "Disc", "Promo", "Active"].map((h) => (
+                "Min Price", "Disc", "Promo", "Active",
+                ...stores.map((s2) => s2.name), "Total", "On Order"].map((h) => (
                 <th key={h} className="border border-slate-200 px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -200,11 +224,22 @@ export default function ProductGridPage() {
                     <input type="checkbox" checked={r.is_active}
                       onChange={(e) => edit(r.id, "is_active", e.target.checked)} />
                   </td>
+                  {stores.map((s2) => (
+                    <td key={s2.id} className={cell + " w-16 text-right text-slate-500"}>
+                      {byStore[r.id]?.[s2.id] ? n(byStore[r.id][s2.id]) : "-"}
+                    </td>
+                  ))}
+                  <td className={cell + " w-16 text-right font-medium"}>
+                    {n(stores.reduce((t, s2) => t + (byStore[r.id]?.[s2.id] ?? 0), 0))}
+                  </td>
+                  <td className="px-2 py-1 w-16 text-right text-blue-700">
+                    {onOrder[r.id] ? n(onOrder[r.id]) : "-"}
+                  </td>
                 </tr>
               );
             })}
             {shown.length === 0 && (
-              <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={10}>No products.</td></tr>
+              <tr><td className="px-3 py-8 text-center text-slate-400" colSpan={12 + stores.length}>No products.</td></tr>
             )}
           </tbody>
         </table>
