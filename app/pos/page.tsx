@@ -775,10 +775,9 @@ export default function POSPage() {
                   type="number"
                   className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   value={isLoyaltyLocked ? String(loyaltyPercent) : discountValue}
-                  disabled={discountLocked}
                   onChange={(e) => setDiscountValue(e.target.value)}
                   placeholder="0"
-                  disabled={isLoyaltyLocked}
+                  disabled={isLoyaltyLocked || discountLocked}
                 />
                 <select
                   className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
