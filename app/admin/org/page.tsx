@@ -171,6 +171,22 @@ export default function OrgPage() {
                   onChange={(e) => run(supabase.from("departments").update({ active: e.target.checked }).eq("code", d.code), "saved")} />
                 active
               </label>
+              {(() => {
+                // A department is only removable once nobody and no role is left in it.
+                const heads = people.filter((x) => (x.department || "") === d.code).length;
+                const rs = roles.filter((x) => (x.department || "") === d.code).length;
+                if (heads || rs) return (
+                  <span className="text-xs text-slate-400 w-28 text-right shrink-0">
+                    {heads ? heads + " people" : ""}{heads && rs ? " · " : ""}{rs ? rs + " roles" : ""}
+                  </span>
+                );
+                return (
+                  <button
+                    onClick={() => confirm("Delete " + d.name + "?") &&
+                      run(supabase.from("departments").delete().eq("code", d.code), "deleted")}
+                    className="text-xs text-red-600 w-28 text-right shrink-0">ဖျက်</button>
+                );
+              })()}
             </div>
           ))}
         </div>
