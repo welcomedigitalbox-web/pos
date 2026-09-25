@@ -58,7 +58,8 @@ export default function GoodsReceivedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whId]);
 
-  if (!profile || !hasPermission(profile, "goods-received")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "goods-received");
 
   async function load() {
     setLoading(true);
@@ -113,6 +114,8 @@ export default function GoodsReceivedPage() {
     }),
     [filtered]
   );
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

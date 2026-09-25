@@ -71,7 +71,8 @@ export default function WarehouseHistoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!profile || !hasPermission(profile, "warehouse")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "warehouse");
 
   async function loadData() {
     setLoading(true);
@@ -197,6 +198,8 @@ export default function WarehouseHistoryPage() {
       out: filtered.filter((r) => r.status === "out").length,
     };
   }, [filtered]);
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

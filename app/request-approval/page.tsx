@@ -70,7 +70,8 @@ export default function RequestApprovalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canApprove]);
 
-  if (!profile || !canApprove) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !canApprove;
 
   // Deliberately not scoped to the selected store: this is an inbox across
   // every branch, so a sale manager approves without switching stores.
@@ -239,6 +240,8 @@ export default function RequestApprovalPage() {
       setBusyId(null);
     }
   }
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

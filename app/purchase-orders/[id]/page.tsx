@@ -80,7 +80,8 @@ export default function PoDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  if (!profile || !hasPermission(profile, "purchase-orders")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "purchase-orders");
 
   async function load() {
     const { data: poData } = await supabase
@@ -444,6 +445,8 @@ export default function PoDetailPage() {
   const editable = po.status !== "received" && po.status !== "cancelled";
   // Goods can only be booked in once someone has signed the order off
   const canReceive = po.status !== "draft" && po.status !== "cancelled";
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

@@ -55,7 +55,8 @@ export default function AdminUsersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!profile || profile.role !== "admin") return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || profile.role !== "admin";
 
   async function loadUsers() {
     const { data } = await supabase.from("profiles").select("*").order("email");
@@ -227,6 +228,8 @@ export default function AdminUsersPage() {
       setSaving(false);
     }
   }
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

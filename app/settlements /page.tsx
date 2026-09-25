@@ -51,7 +51,8 @@ export default function SettlementsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!profile || !hasPermission(profile, "settlements")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "settlements");
 
   async function load() {
     setLoading(true);
@@ -129,6 +130,8 @@ export default function SettlementsPage() {
   }, [rows]);
 
   const totalPending = balances.reduce((s, b) => s + b.amount, 0);
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

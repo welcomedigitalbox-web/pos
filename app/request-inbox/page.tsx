@@ -113,7 +113,8 @@ export default function RequestInboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whId]);
 
-  if (!profile || !hasPermission(profile, "request-inbox")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "request-inbox");
 
   // Accepting covers every line filed under the same number, because that
   // is the unit the store asked in and the unit the head answers.
@@ -418,6 +419,8 @@ export default function RequestInboxPage() {
 
   }, [visible]);
   const pendingCount = rows.filter((r) => r.status === "pending").length;
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

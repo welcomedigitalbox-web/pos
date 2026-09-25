@@ -101,7 +101,8 @@ export default function HistoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId, period, customFrom, customTo, storeFilter]);
 
-  if (!profile || !hasPermission(profile, "history")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "history");
 
   async function load() {
     setLoading(true);
@@ -266,6 +267,8 @@ export default function HistoryPage() {
       .map(([method, v]) => ({ method, ...v }))
       .sort((a, b) => b.sales - a.sales);
   }, [filteredSales, filteredRefunds]);
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

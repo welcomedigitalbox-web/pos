@@ -109,7 +109,8 @@ export default function StockTransferPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whId]);
 
-  if (!profile || !hasPermission(profile, "stock-transfer")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "stock-transfer");
 
   async function load() {
     setLoading(true);
@@ -416,6 +417,8 @@ export default function StockTransferPage() {
   const lostUnits = outgoing
     .filter((o) => o.status === "discrepancy" && o.received_qty !== null)
     .reduce((sum, o) => sum + Math.max(0, Number(o.qty) - Number(o.received_qty)), 0);
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

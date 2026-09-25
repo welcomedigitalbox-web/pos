@@ -90,7 +90,8 @@ export default function SalesReportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeMode, customStart, customEnd]);
 
-  if (!profile || !hasPermission(profile, "sales-report")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "sales-report");
 
   async function load() {
     setLoading(true);
@@ -156,6 +157,8 @@ export default function SalesReportPage() {
     { key: "year", label: t("salesReport_thisYear") },
     { key: "custom", label: t("salesReport_customRange") },
   ];
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

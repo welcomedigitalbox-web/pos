@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase, SellableItem, fetchSellableItems, netLineTotal } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -51,7 +51,8 @@ export default function InventoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locId]);
 
-  if (!profile || !hasPermission(profile, "inventory")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "inventory");
 
   async function load() {
     setLoading(true);
@@ -160,6 +161,8 @@ export default function InventoryPage() {
 
   const locName = stores.find((s) => s.id === locId)?.name || locId;
 
+  if (pageBlocked) return null;
+
   return (
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-1">{t("nav_inventory")}</h2>
@@ -240,8 +243,8 @@ export default function InventoryPage() {
               const expired = nearest ? new Date(nearest).getTime() < now : false;
               const soon = nearest && !expired ? new Date(nearest).getTime() - now < thirtyDays : false;
               return (
-                <>
-                  <tr key={r.key} className="border-t border-slate-100">
+                <Fragment key={r.key}>
+                  <tr className="border-t border-slate-100">
                     <td className="px-3 py-2">{r.display_name}</td>
                     <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                     <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : r.stock_qty <= 5 ? "text-orange-600" : ""}`}>
@@ -288,7 +291,7 @@ export default function InventoryPage() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
             {!loading && filtered.length === 0 && (

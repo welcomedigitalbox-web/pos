@@ -61,7 +61,8 @@ export default function CampaignsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!profile || !hasPermission(profile, "campaigns")) return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || !hasPermission(profile, "campaigns");
 
   async function load() {
     setLoading(true);
@@ -221,6 +222,8 @@ export default function CampaignsPage() {
     }),
     [rows]
   );
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">
