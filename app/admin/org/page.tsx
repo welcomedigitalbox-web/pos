@@ -303,7 +303,7 @@ export default function OrgPage() {
                 onChange={(e) => run(supabase.from("profiles").update({ role: e.target.value }).eq("id", p.id), "saved")}
                 className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
                 <option value="">-</option>
-                {roles.map((r) => <option key={r.key} value={r.key}>{r.label_en}</option>)}
+                {roles.filter((r) => r.active !== false && ((r.department || "") === (p.department || "") || r.key === p.role)).map((r) => <option key={r.key} value={r.key}>{r.label_en}</option>)}
               </select>
               <select value={p.department || ""}
                 onChange={(e) => run(supabase.from("profiles").update({ department: e.target.value || null }).eq("id", p.id), "saved")}
