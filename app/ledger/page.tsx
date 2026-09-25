@@ -125,8 +125,8 @@ export default function LedgerPage() {
     if (!storeId && defaultWarehouseId) setStoreId(defaultWarehouseId);
   }, [defaultWarehouseId, storeId]);
 
-  if (!profile || (!hasPermission(profile, "ledger") && !hasPermission(profile, "sales-performance")))
-    return null;
+  // Hooks must run on every render, so the guard is applied just before the JSX.
+  const pageBlocked = !profile || (!hasPermission(profile, "ledger") && !hasPermission(profile, "sales-performance"));
 
   async function load() {
     setLoading(true);
@@ -383,6 +383,8 @@ export default function LedgerPage() {
     [filtered]
   );
   const overallMargin = totals.sales > 0 ? (totals.gp / totals.sales) * 100 : 0;
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">

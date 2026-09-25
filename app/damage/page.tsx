@@ -140,7 +140,7 @@ export default function DamagePage() {
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
             value={itemKey}
             onChange={(e) => setItemKey(e.target.value)}
-            required
+            required={draftLines.length === 0}
           >
             <option value="">{t("stockIn_selectPlaceholder")}</option>
             {items.map((i) => (
@@ -156,7 +156,7 @@ export default function DamagePage() {
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
-            required
+            required={draftLines.length === 0}
           />
 
           <label className="text-sm text-slate-600">{t("damage_reason")}</label>
