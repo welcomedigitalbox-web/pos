@@ -505,6 +505,17 @@ export default function POSPage() {
     (!isCashMethod || amountReceivedNum >= grandTotal) &&
     (!requiresDiscountApproval || discountApproved);
 
+  // A greyed-out button explains nothing, and a cashier with a queue in front
+  // of them should not have to guess which field is holding it up.
+  const blockedReason =
+    cart.length === 0
+      ? ""
+      : isCashMethod && amountReceivedNum < grandTotal
+      ? t("pos_amountInsufficient")
+      : requiresDiscountApproval && !discountApproved
+      ? t("pos_discountApprovalRequired")
+      : "";
+
   async function checkout() {
     if (cart.length === 0) return;
     if (isCashMethod && amountReceivedNum < grandTotal) {
@@ -1053,6 +1064,9 @@ export default function POSPage() {
         >
           {loading ? t("pos_processing") : t("pos_checkout")}
         </button>
+        {blockedReason && !loading && (
+          <p className="mt-2 text-center text-xs text-amber-600">{blockedReason}</p>
+        )}
       </div>
 
       {toast && (
