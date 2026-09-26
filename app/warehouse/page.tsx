@@ -24,7 +24,7 @@ type Row = SellableItem & {
 type SortKey = "name" | "qty" | "value";
 
 export default function WarehousePage() {
-  const { warehouses, defaultWarehouseId } = useStore();
+  const { warehouses, defaultWarehouseId, stores } = useStore();
   const [whId, setWhId] = useState("");
   const { profile } = useAuth();
   const { t } = useLanguage();
@@ -48,7 +48,7 @@ export default function WarehousePage() {
   useEffect(() => {
     if (whId) loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whId]);
+  }, [whId, stores]);
 
   // Hooks must run on every render, so the guard is applied just before the JSX.
   const pageBlocked = !profile || !hasPermission(profile, "warehouse");
@@ -59,10 +59,29 @@ export default function WarehousePage() {
     // Only what physically sits in the central warehouse right now
     const items = await fetchSellableItems(whId, true);
 
-    const { data: damages } = await supabase
+    // Damaged goods this warehouse is holding: what broke here, plus what the
+    // shops it supplies sent back once the warehouse confirmed receipt.
+    // A rejected write-off went back on the shelf, so it is not damaged stock.
+    const suppliedStoreIds = stores
+      .filter((s) => s.supply_warehouse_id === whId && !s.is_warehouse)
+      .map((s) => s.id);
+
+    const { data: ownDamages } = await supabase
       .from("stock_damages")
       .select("product_id, variant_id, qty")
-      .eq("store_id", whId);
+      .eq("store_id", whId)
+      .neq("status", "rejected");
+
+    const { data: returnedDamages } = suppliedStoreIds.length
+      ? await supabase
+          .from("stock_damages")
+          .select("product_id, variant_id, qty")
+          .in("store_id", suppliedStoreIds)
+          .neq("status", "rejected")
+          .not("warehouse_approved_at", "is", null)
+      : { data: [] as { product_id: string; variant_id: string | null; qty: number }[] };
+
+    const damages = [...(ownDamages || []), ...(returnedDamages || [])];
 
     // Sent but not yet confirmed by the receiving store
     const { data: transits } = await supabase
