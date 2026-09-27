@@ -74,8 +74,37 @@ export default function ReturnsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [verifying, setVerifying] = useState(false);
 
-  const canApprove =
-    profile?.role === "sale_manager" || profile?.role === "owner" || profile?.role === "admin";
+  // Who may sign off a return is decided by the role's tier in the database,
+  // not by a list of names here. A list needs editing every time the client
+  // adds a role, and the one that used to be here had already fallen behind:
+  // the area manager could not see a single return waiting for them.
+  const [canApprove, setCanApprove] = useState(false);
+
+  useEffect(() => {
+    const role = profile?.role;
+    const id = profile?.id;
+    if (!role || !id) return;
+    if (["owner", "admin", "operation_director", "md"].includes(role)) {
+      setCanApprove(true);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      // The department is not on the signed-in profile the app keeps in
+      // memory, so it is read here alongside the tier.
+      const [{ data: r }, { data: me }] = await Promise.all([
+        supabase.from("org_roles").select("tier").eq("key", role).maybeSingle(),
+        supabase.from("profiles").select("department").eq("id", id).maybeSingle(),
+      ]);
+      if (!alive) return;
+      const tier = (r as { tier?: string } | null)?.tier;
+      const dept = (me as { department?: string } | null)?.department;
+      // A head of the department that made the sale, and no one else.
+      setCanApprove(tier === "head" && dept === "sale");
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.role, profile?.id]);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "returns")) router.replace("/");
@@ -85,7 +114,7 @@ export default function ReturnsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
+  }, [storeId, canApprove]);
 
   if (!profile || !hasPermission(profile, "returns")) return null;
 
@@ -100,6 +129,14 @@ export default function ReturnsPage() {
       .order("created_at", { ascending: false })
       .limit(200);
     if (!canApprove) {
+      // Without a branch there is nothing to scope the list to, and asking
+      // for "store_id = null" would be a malformed filter rather than an
+      // empty answer.
+      if (!storeId) {
+        setReturns([]);
+        setLoading(false);
+        return;
+      }
       // A branch is involved either as the seller or as the counter that
       // handled the refund - both need it in their history.
       listQuery = listQuery.or(`store_id.eq.${storeId},processed_store_id.eq.${storeId}`);
