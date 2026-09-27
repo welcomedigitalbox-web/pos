@@ -200,8 +200,10 @@ export default function ReturnsPage() {
       }
     }
 
+    // The lines go in with the sale, before anything is awaited. Fetching the
+    // stock list in between let the screen paint once with a receipt and no
+    // lines on it, which read as "everything here has been returned".
     setFoundSale(sale);
-    setStockItems(await fetchSellableItems(sale.store_id));
     setExchangeLines([]);
     setOrderItems(
       ((items as any[]) || []).map((i) => {
@@ -216,6 +218,7 @@ export default function ReturnsPage() {
       })
     );
     setDraft({});
+    setStockItems(await fetchSellableItems(sale.store_id));
   }
 
   const returnedTotal = orderItems.reduce((sum, i) => {
@@ -687,7 +690,8 @@ export default function ReturnsPage() {
                   {t("pos_total")}: {fmt(foundSale.total)}
                 </div>
 
-                {orderItems.every((i) => i.qty - i.alreadyReturned <= 0) && (
+                {orderItems.length > 0 &&
+                  orderItems.every((i) => i.qty - i.alreadyReturned <= 0) && (
                   <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700 mb-3">
                     ⚠️ {t("returns_fullyReturned")}
                   </div>
