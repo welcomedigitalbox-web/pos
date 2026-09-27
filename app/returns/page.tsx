@@ -423,13 +423,21 @@ export default function ReturnsPage() {
       // stock, files any damage, books an exchange and posts the journal — or
       // none of it. Doing this from the browser meant a refused approval had
       // already put the goods back on the shelf.
-      const { error: apprErr } = await supabase.rpc("approve_sale_return_full", {
+      const { data: after, error: apprErr } = await supabase.rpc("approve_sale_return_full", {
         p_return_id: reviewRow.id,
         p_reject: false,
         p_reason: null,
         p_pin: pin || null,
       });
       if (apprErr) throw apprErr;
+
+      // A PIN the database did not accept leaves the return exactly as it was.
+      // It answers this way rather than refusing outright, so that the failed
+      // attempt is still on record when the reply comes back.
+      const row = Array.isArray(after) ? after[0] : after;
+      if (row && row.status === "pending") {
+        return showToast("❌ " + t("returns_pinInvalid"));
+      }
 
       // The approval is logged inside the same transaction that made it, under
       // whoever actually authorised it. A second entry written from here would
