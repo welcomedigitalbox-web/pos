@@ -410,9 +410,10 @@ export default function ReturnsPage() {
     setReviewItems((data as any[]) || []);
   }
 
-  async function approveReturn(approver?: string) {
+  // A PIN sent here is checked by the database against the manager it belongs
+  // to, so the browser never decides who approved anything.
+  async function approveReturn(pin?: string) {
     if (!reviewRow) return;
-    const approvedBy = approver || profile?.email || null;
     setProcessing(true);
     try {
       // One call, one transaction. The server checks the approver, moves the
@@ -423,16 +424,13 @@ export default function ReturnsPage() {
         p_return_id: reviewRow.id,
         p_reject: false,
         p_reason: null,
+        p_pin: pin || null,
       });
       if (apprErr) throw apprErr;
 
-      await logActivity({
-        entityType: "sale_return",
-        entityId: reviewRow.id,
-        action: "approved",
-        detail: `${reviewRow.return_number} · ${fmt(Number(reviewRow.refund_amount))}`,
-        actor: approvedBy,
-      });
+      // The approval is logged inside the same transaction that made it, under
+      // whoever actually authorised it. A second entry written from here would
+      // name the till, not the manager.
 
       showToast(t("returns_approved"));
       setReviewRow(null);
@@ -444,22 +442,16 @@ export default function ReturnsPage() {
     }
   }
 
+  // The PIN goes straight to the approval itself. Checking it separately let
+  // the browser name any approver it liked and the approval went through in
+  // the cashier's own name.
   async function approveWithPin() {
-    if (!approvalPin.trim()) return showToast(t("returns_pinRequired"));
+    const pin = approvalPin.trim();
+    if (!pin) return showToast(t("returns_pinRequired"));
     setVerifying(true);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
-        body: { pin: approvalPin.trim() },
-      });
-      if (error) throw error;
-      if (!data?.approved) {
-        showToast("❌ " + (data?.error || t("returns_pinInvalid")));
-        return;
-      }
+      await approveReturn(pin);
       setApprovalPin("");
-      await approveReturn(data.approver_email);
-    } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setVerifying(false);
     }
