@@ -13,10 +13,12 @@ type DeptKey = PageGroup | "admin";
 
 const DEPARTMENTS: { key: DeptKey; icon: string; labelKey: string }[] = [
   { key: "sale", icon: "🛒", labelKey: "dept_sale" },
+  { key: "customer", icon: "👥", labelKey: "dept_customer" },
   { key: "inventory", icon: "📦", labelKey: "dept_inventory" },
   { key: "warehouse", icon: "🏭", labelKey: "dept_warehouse" },
   { key: "merchandising", icon: "🏷️", labelKey: "dept_merchandising" },
   { key: "reports", icon: "📊", labelKey: "dept_reports" },
+  { key: "setup", icon: "🧰", labelKey: "dept_setup" },
   { key: "admin", icon: "⚙️", labelKey: "nav_admin" },
   { key: "ai-agent", icon: "🤖", labelKey: "dept_aiAgent" },
   { key: "profile", icon: "👤", labelKey: "dept_profile" },

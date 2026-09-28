@@ -66,7 +66,18 @@ export type UserRole =
   | "owner"
   | "admin";
 
-export type PageGroup = "sale" | "inventory" | "warehouse" | "merchandising" | "reports" | "ai-agent" | "profile";
+// Groups are what the sidebar shows, so each is kept to what one person does
+// in a day. Anything set up once a season lives under "setup" instead.
+export type PageGroup =
+  | "sale"
+  | "customer"
+  | "inventory"
+  | "warehouse"
+  | "merchandising"
+  | "reports"
+  | "setup"
+  | "ai-agent"
+  | "profile";
 
 export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group: PageGroup }[] = [
   { key: "pos", href: "/pos", labelKey: "nav_pos", group: "sale" },
@@ -76,21 +87,21 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "order-lookup", href: "/order-lookup", labelKey: "nav_orderLookup", group: "sale" },
   { key: "returns", href: "/returns", labelKey: "nav_returns", group: "sale" },
   { key: "cash-drawer", href: "/cash-drawer", labelKey: "nav_cashDrawer", group: "sale" },
-  { key: "customers", href: "/customers", labelKey: "nav_customers", group: "sale" },
-  { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "sale" },
-  { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "sale" },
-  { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "sale" },
+  { key: "customers", href: "/customers", labelKey: "nav_customers", group: "customer" },
+  { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "customer" },
+  { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "customer" },
+  { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "reports" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
   { key: "product-grid", href: "/product-grid", labelKey: "nav_productGrid", group: "merchandising" },
-  { key: "product-import", href: "/product-import", labelKey: "nav_productImport", group: "merchandising" },
-  { key: "stock-import", href: "/stock-import", labelKey: "nav_stockImport", group: "merchandising" },
-  { key: "uom-import", href: "/uom-import", labelKey: "nav_uomImport", group: "merchandising" },
+  { key: "product-import", href: "/product-import", labelKey: "nav_productImport", group: "setup" },
+  { key: "stock-import", href: "/stock-import", labelKey: "nav_stockImport", group: "setup" },
+  { key: "uom-import", href: "/uom-import", labelKey: "nav_uomImport", group: "setup" },
   { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
   { key: "damage", href: "/damage", labelKey: "nav_damage", group: "inventory" },
   { key: "incoming-transfers", href: "/incoming-transfers", labelKey: "nav_incomingTransfers", group: "inventory" },
-  { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "inventory" },
+  { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "setup" },
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "warehouse" },
   { key: "goods-received", href: "/goods-received", labelKey: "nav_goodsReceived", group: "warehouse" },
   { key: "request-approval", href: "/request-approval", labelKey: "nav_requestApproval", group: "sale" },
@@ -98,24 +109,26 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "to-send", href: "/to-send", labelKey: "toSend_title", group: "warehouse" },
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
-  { key: "ledger", href: "/stock-ledger", labelKey: "nav_ledger", group: "warehouse" },
-  { key: "product-category", href: "/product-category", labelKey: "nav_productCategory", group: "merchandising" },
-  { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "merchandising" },
+  { key: "ledger", href: "/stock-ledger", labelKey: "nav_ledger", group: "inventory" },
+  { key: "product-category", href: "/product-category", labelKey: "nav_productCategory", group: "setup" },
+  { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "setup" },
   { key: "purchase-orders", href: "/purchase-orders", labelKey: "nav_purchaseOrders", group: "merchandising" },
   { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
   { key: "promotions", href: "/promotions", labelKey: "nav_promotions", group: "merchandising" },
-  { key: "gp-report", href: "/gp-report", labelKey: "nav_gpReport", group: "merchandising" },
+  { key: "gp-report", href: "/gp-report", labelKey: "nav_gpReport", group: "reports" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
-  { key: "campaigns", href: "/campaigns", labelKey: "nav_campaigns", group: "reports" },
+  { key: "campaigns", href: "/campaigns", labelKey: "nav_campaigns", group: "customer" },
   { key: "settlements", href: "/settlements", labelKey: "nav_settlements", group: "reports" },
-  { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "reports" },
+  { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "profile" },
   { key: "ai-agent", href: "/ai-agent", labelKey: "nav_aiAgent", group: "ai-agent" },
   { key: "profile", href: "/profile", labelKey: "nav_profile", group: "profile" },
 ];
 
 export const GROUP_LABELS: Record<PageGroup, string> = {
   sale: "dept_sale",
+  customer: "dept_customer",
+  setup: "dept_setup",
   inventory: "dept_inventory",
   warehouse: "dept_warehouse",
   merchandising: "dept_merchandising",
@@ -155,7 +168,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
   ],
 
   // Whole-department roles: everything in their own area, plus reports.
-  sale_manager: [...pagesIn("sale", "reports"), ...COMMON_ALL_ROLES],
+  sale_manager: [...pagesIn("sale", "customer", "reports"), ...COMMON_ALL_ROLES],
 
   // Staff do the work; their department head signs it off. None of them are
   // dept heads, so can_approve_for() refuses them by construction.
@@ -176,8 +189,8 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     ...COMMON_ALL_ROLES,
   ],
   merchandising_manager: [
-    ...pagesIn("merchandising", "reports"),
-    "inventory", "barcode",
+    ...pagesIn("merchandising", "setup", "reports"),
+    "inventory",
     ...COMMON_ALL_ROLES,
   ],
   warehouse_manager: [
