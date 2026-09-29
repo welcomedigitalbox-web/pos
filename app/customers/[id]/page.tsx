@@ -39,6 +39,7 @@ type LoyaltyCard = {
   points_available: number;
   points_to_reward: number;
   referrals_made: number;
+  purchases: { id: string; date: string; store: string; amount: number; ref: string | null }[];
 };
 
 export default function CustomerDetailPage() {
@@ -165,6 +166,31 @@ export default function CustomerDetailPage() {
     setAmount("");
     setSaleRef("");
     say("Saved");
+    loadCard((customer as { card_token?: string | null })?.card_token ?? null);
+  }
+
+  async function editSpend(ev: { id: string; amount: number; ref: string | null }) {
+    const next = window.prompt("Bill amount", String(ev.amount));
+    if (next === null) return;
+    const n = Number(next);
+    if (!n || n <= 0) return say("Enter a positive amount");
+    setBusy(true);
+    const { error } = await supabase.rpc("crm_edit_spend", {
+      p_event_id: ev.id, p_amount: n, p_sale_ref: ev.ref,
+    });
+    setBusy(false);
+    if (error) return say("❌ " + error.message);
+    say("Corrected");
+    loadCard((customer as { card_token?: string | null })?.card_token ?? null);
+  }
+
+  async function deleteSpend(ev: { id: string; amount: number }) {
+    if (!window.confirm(`Remove this purchase of ${Number(ev.amount).toLocaleString()} Ks?`)) return;
+    setBusy(true);
+    const { error } = await supabase.rpc("crm_delete_spend", { p_event_id: ev.id });
+    setBusy(false);
+    if (error) return say("❌ " + error.message);
+    say("Removed");
     loadCard((customer as { card_token?: string | null })?.card_token ?? null);
   }
 
@@ -324,6 +350,56 @@ export default function CustomerDetailPage() {
               Until the POS is in daily use, enter the bill here so the sticker is counted.
             </p>
           </div>
+
+          {/* Bills entered by hand live apart from the till's own sales, so
+              they are listed here rather than in the order history. */}
+          {card.purchases?.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <div className="text-sm font-medium mb-2">
+                Loyalty purchases
+                <span className="ml-2 text-xs font-normal text-slate-400">
+                  total {card.purchases.reduce((a, b) => a + Number(b.amount), 0).toLocaleString()} Ks
+                </span>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="text-left py-1">Date</th>
+                    <th className="text-left py-1">Store</th>
+                    <th className="text-left py-1">Invoice</th>
+                    <th className="text-right py-1">Amount</th>
+                    <th className="w-24"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {card.purchases.map((p, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="py-1.5 whitespace-nowrap">{p.date}</td>
+                      <td className="py-1.5">{p.store}</td>
+                      <td className="py-1.5 font-mono text-xs">{p.ref || "-"}</td>
+                      <td className="py-1.5 text-right">{Number(p.amount).toLocaleString()} Ks</td>
+                      <td className="py-1.5 text-right whitespace-nowrap">
+                        <button
+                          disabled={busy}
+                          onClick={() => editSpend(p)}
+                          className="text-xs text-blue-600 disabled:text-slate-300"
+                        >
+                          edit
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => deleteSpend(p)}
+                          className="text-xs text-rose-600 ml-3 disabled:text-slate-300"
+                        >
+                          delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
