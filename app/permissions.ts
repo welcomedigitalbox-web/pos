@@ -7,7 +7,7 @@ export type PageKey =
   | "returns"
   | "cash-drawer"
   | "customers"
-  | "crm"
+  | "birthdays"
   | "sales-reps"
   | "loyalty-tiers"
   | "products"
@@ -89,7 +89,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "returns", href: "/returns", labelKey: "nav_returns", group: "sale" },
   { key: "cash-drawer", href: "/cash-drawer", labelKey: "nav_cashDrawer", group: "sale" },
   { key: "customers", href: "/customers", labelKey: "nav_customers", group: "customer" },
-  { key: "crm", href: "/crm", labelKey: "nav_crm", group: "customer" },
+  { key: "birthdays", href: "/birthdays", labelKey: "nav_birthdays", group: "customer" },
   { key: "sales-reps", href: "/sales-reps", labelKey: "nav_salesReps", group: "customer" },
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "customer" },
   { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "reports" },
