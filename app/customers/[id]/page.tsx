@@ -30,6 +30,17 @@ type ItemStat = {
   spent: number;
 };
 
+type LoyaltyCard = {
+  tier: string | null;
+  discount_percent: number | null;
+  stickers_available: number;
+  stickers_to_reward: number;
+  spend_per_sticker: number;
+  points_available: number;
+  points_to_reward: number;
+  referrals_made: number;
+};
+
 export default function CustomerDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -42,6 +53,14 @@ export default function CustomerDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [itemStats, setItemStats] = useState<ItemStat[]>([]);
+
+  // The loyalty card. Every change goes through a database function, so the
+  // shop, the till and the customer's own card cannot disagree about a sticker.
+  const [card, setCard] = useState<LoyaltyCard | null>(null);
+  const [amount, setAmount] = useState("");
+  const [saleRef, setSaleRef] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "customers")) router.replace("/");
@@ -57,6 +76,7 @@ export default function CustomerDetailPage() {
 
   async function load() {
     const { data: cust } = await supabase.from("customers").select("*").eq("id", id).maybeSingle();
+    if (cust) loadCard((cust as { card_token?: string | null }).card_token ?? null);
     if (!cust) {
       setNotFound(true);
       return;
@@ -116,6 +136,48 @@ export default function CustomerDetailPage() {
       .map(([name, v]) => ({ name, qty: v.qty, spent: v.spent }))
       .sort((a, b) => b.qty - a.qty);
     setItemStats(stats);
+  }
+
+  function say(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3500);
+  }
+
+  async function loadCard(token: string | null) {
+    if (!token) return;
+    const { data, error } = await supabase.rpc("crm_card", { p_token: token });
+    if (error) return say("❌ " + error.message);
+    setCard(data as LoyaltyCard);
+  }
+
+  async function recordSpend() {
+    const n = Number(amount);
+    if (!n || n <= 0) return say("Enter the bill amount");
+    setBusy(true);
+    const { error } = await supabase.rpc("crm_record_spend", {
+      p_customer_id: id,
+      p_amount: n,
+      p_sale_ref: saleRef || null,
+      p_store_id: customer?.store_id || null,
+    });
+    setBusy(false);
+    if (error) return say("❌ " + error.message);
+    setAmount("");
+    setSaleRef("");
+    say("Saved");
+    loadCard((customer as { card_token?: string | null })?.card_token ?? null);
+  }
+
+  async function redeem(kind: "stickers" | "points") {
+    setBusy(true);
+    const { error } = await supabase.rpc(
+      kind === "stickers" ? "crm_redeem_stickers" : "crm_redeem_points",
+      { p_customer_id: id, p_sale_ref: saleRef || null }
+    );
+    setBusy(false);
+    if (error) return say("❌ " + error.message);
+    say(kind === "stickers" ? "10% discount unlocked" : "5,000 Ks discount unlocked");
+    loadCard((customer as { card_token?: string | null })?.card_token ?? null);
   }
 
   if (notFound) {
@@ -185,6 +247,86 @@ export default function CustomerDetailPage() {
         </div>
       </div>
 
+      {/* Loyalty */}
+      {card && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+          <h3 className="font-semibold mb-3">Loyalty</h3>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="bg-slate-50 rounded-lg p-3">
+              <div className="text-xs text-slate-500">Member card</div>
+              <div className="font-semibold">
+                {card.tier ? `${card.tier} · ${card.discount_percent}%` : "—"}
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3">
+              <div className="text-xs text-slate-500">Stickers</div>
+              <div className="font-semibold">{card.stickers_available} / 10</div>
+              <div className="text-[11px] text-slate-400">
+                one per {card.spend_per_sticker.toLocaleString()} Ks bill
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3">
+              <div className="text-xs text-slate-500">Mom Love points</div>
+              <div className="font-semibold">{card.points_available} / 5</div>
+              <div className="text-[11px] text-slate-400">{card.referrals_made} referred</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mt-3">
+            <button
+              disabled={busy || card.stickers_available < 10}
+              onClick={() => redeem("stickers")}
+              className="px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white disabled:bg-slate-200 disabled:text-slate-400"
+            >
+              Use 10 stickers → 10% off
+            </button>
+            <button
+              disabled={busy || card.points_available < 5}
+              onClick={() => redeem("points")}
+              className="px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white disabled:bg-slate-200 disabled:text-slate-400"
+            >
+              Use 5 points → 5,000 Ks off
+            </button>
+          </div>
+
+          {/* Only one discount may be given on a bill, so the cashier is told
+              rather than left to work it out. */}
+          <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mt-3">
+            Only one discount per bill: member card, stickers, points or a promotion.
+          </p>
+
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <div className="text-sm font-medium mb-2">Record a purchase</div>
+            <div className="flex flex-wrap gap-2">
+              <input
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-40"
+                placeholder="Bill amount"
+                inputMode="numeric"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+              <input
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-48"
+                placeholder="Invoice no. (optional)"
+                value={saleRef}
+                onChange={(e) => setSaleRef(e.target.value)}
+              />
+              <button
+                disabled={busy}
+                onClick={recordSpend}
+                className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:bg-slate-300"
+              >
+                Save
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">
+              Until the POS is in daily use, enter the bill here so the sticker is counted.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Item breakdown */}
       <h3 className="font-semibold mb-2">{t("customers_itemsBought")}</h3>
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-4">
@@ -248,6 +390,12 @@ export default function CustomerDetailPage() {
           </tbody>
         </table>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
