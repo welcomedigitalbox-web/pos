@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase, Customer, LoyaltyTier } from "@/lib/supabase";
 import { useStore } from "../store-context";
@@ -10,29 +10,15 @@ import { useLanguage } from "../language-context";
 import { hasPermission } from "../permissions";
 import { findTier } from "../loyalty";
 
-type FormState = {
-  id: string | null;
-  name: string;
-  phone: string;
-  email: string;
-  date_of_birth: string;
-  delivery_address: string;
-  facebook: string;
-  tiktok: string;
-  loyalty_tier_id: string;
+type Loyalty = {
+  customer_id: string;
+  stickers_earned: number;
+  stickers_used: number;
+  points_earned: number;
+  points_used: number;
 };
 
-const emptyForm: FormState = {
-  id: null,
-  name: "",
-  phone: "",
-  email: "",
-  date_of_birth: "",
-  delivery_address: "",
-  facebook: "",
-  tiktok: "",
-  loyalty_tier_id: "",
-};
+type Programme = "all" | "member" | "stickers" | "points";
 
 export default function CustomersPage() {
   const { storeId } = useStore();
@@ -40,16 +26,17 @@ export default function CustomersPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
-  const canEditLoyalty =
-    profile?.role === "sale_manager" || profile?.role === "admin" || profile?.role === "owner";
-
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tiers, setTiers] = useState<LoyaltyTier[]>([]);
+  const [loyalty, setLoyalty] = useState<Map<string, Loyalty>>(new Map());
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+
+  // Programme filter, and the sub-filter that belongs to whichever is chosen.
+  const [programme, setProgramme] = useState<Programme>("all");
+  const [tierPick, setTierPick] = useState<"any" | "none" | string>("any");
+  const [minStickers, setMinStickers] = useState(0);
+  const [minPoints, setMinPoints] = useState(0);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "customers")) router.replace("/");
@@ -59,6 +46,7 @@ export default function CustomersPage() {
   useEffect(() => {
     load();
     loadTiers();
+    loadLoyalty();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
@@ -70,71 +58,23 @@ export default function CustomersPage() {
   }
 
   async function loadTiers() {
-    const { data } = await supabase
-      .from("loyalty_tiers")
-      .select("*")
-      .order("sort_order");
+    const { data } = await supabase.from("loyalty_tiers").select("*").order("sort_order");
     setTiers(data || []);
+  }
+
+  // The card standings live beside the customer, so the list can filter on them.
+  async function loadLoyalty() {
+    const { data } = await supabase
+      .from("customer_loyalty")
+      .select("customer_id, stickers_earned, stickers_used, points_earned, points_used");
+    const m = new Map<string, Loyalty>();
+    for (const r of (data || []) as Loyalty[]) m.set(r.customer_id, r);
+    setLoyalty(m);
   }
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
-  }
-
-
-  function openEdit(c: Customer) {
-    setForm({
-      id: c.id,
-      name: c.name,
-      phone: c.phone || "",
-      email: c.email || "",
-      date_of_birth: c.date_of_birth || "",
-      delivery_address: c.delivery_address || "",
-      facebook: c.facebook || "",
-      tiktok: c.tiktok || "",
-      loyalty_tier_id: c.loyalty_tier_id || "",
-    });
-    setShowForm(true);
-  }
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.name.trim()) return showToast(t("customers_nameRequired"));
-
-    const payload: Record<string, unknown> = {
-      name: form.name.trim(),
-      phone: form.phone.trim() || null,
-      email: form.email.trim() || null,
-      date_of_birth: form.date_of_birth || null,
-      delivery_address: form.delivery_address.trim() || null,
-      facebook: form.facebook.trim() || null,
-      tiktok: form.tiktok.trim() || null,
-      store_id: storeId,
-    };
-    if (canEditLoyalty) {
-      payload.loyalty_tier_id = form.loyalty_tier_id || null;
-    }
-
-    setSaving(true);
-    try {
-      if (form.id) {
-        const { error } = await supabase.from("customers").update(payload).eq("id", form.id);
-        if (error) throw error;
-        showToast(t("customers_updated"));
-      } else {
-        const { error } = await supabase.from("customers").insert(payload);
-        if (error) throw error;
-        showToast(t("customers_created"));
-      }
-      setShowForm(false);
-      await load();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      showToast("❌ " + message);
-    } finally {
-      setSaving(false);
-    }
   }
 
   async function handleDelete(id: string) {
@@ -148,12 +88,40 @@ export default function CustomersPage() {
     await load();
   }
 
-  const filtered = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      (c.phone || "").includes(search) ||
-      (c.email || "").toLowerCase().includes(search.toLowerCase())
-  );
+  function stickersOf(id: string) {
+    const l = loyalty.get(id);
+    return l ? Math.max(l.stickers_earned - l.stickers_used, 0) : 0;
+  }
+  function pointsOf(id: string) {
+    const l = loyalty.get(id);
+    return l ? Math.max(l.points_earned - l.points_used, 0) : 0;
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return customers.filter((c) => {
+      if (q) {
+        const hit =
+          c.name.toLowerCase().includes(q) ||
+          (c.phone || "").includes(search.trim()) ||
+          (c.email || "").toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      if (programme === "member") {
+        if (tierPick === "none") return !c.loyalty_tier_id;
+        if (tierPick === "any") return !!c.loyalty_tier_id;
+        return c.loyalty_tier_id === tierPick;
+      }
+      if (programme === "stickers") return stickersOf(c.id) >= minStickers;
+      if (programme === "points") return pointsOf(c.id) >= minPoints;
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers, loyalty, search, programme, tierPick, minStickers, minPoints]);
+
+  const chip = (on: boolean) =>
+    "px-3 py-1.5 rounded-full text-xs font-medium border " +
+    (on ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200");
 
   return (
     <div className="pt-4">
@@ -165,14 +133,91 @@ export default function CustomersPage() {
       </div>
 
       <input
-        className="w-full sm:w-80 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"
+        className="w-full sm:w-80 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-3"
         placeholder={t("pos_customerSearchPlaceholder")}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
 
+      {/* Programme, then whatever that programme is measured in. */}
+      <div className="flex flex-wrap gap-2 mb-2">
+        {([
+          ["all", "All"],
+          ["member", "Member card"],
+          ["stickers", "Stickers"],
+          ["points", "Mom Love"],
+        ] as [Programme, string][]).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => {
+              setProgramme(key);
+              setTierPick("any");
+              setMinStickers(key === "stickers" ? 1 : 0);
+              setMinPoints(key === "points" ? 1 : 0);
+            }}
+            className={chip(programme === key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {programme === "member" && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button onClick={() => setTierPick("any")} className={chip(tierPick === "any")}>
+            Any card
+          </button>
+          {tiers.map((tr) => (
+            <button key={tr.id} onClick={() => setTierPick(tr.id)} className={chip(tierPick === tr.id)}>
+              {tr.name} ({tr.discount_percent}%)
+            </button>
+          ))}
+          <button onClick={() => setTierPick("none")} className={chip(tierPick === "none")}>
+            No card
+          </button>
+        </div>
+      )}
+
+      {programme === "stickers" && (
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-xs text-slate-500 whitespace-nowrap">
+            {minStickers}+ stickers
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={10}
+            value={minStickers}
+            onChange={(e) => setMinStickers(Number(e.target.value))}
+            className="w-56"
+          />
+          <button onClick={() => setMinStickers(10)} className={chip(minStickers === 10)}>
+            Ready to redeem (10)
+          </button>
+        </div>
+      )}
+
+      {programme === "points" && (
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-xs text-slate-500 whitespace-nowrap">{minPoints}+ points</span>
+          <input
+            type="range"
+            min={0}
+            max={5}
+            value={minPoints}
+            onChange={(e) => setMinPoints(Number(e.target.value))}
+            className="w-56"
+          />
+          <button onClick={() => setMinPoints(5)} className={chip(minPoints === 5)}>
+            Ready to redeem (5)
+          </button>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400 mb-3">{filtered.length} / {customers.length}</p>
+
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[750px]">
+        <table className="w-full text-sm min-w-[960px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-4 py-2">{t("customers_name")}</th>
@@ -181,16 +226,20 @@ export default function CustomersPage() {
               <th className="text-left px-4 py-2">{t("customers_dob")}</th>
               <th className="text-left px-4 py-2">{t("saleOrder_deliveryAddress")}</th>
               <th className="text-left px-4 py-2">{t("customers_loyalty")}</th>
+              <th className="text-right px-4 py-2">Stickers</th>
+              <th className="text-right px-4 py-2">Points</th>
               <th className="text-left px-4 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((c) => {
               const tier = findTier(tiers, c.loyalty_tier_id);
+              const st = stickersOf(c.id);
+              const pt = pointsOf(c.id);
               return (
                 <tr key={c.id} className="border-t border-slate-100">
                   <td className="px-4 py-2 font-medium">{c.name}</td>
-                  <td className="px-4 py-2 text-slate-400">{c.phone || "-"}</td>
+                  <td className="px-4 py-2 text-slate-600">{c.phone || <span className="text-red-400">missing</span>}</td>
                   <td className="px-4 py-2 text-slate-400">{c.email || "-"}</td>
                   <td className="px-4 py-2 text-slate-400">{c.date_of_birth || "-"}</td>
                   <td className="px-4 py-2 text-slate-400 max-w-[180px] truncate">{c.delivery_address || "-"}</td>
@@ -203,7 +252,15 @@ export default function CustomersPage() {
                       <span className="text-xs text-slate-300">-</span>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right space-x-2">
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    <span className={st >= 10 ? "text-green-600 font-semibold" : "text-slate-500"}>{st}</span>
+                    <span className="text-slate-300">/10</span>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    <span className={pt >= 5 ? "text-green-600 font-semibold" : "text-slate-500"}>{pt}</span>
+                    <span className="text-slate-300">/5</span>
+                  </td>
+                  <td className="px-4 py-2 text-right space-x-2 whitespace-nowrap">
                     <Link href={`/customers/${c.id}`} className="text-slate-500 text-xs font-medium">
                       {t("products_view")}
                     </Link>
@@ -219,7 +276,7 @@ export default function CustomersPage() {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-slate-400 py-8">
+                <td colSpan={9} className="text-center text-slate-400 py-8">
                   -
                 </td>
               </tr>
@@ -227,111 +284,6 @@ export default function CustomersPage() {
           </tbody>
         </table>
       </div>
-
-      {showForm && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <form onSubmit={handleSave} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-lg my-8">
-            <h3 className="font-semibold text-lg mb-4">
-              {form.id ? t("customers_editTitle") : t("customers_addNew")}
-            </h3>
-
-            <label className="text-sm text-slate-600">{t("customers_name")} *</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-
-            <label className="text-sm text-slate-600">{t("pos_customerPhone")}</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            />
-
-            <label className="text-sm text-slate-600">{t("customers_email")}</label>
-            <input
-              type="email"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-
-            <label className="text-sm text-slate-600">{t("customers_dob")}</label>
-            <input
-              type="date"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.date_of_birth}
-              onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
-            />
-
-            <label className="text-sm text-slate-600">{t("saleOrder_deliveryAddress")}</label>
-            <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              rows={2}
-              value={form.delivery_address}
-              onChange={(e) => setForm({ ...form, delivery_address: e.target.value })}
-            />
-
-            <label className="text-sm text-slate-600">{t("customers_facebook")}</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.facebook}
-              onChange={(e) => setForm({ ...form, facebook: e.target.value })}
-              placeholder="facebook.com/..."
-            />
-
-            <label className="text-sm text-slate-600">{t("customers_tiktok")}</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={form.tiktok}
-              onChange={(e) => setForm({ ...form, tiktok: e.target.value })}
-              placeholder="@username"
-            />
-
-            <label className="text-sm text-slate-600">{t("customers_loyalty")}</label>
-            {canEditLoyalty ? (
-              <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4"
-                value={form.loyalty_tier_id}
-                onChange={(e) => setForm({ ...form, loyalty_tier_id: e.target.value })}
-              >
-                <option value="">{t("customers_tierNone")}</option>
-                {tiers.map((tr) => (
-                  <option key={tr.id} value={tr.id}>
-                    {tr.name} ({tr.discount_percent}%)
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="mb-4">
-                <div className="w-full border border-slate-100 bg-slate-50 rounded-lg px-3 py-2 text-sm mt-1 text-slate-500">
-                  {findTier(tiers, form.loyalty_tier_id)?.name || t("customers_tierNone")}
-                </div>
-                <p className="text-xs text-slate-400 mt-1">{t("customers_loyaltyRestricted")}</p>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium"
-              >
-                {t("products_cancel")}
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
-              >
-                {saving ? t("products_saving") : t("products_save")}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
