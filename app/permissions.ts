@@ -28,7 +28,6 @@ export type PageKey =
   | "warehouse-history"
   | "dashboard"
   | "sales-report"
-  | "campaigns"
   | "settlements"
   | "my-pin"
   | "product-category"
@@ -120,7 +119,6 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "gp-report", href: "/gp-report", labelKey: "nav_gpReport", group: "reports" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
-  { key: "campaigns", href: "/campaigns", labelKey: "nav_campaigns", group: "customer" },
   { key: "settlements", href: "/settlements", labelKey: "nav_settlements", group: "reports" },
   { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "profile" },
   { key: "ai-agent", href: "/ai-agent", labelKey: "nav_aiAgent", group: "ai-agent" },
@@ -214,19 +212,19 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
   ],
   marketing_executive: [
     ...pagesIn("reports"),
-    "customers", "loyalty-tiers", "products", "campaigns",
+    "customers", "loyalty-tiers", "products",
     ...COMMON_ALL_ROLES,
   ],
   marketing_assistant: [
-    "campaigns", "customers", "products",
+    "customers", "products",
     ...COMMON_ALL_ROLES,
   ],
   content_writer: [
-    "campaigns", "products",
+    "products",
     ...COMMON_ALL_ROLES,
   ],
   talent: [
-    "campaigns",
+    "products",
     ...COMMON_ALL_ROLES,
   ],
   marketing_manager: [
