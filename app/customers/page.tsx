@@ -207,9 +207,9 @@ export default function CustomersPage() {
                     <Link href={`/customers/${c.id}`} className="text-slate-500 text-xs font-medium">
                       {t("products_view")}
                     </Link>
-                    <button onClick={() => openEdit(c)} className="text-blue-600 text-xs font-medium">
+                    <Link href={`/customers/${c.id}/edit`} className="text-blue-600 text-xs font-medium">
                       {t("products_edit")}
-                    </button>
+                    </Link>
                     <button onClick={() => handleDelete(c.id)} className="text-red-600 text-xs font-medium">
                       {t("products_delete")}
                     </button>
