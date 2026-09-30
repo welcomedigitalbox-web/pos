@@ -37,6 +37,7 @@ export default function ProductsPage() {
   const router = useRouter();
   const [items, setItems] = useState<SellableItem[]>([]);
   const [rawProducts, setRawProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [editingVariants, setEditingVariants] = useState<ProductVariant[]>([]);
   const [variantStock, setVariantStock] = useState<Record<string, number>>({});
@@ -71,34 +72,63 @@ export default function ProductsPage() {
   if (!profile || !hasPermission(profile, "products")) return null;
 
   async function load() {
-    const { data: raw } = await supabase.from("products").select("*").order("name");
-    setRawProducts((raw as Product[]) || []);
-    const data = await fetchSellableItems(storeId, true);
+    setLoading(true);
+    try {
+      // One pass: the catalog, the company-wide stock, and the cost
+      // merchandising quoted for items that have never been received yet.
+      const [rawRes, itemsRes, invRows, costRes] = await Promise.all([
+        supabase.from("products").select("*").order("name"),
+        fetchSellableItems(storeId, true),
+        fetchAllInventory(),
+        supabase.from("product_cost_reference").select("sku, cost"),
+      ]);
 
-    // Stock lives per location; the catalog view shows the company-wide total
-    const { data: invRows } = await supabase
-      .from("store_inventory")
-      .select("product_id, variant_id, stock_qty, avg_cost");
+      setRawProducts((rawRes.data as Product[]) || []);
+      const data = itemsRes;
 
-    const key = (p: string, v: string | null) => `${p}:${v || "base"}`;
-    const totals = new Map<string, { qty: number; value: number }>();
-    for (const r of (invRows as any[]) || []) {
-      const k = key(r.product_id, r.variant_id);
-      const cur = totals.get(k) || { qty: 0, value: 0 };
-      cur.qty += Number(r.stock_qty);
-      cur.value += Number(r.stock_qty) * Number(r.avg_cost);
-      totals.set(k, cur);
+      const refCost = new Map<string, number>();
+      for (const r of (costRes.data as { sku: string; cost: number }[]) || []) {
+        refCost.set(r.sku, Number(r.cost));
+      }
+
+      const key = (pid: string, v: string | null) => `${pid}:${v || "base"}`;
+      const totals = new Map<string, { qty: number; value: number }>();
+      for (const r of invRows) {
+        const k = key(r.product_id, r.variant_id);
+        const cur = totals.get(k) || { qty: 0, value: 0 };
+        cur.qty += Number(r.stock_qty);
+        cur.value += Number(r.stock_qty) * Number(r.avg_cost);
+        totals.set(k, cur);
+      }
+
+      const merged = data.map((i) => {
+        const agg = totals.get(key(i.product_id, i.variant_id)) || { qty: 0, value: 0 };
+        // With no stock anywhere there is no average to take, so fall back to
+        // the quoted cost rather than showing a bare zero.
+        const cost = agg.qty > 0 ? agg.value / agg.qty : refCost.get(i.sku || "") ?? 0;
+        return { ...i, stock_qty: agg.qty, avg_cost: cost };
+      });
+      setItems(merged);
+    } finally {
+      setLoading(false);
     }
+  }
 
-    const merged = data.map((i) => {
-      const agg = totals.get(key(i.product_id, i.variant_id)) || { qty: 0, value: 0 };
-      return {
-        ...i,
-        stock_qty: agg.qty,
-        avg_cost: agg.qty > 0 ? agg.value / agg.qty : 0,
-      };
-    });
-    setItems(merged);
+  // Supabase caps a response at 1,000 rows, so the ledger is read in pages —
+  // otherwise the stock of everything past the first page reads as zero.
+  async function fetchAllInventory() {
+    const page = 1000;
+    const out: { product_id: string; variant_id: string | null; stock_qty: number; avg_cost: number }[] = [];
+    for (let from = 0; ; from += page) {
+      const { data, error } = await supabase
+        .from("store_inventory")
+        .select("product_id, variant_id, stock_qty, avg_cost")
+        .range(from, from + page - 1);
+      if (error || !data || data.length === 0) break;
+      out.push(...(data as typeof out));
+      if (data.length < page) break;
+    }
+    return out;
   }
 
   async function loadCategories() {
@@ -474,7 +504,7 @@ export default function ProductsPage() {
             {items.length === 0 && (
               <tr>
                 <td colSpan={6} className="text-center text-slate-400 py-8">
-                  {t("products_empty")}
+                  {loading ? "…" : t("products_empty")}
                 </td>
               </tr>
             )}
