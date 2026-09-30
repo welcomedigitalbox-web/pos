@@ -258,7 +258,7 @@ export default function SupplierForm({ supplierId }: { supplierId?: string }) {
         <h3 className="font-medium">Company</h3>
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <label className={label}>{t("suppliers_name")} *</label>
+            <label className={label}>{t("customers_name")} *</label>
             <input className={input} value={form.name} required
                    onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
@@ -288,12 +288,12 @@ export default function SupplierForm({ supplierId }: { supplierId?: string }) {
                    onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} />
           </div>
           <div>
-            <label className={label}>{t("suppliers_phone")}</label>
+            <label className={label}>{t("pos_customerPhone")}</label>
             <input className={input} value={form.phone}
                    onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </div>
           <div>
-            <label className={label}>{t("suppliers_email")}</label>
+            <label className={label}>{t("customers_email")}</label>
             <input className={input} type="email" value={form.email}
                    onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
@@ -309,12 +309,12 @@ export default function SupplierForm({ supplierId }: { supplierId?: string }) {
           </div>
         </div>
         <div>
-          <label className={label}>{t("suppliers_address")}</label>
+          <label className={label}>{t("saleOrder_deliveryAddress")}</label>
           <textarea className={input} rows={2} value={form.address}
                     onChange={(e) => setForm({ ...form, address: e.target.value })} />
         </div>
         <div>
-          <label className={label}>{t("suppliers_note")}</label>
+          <label className={label}>{t("pos_note")}</label>
           <textarea className={input} rows={2} value={form.note}
                     onChange={(e) => setForm({ ...form, note: e.target.value })} />
         </div>
