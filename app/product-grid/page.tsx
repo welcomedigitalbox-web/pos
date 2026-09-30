@@ -40,17 +40,39 @@ export default function ProductGridPage() {
 
   useEffect(() => { load(); }, []);
 
+  // A REST response stops at 1,000 rows, so the ledger is read in pages;
+  // without this everything past the first page costs zero.
+  async function fetchAllInventory() {
+    const page = 1000;
+    const out: { product_id: string; stock_qty: number; avg_cost: number }[] = [];
+    for (let from = 0; ; from += page) {
+      const { data, error } = await supabase
+        .from("store_inventory")
+        .select("product_id, stock_qty, avg_cost")
+        .range(from, from + page - 1);
+      if (error || !data || data.length === 0) break;
+      out.push(...(data as typeof out));
+      if (data.length < page) break;
+    }
+    return out;
+  }
+
   async function load() {
-    const [p, c, inv] = await Promise.all([
+    const [p, c, inv, ref] = await Promise.all([
       supabase.from("products")
         .select("id, sku, name, category_id, price, is_active, allow_discount, allow_promotion, min_price")
         .order("sku", { nullsFirst: false }).order("name"),
       supabase.from("product_categories").select("id,name").order("sort_order"),
-      supabase.from("store_inventory").select("product_id, stock_qty, avg_cost"),
+      fetchAllInventory(),
+      supabase.from("product_cost_reference").select("sku, cost"),
     ]);
+    const refCost = new Map<string, number>();
+    for (const r of ((ref.data as { sku: string; cost: number }[]) || [])) {
+      refCost.set(r.sku, Number(r.cost));
+    }
     // One cost per product: the weighted average across every shop holding it.
     const cost: Record<string, { qty: number; value: number; last: number }> = {};
-    for (const r of ((inv.data as { product_id: string; stock_qty: number; avg_cost: number }[]) || [])) {
+    for (const r of inv) {
       const e = cost[r.product_id] || { qty: 0, value: 0, last: 0 };
       e.qty += Number(r.stock_qty || 0);
       e.value += Number(r.stock_qty || 0) * Number(r.avg_cost || 0);
@@ -59,7 +81,9 @@ export default function ProductGridPage() {
     }
     setRows(((p.data as Omit<Row, "avg_cost">[]) || []).map((r) => {
       const e = cost[r.id];
-      return { ...r, avg_cost: e && e.qty > 0 ? e.value / e.qty : e?.last || 0 };
+      // Never received anywhere, so fall back to the cost merchandising quoted.
+      const fromStock = e && e.qty > 0 ? e.value / e.qty : e?.last || 0;
+      return { ...r, avg_cost: fromStock > 0 ? fromStock : refCost.get(r.sku || "") ?? 0 };
     }));
     setCats((c.data as Cat[]) || []);
 
