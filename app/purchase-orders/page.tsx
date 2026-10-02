@@ -39,18 +39,12 @@ export default function PurchaseOrdersPage() {
   const [rows, setRows] = useState<PoRow[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
-  // Bought and consigned orders are different businesses; the list opens on
-  // the bought ones because that is most days' work.
-  const [kindFilter, setKindFilter] = useState<"all" | "buy" | "consignment">("buy");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
 
   const [showForm, setShowForm] = useState(false);
   const [supplierId, setSupplierId] = useState("");
-  // An order is either bought or taken on consignment. Never both: the
-  // total of a mixed order is partly a debt and partly somebody else's stock.
-  const [kind, setKind] = useState<"buy" | "consignment">("buy");
   const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>("credit");
   const [expectedDate, setExpectedDate] = useState("");
   const [note, setNote] = useState("");
@@ -112,7 +106,6 @@ export default function PurchaseOrdersPage() {
           payment_term: paymentTerm,
           expected_date: expectedDate || null,
           note: note.trim() || null,
-          is_consignment: kind === "consignment",
           created_by: profile?.email || null,
         })
         .select()
@@ -133,11 +126,8 @@ export default function PurchaseOrdersPage() {
   const q = search.trim().toLowerCase();
   const filtered = rows
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
-    .filter((r) => {
-      if (kindFilter === "all") return true;
-      const c = !!(r as { is_consignment?: boolean }).is_consignment;
-      return kindFilter === "consignment" ? c : !c;
-    })
+    // Consigned orders are not purchases; they live under Consignment.
+    .filter((r) => !(r as { is_consignment?: boolean }).is_consignment)
     .filter(
       (po) =>
         !q ||
@@ -152,24 +142,6 @@ export default function PurchaseOrdersPage() {
         <button onClick={() => setShowForm(true)} className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
           {t("po_addNew")}
         </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-3">
-        {([
-          ["buy", t("nav_purchaseOrders")],
-          ["consignment", t("nav_consignment")],
-          ["all", t("warehouse_allStock")],
-        ] as const).map(([k, label]) => (
-          <button key={k} onClick={() => setKindFilter(k)}
-            className={
-              "px-3 py-1.5 rounded-full text-xs font-medium border " +
-              (kindFilter === k
-                ? "bg-slate-900 text-white border-slate-900"
-                : "bg-white text-slate-600 border-slate-200")
-            }>
-            {label}
-          </button>
-        ))}
       </div>
 
       <select

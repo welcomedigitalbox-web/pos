@@ -44,7 +44,16 @@ type Entry = {
   created_at: string;
 };
 
-type Tab = "stock" | "suppliers" | "payable" | "movements";
+type Tab = "orders" | "stock" | "suppliers" | "payable" | "movements";
+
+type PoRow = {
+  id: string;
+  po_number: string;
+  status: string;
+  order_date: string | null;
+  supplier_id: string | null;
+  total: number;
+};
 
 const fmt = (n: number) => Math.round(n).toLocaleString() + " MMK";
 
@@ -55,6 +64,12 @@ export default function ConsignmentPage() {
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("stock");
+  const [pos, setPos] = useState<PoRow[]>([]);
+  const [newPo, setNewPo] = useState(false);
+  const [poSupplier, setPoSupplier] = useState("");
+  const [poDate, setPoDate] = useState("");
+  const [poNote, setPoNote] = useState("");
+  const [creating, setCreating] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [suppliers, setSuppliers] = useState<Record<string, string>>({});
@@ -84,13 +99,17 @@ export default function ConsignmentPage() {
     setLoading(true);
     let q = supabase.from("consignment_stock_v").select("*").limit(2000);
     if (!allStores) q = q.eq("store_id", storeId);
-    const [{ data }, { data: prods }, { data: sups }, { data: log }] = await Promise.all([
+    const [{ data }, { data: prods }, { data: sups }, { data: log }, { data: poData }] = await Promise.all([
       q,
       supabase.from("products").select("id, name").limit(5000),
       supabase.from("suppliers").select("id, name").limit(2000),
       supabase.from("consignment_ledger")
         .select("id, kind, qty, unit_cost, amount_due, store_id, product_id, supplier_id, note, created_by, created_at")
         .order("created_at", { ascending: false }).limit(200),
+      supabase.from("purchase_orders")
+        .select("id, po_number, status, order_date, supplier_id, purchase_order_items(qty, unit_cost)")
+        .eq("is_consignment", true)
+        .order("created_at", { ascending: false }).limit(300),
     ]);
     setRows(((data as Row[]) || []).filter((r) => Number(r.on_hand) !== 0 || Number(r.sold_qty) > 0));
     const pm: Record<string, string> = {};
@@ -100,6 +119,13 @@ export default function ConsignmentPage() {
     for (const s of (sups as { id: string; name: string }[]) || []) sm[s.id] = s.name;
     setSuppliers(sm);
     setEntries((log as Entry[]) || []);
+    setPos(
+      ((poData as (PoRow & { purchase_order_items: { qty: number; unit_cost: number }[] })[]) || [])
+        .map((p) => ({
+          ...p,
+          total: (p.purchase_order_items || []).reduce((t, i) => t + Number(i.qty) * Number(i.unit_cost), 0),
+        }))
+    );
     setLoading(false);
   }
 
@@ -127,6 +153,31 @@ export default function ConsignmentPage() {
     }
     return [...m.entries()].sort((a, b) => b[1].owed - a[1].owed);
   }, [rows, suppliers]);
+
+  // An order made from this page is a consignment order by construction. The
+  // kind is not a box to tick: it is where you are standing.
+  async function createPo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!poSupplier) return;
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.from("purchase_orders").insert({
+        po_number: `CO-${Date.now().toString().slice(-8)}`,
+        supplier_id: poSupplier,
+        payment_term: "credit",
+        expected_date: poDate || null,
+        note: poNote.trim() || null,
+        is_consignment: true,
+        created_by: profile?.email || null,
+      }).select("id").single();
+      if (error) throw error;
+      router.push(`/purchase-orders/${data.id}`);
+    } catch (err) {
+      showToast("❌ " + describeError(err));
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function sendBack() {
     if (!back) return;
@@ -156,6 +207,7 @@ export default function ConsignmentPage() {
   if (!profile || !hasPermission(profile, "products")) return null;
 
   const tabs: { key: Tab; label: string }[] = [
+    { key: "orders", label: t("nav_purchaseOrders") },
     { key: "stock", label: "Stock" },
     { key: "suppliers", label: t("nav_suppliers") },
     { key: "payable", label: t("suppliers_balance") },
@@ -201,6 +253,60 @@ export default function ConsignmentPage() {
       </div>
 
       {loading && <p className="text-sm text-slate-400">…</p>}
+
+      {!loading && tab === "orders" && (
+        <>
+          <div className="flex justify-between items-center mb-3">
+            <p className="text-sm text-slate-500">
+              Orders for goods taken on consignment. Nothing on them is owed
+              until the goods sell.
+            </p>
+            <button onClick={() => setNewPo(true)}
+              className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium shrink-0">
+              + {t("po_addNew")}
+            </button>
+          </div>
+          <div className={box}>
+            <table className="w-full text-sm min-w-[700px]">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className={th}>{t("po_number")}</th>
+                  <th className={th}>{t("nav_suppliers")}</th>
+                  <th className={th}>{t("po_orderDate")}</th>
+                  <th className={thr}>{t("pos_total")}</th>
+                  <th className={th}>{t("saleOrder_status")}</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pos.map((p) => (
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2 font-medium">{p.po_number}</td>
+                    <td className="px-4 py-2 text-slate-500">{suppliers[p.supplier_id || ""] || "-"}</td>
+                    <td className="px-4 py-2 text-slate-500">{p.order_date || "-"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{fmt(p.total)}</td>
+                    <td className="px-4 py-2">
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                        {t(`po_status_${p.status}` as never)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <a href={`/purchase-orders/${p.id}`} className="text-blue-600 text-xs font-medium">
+                        {t("products_view")}
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+                {pos.length === 0 && (
+                  <tr><td colSpan={6} className="text-center text-slate-400 py-10">
+                    No consignment orders yet
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {!loading && tab === "stock" && (
         <div className={box}>
@@ -357,6 +463,45 @@ export default function ConsignmentPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {newPo && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <form onSubmit={createPo} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("po_addNew")}</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              The goods stay the supplier&apos;s until they sell.
+            </p>
+
+            <label className="text-sm text-slate-600">{t("nav_suppliers")}</label>
+            <select required value={poSupplier} onChange={(e) => setPoSupplier(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3">
+              <option value="">{t("stockIn_selectPlaceholder")}</option>
+              {Object.entries(suppliers).map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+
+            <label className="text-sm text-slate-600">{t("po_expectedDate")}</label>
+            <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3" />
+
+            <label className="text-sm text-slate-600">{t("pos_note")}</label>
+            <input value={poNote} onChange={(e) => setPoNote(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4" />
+
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setNewPo(false)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button type="submit" disabled={creating}
+                className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {creating ? "..." : t("products_save")}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
