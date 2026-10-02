@@ -120,16 +120,18 @@ export default function PurchaseOrdersPage() {
     }
   }
 
-  const filtered = statusFilter === "all" ? rows : rows.filter((r) => r.status === statusFilter);
-
+  // Status and search both narrow the same list. They used to narrow two
+  // different lists, and the table showed the one the search box never
+  // touched — so typing in it did nothing at all.
   const q = search.trim().toLowerCase();
-  const visibleRows = q
-    ? rows.filter(
-        (po) =>
-          po.po_number.toLowerCase().includes(q) ||
-          (po.supplierName || "").toLowerCase().includes(q)
-      )
-    : rows;
+  const filtered = rows
+    .filter((r) => statusFilter === "all" || r.status === statusFilter)
+    .filter(
+      (po) =>
+        !q ||
+        po.po_number.toLowerCase().includes(q) ||
+        (po.supplierName || "").toLowerCase().includes(q)
+    );
 
   return (
     <div className="pt-4">

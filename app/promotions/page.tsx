@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, yangonToday } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -27,7 +27,8 @@ type Promo = {
 type Item = { id: string; promotion_id: string; product_id: string | null; category_id: string | null; role: string; qty: number | null };
 type Named = { id: string; name: string };
 
-const today = () => new Date().toISOString().slice(0, 10);
+// The shop's day. See yangonToday in lib/supabase.
+const today = () => yangonToday();
 const fmt = (n: unknown) => (n == null || n === "" ? "-" : Number(n).toLocaleString());
 
 export default function PromotionsPage() {
@@ -109,6 +110,20 @@ export default function PromotionsPage() {
   async function save() {
     if (!name.trim()) return setMsg("Name is required");
     if (buyIds.length === 0 && catIds.length === 0) return setMsg("Pick at least one product or category");
+
+    // A promotion that saves with nothing in the box where the discount goes
+    // looks live on this page and does nothing at the till, which is the
+    // hardest kind of fault to notice.
+    const v = num(value);
+    if (kind !== "bxgy") {
+      if (v == null) return setMsg("Enter the discount value");
+      if (kind === "percent" && (v <= 0 || v > 100)) return setMsg("A percentage must be between 1 and 100");
+      if (kind !== "percent" && v <= 0) return setMsg("The value must be more than zero");
+    } else {
+      if (!num(buyQty) || !num(getQty)) return setMsg("Enter both the buy and the get quantity");
+      if (getIds.length === 0) return setMsg("Pick the free item");
+    }
+    if (to && from && to < from) return setMsg("The end date is before the start date");
     const payload = {
       name: name.trim(), kind, value: num(value),
       buy_qty: kind === "bxgy" ? num(buyQty) : null,
@@ -124,19 +139,21 @@ export default function PromotionsPage() {
       const { error } = await supabase.from("promotions").update(payload).eq("id", open.id);
       if (error) return setMsg(error.message);
       id = open.id;
-      await supabase.from("promotion_items").delete().eq("promotion_id", id);
     } else {
       const { data, error } = await supabase.from("promotions").insert(payload).select("id").single();
       if (error) return setMsg(error.message);
       id = (data as { id: string }).id;
     }
 
+    // Replace the item list only once the new one is built: deleting first
+    // left a promotion with no items behind whenever the insert failed.
     const rows = [
       ...buyIds.map((pid) => ({ promotion_id: id, product_id: pid, role: kind === "bundle" ? "bundle" : "buy" })),
       ...getIds.map((pid) => ({ promotion_id: id, product_id: pid, role: "get" })),
       ...catIds.map((cid) => ({ promotion_id: id, category_id: cid, role: "buy" })),
     ];
     if (rows.length) {
+      await supabase.from("promotion_items").delete().eq("promotion_id", id);
       const { error } = await supabase.from("promotion_items").insert(rows);
       if (error) return setMsg(error.message);
     }
@@ -145,14 +162,18 @@ export default function PromotionsPage() {
     setTimeout(() => setMsg(""), 3000);
   }
 
+  // Both of these used to refetch in silence: under a permission rule the
+  // row simply flipped back and nobody was told why.
   async function toggle(p: Promo) {
-    await supabase.from("promotions").update({ active: !p.active }).eq("id", p.id);
+    const { error } = await supabase.from("promotions").update({ active: !p.active }).eq("id", p.id);
+    if (error) setMsg(error.message);
     load();
   }
 
   async function remove(p: Promo) {
     if (!confirm(p.name + "  — delete?")) return;
-    await supabase.from("promotions").delete().eq("id", p.id);
+    const { error } = await supabase.from("promotions").delete().eq("id", p.id);
+    if (error) setMsg(error.message);
     load();
   }
 

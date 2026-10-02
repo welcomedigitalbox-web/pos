@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { supabase, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
+import { supabase, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, SellableItem, fetchSellableItems, upsertStoreInventory, yangonToday } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useLanguage } from "../language-context";
 import { useAuth } from "../auth-context";
@@ -449,7 +449,7 @@ export default function POSPage() {
         qty: c.qty * (c.factor ?? 1),
         unit_price: c.price / (c.factor ?? 1),
       })),
-      p_date: new Date().toISOString().slice(0, 10),
+      p_date: yangonToday(),
     }).then(({ data }) => {
       if (!live) return;
       const res = data as {

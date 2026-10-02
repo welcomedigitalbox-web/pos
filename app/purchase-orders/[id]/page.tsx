@@ -216,6 +216,12 @@ export default function PoDetailPage() {
     const q = Number(receiveQty);
     const c = Number(receiveCost);
     if (!q || q <= 0) return showToast(t("stockRequest_qtyInvalid"));
+    // Nobody can deliver more than was ordered. Booking in more than the line
+    // holds puts stock in the system that no supplier ever sent.
+    const outstanding = receiveRow.qty - receiveRow.received_qty;
+    if (q > outstanding) {
+      return showToast(`❌ ${outstanding} outstanding on this line`);
+    }
     if (isNaN(c) || c < 0) return showToast(t("stockIn_costInvalid"));
     if (receiveRow.requires_expiry && !receiveExpiry) return showToast(t("po_expiryRequired"));
 
@@ -240,7 +246,10 @@ export default function PoDetailPage() {
       const newReceived = receiveRow.received_qty + q;
       await supabase
         .from("purchase_order_items")
-        .update({ received_qty: newReceived, unit_cost: c })
+        // The ordered cost is what the supplier agreed; the received cost is
+        // recorded with the goods. Overwriting one with the other made the PO
+        // total change after the fact.
+        .update({ received_qty: newReceived })
         .eq("id", receiveRow.id);
 
       const nextItems = items.map((i) =>
@@ -570,10 +579,13 @@ export default function PoDetailPage() {
                     {i.is_consignment ? "—" : i.update_cost ? "✅" : "-"}
                   </td>
                   <td className="px-3 py-2 text-right space-x-2">
-                    {!done && (
+                    {!done && canReceive && (
                       <button onClick={() => openReceive(i)} className="text-blue-600 text-xs font-medium">
                         {t("po_receive")}
                       </button>
+                    )}
+                    {!done && !canReceive && (
+                      <span className="text-xs text-slate-400">approve first</span>
                     )}
                     {editable && (
                       <button

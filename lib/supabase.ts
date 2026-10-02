@@ -646,3 +646,11 @@ export type AdDailyStat = {
   clicks: number;
   reach: number;
 };
+
+
+// The shop's day, not the browser's and not UTC. A date built from
+// toISOString() is a day behind for the whole Myanmar morning, which is
+// exactly when a promotion starting today would be asked about.
+export function yangonToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Yangon" });
+}

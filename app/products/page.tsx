@@ -270,7 +270,7 @@ export default function ProductsPage() {
         const filledVariants = draftVariants.filter((v) => v.name.trim());
         if (withVariants && filledVariants.length) {
           // The parent becomes a grouping row; stock and price live on the children
-          await supabase.from("product_variants").insert(
+          const { data: madeVariants, error: vErr } = await supabase.from("product_variants").insert(
             filledVariants.map((v) => ({
               product_id: created.id,
               variant_name: v.name.trim(),
@@ -280,11 +280,20 @@ export default function ProductsPage() {
                 `${form.sku.trim()}-${v.name.trim().toUpperCase().replace(/\s+/g, "-")}`,
               price_override: v.price.trim() ? Number(v.price) : price,
             }))
-          );
-          await supabase
+          ).select();
+          if (vErr) throw vErr;
+
+          // Every sellable thing needs a stock row, or the till refuses the
+          // sale with "No stock record" the first time anyone scans it.
+          for (const v of madeVariants || []) {
+            await upsertStoreInventory(storeId, created.id, v.id, { stock_qty: 0, avg_cost });
+          }
+
+          const { error: tErr } = await supabase
             .from("products")
             .update({ variation_theme: variationTheme })
             .eq("id", created.id);
+          if (tErr) throw tErr;
         } else {
           await upsertStoreInventory(storeId, created.id, null, { stock_qty, avg_cost });
         }
