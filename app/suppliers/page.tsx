@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+
+import { useEffect, useState } from "react";
 import { supabase, Supplier } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -25,8 +26,6 @@ export default function SuppliersPage() {
 
   const [rows, setRows] = useState<SupplierRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [banks, setBanks] = useState<Map<string, { bank_name: string; account_no: string | null }>>(new Map());
-  const [toast, setToast] = useState("");
 
 
   useEffect(() => {
@@ -44,15 +43,6 @@ export default function SuppliersPage() {
   async function load() {
     setLoading(true);
     const { data: sups } = await supabase.from("suppliers").select("*").order("name");
-
-    // The account the shop pays into, shown beside the balance it owes.
-    const { data: bankRows } = await supabase
-      .from("supplier_bank_accounts")
-      .select("supplier_id, bank_name, account_no, is_primary")
-      .eq("is_primary", true);
-    const bankBySupplier = new Map<string, { bank_name: string; account_no: string | null }>();
-    for (const b of (bankRows as any[]) || []) bankBySupplier.set(b.supplier_id, b);
-    setBanks(bankBySupplier);
 
     // Ordered value per supplier (exclude cancelled POs)
     const { data: pos } = await supabase
@@ -97,11 +87,6 @@ export default function SuppliersPage() {
     setLoading(false);
   }
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3000);
-  }
-
   const totalBalance = rows.reduce((s, r) => s + r.balance, 0);
 
   return (
@@ -126,7 +111,6 @@ export default function SuppliersPage() {
             <tr>
               <th className="text-left px-4 py-2">{t("customers_name")}</th>
               <th className="text-left px-4 py-2">{t("pos_customerPhone")}</th>
-              <th className="text-left px-4 py-2">Bank</th>
               <th className="text-left px-4 py-2">{t("suppliers_ordered")}</th>
               <th className="text-left px-4 py-2">{t("suppliers_paid")}</th>
               <th className="text-left px-4 py-2">{t("suppliers_balance")}</th>
@@ -135,17 +119,12 @@ export default function SuppliersPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7} className="text-center text-slate-400 py-8">...</td></tr>
+              <tr><td colSpan={6} className="text-center text-slate-400 py-8">...</td></tr>
             )}
             {!loading && rows.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-4 py-2 font-medium">{s.name}</td>
                 <td className="px-4 py-2 text-slate-400">{s.phone || "-"}</td>
-                <td className="px-4 py-2 text-slate-500 text-xs">
-                  {banks.get(s.id)
-                    ? `${banks.get(s.id)!.bank_name}${banks.get(s.id)!.account_no ? " · " + banks.get(s.id)!.account_no : ""}`
-                    : <span className="text-slate-300">-</span>}
-                </td>
                 <td className="px-4 py-2">{fmt(s.ordered)}</td>
                 <td className="px-4 py-2 text-green-700">{fmt(s.paid)}</td>
                 <td className={`px-4 py-2 font-semibold ${s.balance > 0 ? "text-orange-600" : "text-slate-400"}`}>
@@ -159,17 +138,12 @@ export default function SuppliersPage() {
               </tr>
             ))}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={6} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
