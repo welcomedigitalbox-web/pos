@@ -448,6 +448,22 @@ export async function receivePoItem(params: {
     throw new Error("EXPIRY_REQUIRED");
   }
 
+  // Consignment goods sit here but belong to the supplier until they sell,
+  // so their arrival goes in the consignment ledger and owes nothing. It is
+  // written before the stock moves: a ledger that refuses the goods must not
+  // leave them on the shelf with no record of whose they are.
+  if (isConsignment && poId) {
+    const { error } = await supabase.rpc("consignment_receive", {
+      p_po: poId,
+      p_product: productId,
+      p_variant: variantId,
+      p_store: storeId,
+      p_qty: qty,
+      p_unit_cost: unitCost,
+    });
+    if (error) throw error;
+  }
+
   const current = await fetchSellableItem(productId, variantId, storeId);
   const existingQty = current?.stock_qty ?? 0;
   const existingCost = current?.avg_cost ?? 0;
@@ -481,21 +497,6 @@ export async function receivePoItem(params: {
     previous_avg_cost: existingCost,
     last_purchase_cost: unitCost,
   });
-
-  // Consignment goods sit here but belong to the supplier until they sell,
-  // so their arrival is recorded in the consignment ledger and owes nothing.
-  // The debt is raised by the sale, in the database, not here.
-  if (isConsignment && poId) {
-    const { error } = await supabase.rpc("consignment_receive", {
-      p_po: poId,
-      p_product: productId,
-      p_variant: variantId,
-      p_store: storeId,
-      p_qty: qty,
-      p_unit_cost: unitCost,
-    });
-    if (error) throw error;
-  }
 
   return { newQty, newAvgCost };
 }
