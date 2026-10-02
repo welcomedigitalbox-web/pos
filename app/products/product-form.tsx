@@ -45,6 +45,13 @@ export default function ProductForm({ productId }: { productId?: string }) {
   const [drafts, setDrafts] = useState<Draft[]>([{ name: "", sku: "", price: "" }]);
   const [existingVariants, setExistingVariants] = useState<ProductVariant[]>([]);
 
+  // Units of measure. Stock is always counted in the base unit — a carton of
+  // twelve takes twelve pieces off the shelf — so the extra units are only
+  // ever a way of saying "twelve of those" when buying or selling.
+  type UomRow = { id?: string; code: string; name: string; factor: string; barcode: string; price: string };
+  const [uoms, setUoms] = useState<UomRow[]>([]);
+  const [baseUom, setBaseUom] = useState("PC");
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3500);
@@ -70,9 +77,10 @@ export default function ProductForm({ productId }: { productId?: string }) {
     }
     let live = true;
     (async () => {
-      const [{ data: p }, { data: vs }, { data: inv }] = await Promise.all([
+      const [{ data: p }, { data: vs }, { data: us }, { data: inv }] = await Promise.all([
         supabase.from("products").select("*").eq("id", productId).maybeSingle(),
         supabase.from("product_variants").select("*").eq("product_id", productId).order("created_at").limit(200),
+        supabase.from("product_uoms").select("*").eq("product_id", productId).is("variant_id", null).order("sort_order"),
         supabase.from("store_inventory").select("*")
           .eq("product_id", productId).eq("store_id", storeId).is("variant_id", null).maybeSingle(),
       ]);
@@ -89,6 +97,18 @@ export default function ProductForm({ productId }: { productId?: string }) {
       setAllowDiscount(prod.allow_discount !== false);
       setAllowPromotion(prod.allow_promotion !== false);
       setExistingVariants((vs as ProductVariant[]) || []);
+      const unitRows = (us as any[]) || [];
+      const theBase = unitRows.find((u) => u.is_base);
+      if (theBase) setBaseUom(theBase.code);
+      setUoms(
+        unitRows
+          .filter((u) => !u.is_base)
+          .map((u) => ({
+            id: u.id, code: u.code, name: u.name || "",
+            factor: String(u.factor ?? ""),
+            barcode: u.barcode || "", price: u.price == null ? "" : String(u.price),
+          }))
+      );
       const row = inv as { stock_qty: number; avg_cost: number } | null;
       setStockQty(row ? String(row.stock_qty) : "0");
       setAvgCost(row ? String(row.avg_cost) : "0");
@@ -134,6 +154,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
 
     setSaving(true);
     try {
+      let savedId: string | null = null;
       if (productId) {
         const { error } = await supabase
           .from("products")
@@ -146,6 +167,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
           .from("products").insert({ ...payload, store_id: storeId })
           .select().single();
         if (error) throw error;
+        savedId = created.id;
 
         const filled = drafts.filter((d) => d.name.trim());
         if (withVariants && filled.length) {
@@ -173,6 +195,45 @@ export default function ProductForm({ productId }: { productId?: string }) {
           await upsertStoreInventory(storeId, created.id, null, { stock_qty: qty, avg_cost: cost });
         }
       }
+      // The base unit is what stock is counted in, so it exists even when
+      // nobody adds a second unit. Written after the product so there is an
+      // id to hang it on.
+      const pid = productId || savedId;
+      if (pid) {
+        const base = (baseUom.trim() || "PC").toUpperCase();
+        const { data: haveBase } = await supabase
+          .from("product_uoms").select("id").eq("product_id", pid)
+          .is("variant_id", null).eq("is_base", true).maybeSingle();
+        if (haveBase) {
+          await supabase.from("product_uoms")
+            .update({ code: base, name: base, factor: 1 }).eq("id", haveBase.id);
+        } else {
+          await supabase.from("product_uoms").insert({
+            product_id: pid, code: base, name: base, factor: 1,
+            is_base: true, sort_order: 0,
+          });
+        }
+
+        for (let n = 0; n < uoms.length; n++) {
+          const u = uoms[n];
+          const code = u.code.trim().toUpperCase();
+          const factor = Number(u.factor);
+          if (!code || !(factor > 0)) continue;
+          const row = {
+            product_id: pid,
+            code,
+            name: u.name.trim() || code,
+            factor,
+            barcode: u.barcode.trim() || null,
+            price: u.price.trim() ? Number(u.price) : null,
+            is_base: false,
+            sort_order: n + 1,
+          };
+          if (u.id) await supabase.from("product_uoms").update(row).eq("id", u.id);
+          else await supabase.from("product_uoms").insert(row);
+        }
+      }
+
       router.push("/products");
       router.refresh();
     } catch (err) {
@@ -271,6 +332,66 @@ export default function ProductForm({ productId }: { productId?: string }) {
           </div>
         </div>
       )}
+
+      {/* How this product is counted, bought and sold. The base unit is the
+          one the shelf is counted in; everything else is a multiple of it. */}
+      <div className={card}>
+        <h3 className="text-sm font-medium mb-1">{t("products_units")}</h3>
+        <p className="text-xs text-slate-400 mb-3">{t("products_unitsHint")}</p>
+
+        <div className="sm:w-40 mb-4">
+          <label className={label}>{t("products_baseUnit")}</label>
+          <input className={field} value={baseUom} onChange={(e) => setBaseUom(e.target.value)}
+            placeholder="PC" />
+        </div>
+
+        {uoms.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {uoms.map((u, n) => (
+              <div key={n} className="flex flex-wrap items-end gap-2">
+                <div className="w-20">
+                  <label className={label}>{t("products_unitCode")}</label>
+                  <input className={field} value={u.code} placeholder="CTN"
+                    onChange={(e) => setUoms((r) => r.map((x, i) => i === n ? { ...x, code: e.target.value } : x))} />
+                </div>
+                <div className="flex-1 min-w-[110px]">
+                  <label className={label}>{t("products_unitName")}</label>
+                  <input className={field} value={u.name} placeholder="Carton"
+                    onChange={(e) => setUoms((r) => r.map((x, i) => i === n ? { ...x, name: e.target.value } : x))} />
+                </div>
+                <div className="w-24">
+                  <label className={label}>{t("products_unitFactor")}</label>
+                  <input type="number" className={field} value={u.factor} placeholder="12"
+                    onChange={(e) => setUoms((r) => r.map((x, i) => i === n ? { ...x, factor: e.target.value } : x))} />
+                </div>
+                <div className="w-32">
+                  <label className={label}>{t("products_unitBarcode")}</label>
+                  <input className={field} value={u.barcode}
+                    onChange={(e) => setUoms((r) => r.map((x, i) => i === n ? { ...x, barcode: e.target.value } : x))} />
+                </div>
+                <div className="w-28">
+                  <label className={label}>{t("products_unitPrice")}</label>
+                  <input type="number" className={field} value={u.price}
+                    onChange={(e) => setUoms((r) => r.map((x, i) => i === n ? { ...x, price: e.target.value } : x))} />
+                </div>
+                <button type="button" onClick={() => setUoms((r) => r.filter((_, i) => i !== n))}
+                  className="text-red-600 text-xs pb-2">✕</button>
+                {Number(u.factor) > 0 && u.code.trim() && (
+                  <p className="w-full text-xs text-slate-400">
+                    1 {u.code.trim().toUpperCase()} = {Number(u.factor)} {baseUom.trim().toUpperCase() || "PC"}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button type="button"
+          onClick={() => setUoms((r) => [...r, { code: "", name: "", factor: "", barcode: "", price: "" }])}
+          className="text-sm text-blue-600">
+          + {t("products_addUnit")}
+        </button>
+      </div>
 
       {/* Variants are built with the product and then maintained on their own
           page, so an existing product shows them rather than re-editing them. */}

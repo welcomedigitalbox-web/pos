@@ -54,6 +54,10 @@ export default function PoDetailPage() {
   const [docTitle, setDocTitle] = useState("");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docBusy, setDocBusy] = useState(false);
+  // A supplier quotes cartons; the shelf counts pieces. The line is typed
+  // in whatever unit was agreed and stored in pieces.
+  const [units, setUnits] = useState<{ code: string; name: string; factor: number; is_base: boolean }[]>([]);
+  const [uomCode, setUomCode] = useState("");
   const [toast, setToast] = useState("");
 
   // add-item form
@@ -241,6 +245,25 @@ export default function PoDetailPage() {
     await supabase.from("purchase_orders").update({ status }).eq("id", id);
   }
 
+  // Asked of the server per product, because the list is per product.
+  useEffect(() => {
+    const sel = sellables.find((s) => s.key === itemKey);
+    if (!sel) { setUnits([]); setUomCode(""); return; }
+    let live = true;
+    supabase.rpc("product_units", { p_product: sel.product_id }).then(({ data }) => {
+      if (!live) return;
+      const list = (data as any[]) || [];
+      setUnits(list);
+      setUomCode(list.find((u) => u.is_base)?.code || "");
+    });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemKey]);
+
+  const chosenUnit = units.find((u) => u.code === uomCode);
+  const unitFactor = Number(chosenUnit?.factor || 1);
+  const baseCode = units.find((u) => u.is_base)?.code || "PC";
+
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
     const sel = sellables.find((s) => s.key === itemKey);
@@ -249,12 +272,20 @@ export default function PoDetailPage() {
     if (!sel) return showToast(t("stockIn_selectProduct"));
     if (!qtyNum || qtyNum <= 0) return showToast(t("stockRequest_qtyInvalid"));
 
+    // Stored in the base unit, because that is what every other part of the
+    // system means by a quantity. What was agreed is kept alongside it so the
+    // order still reads the way the supplier wrote it.
+    const buyingInBase = !chosenUnit || chosenUnit.is_base || unitFactor === 1;
     const { error } = await supabase.from("purchase_order_items").insert({
       po_id: id,
       product_id: sel.product_id,
       variant_id: sel.variant_id,
-      qty: qtyNum,
-      unit_cost: isNaN(costNum) ? 0 : costNum,
+      qty: qtyNum * (buyingInBase ? 1 : unitFactor),
+      unit_cost: (isNaN(costNum) ? 0 : costNum) / (buyingInBase ? 1 : unitFactor),
+      order_uom: buyingInBase ? null : chosenUnit!.code,
+      order_qty: buyingInBase ? null : qtyNum,
+      order_unit_cost: buyingInBase ? null : (isNaN(costNum) ? 0 : costNum),
+      order_factor: buyingInBase ? null : unitFactor,
     });
     if (error) return showToast("❌ " + error.message);
     await logActivity({
@@ -603,8 +634,28 @@ export default function PoDetailPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2">{i.qty}</td>
-                  <td className="px-3 py-2">{fmt(i.unit_cost)}</td>
+                  <td className="px-3 py-2">
+                    {(i as any).order_uom ? (
+                      <>
+                        {(i as any).order_qty} {(i as any).order_uom}
+                        <span className="block text-[11px] text-slate-400">{i.qty} {t("po_baseUnit")}</span>
+                      </>
+                    ) : (
+                      i.qty
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {(i as any).order_uom ? (
+                      <>
+                        {fmt((i as any).order_unit_cost)}
+                        <span className="block text-[11px] text-slate-400">
+                          {fmt(i.unit_cost)} / {t("po_baseUnit")}
+                        </span>
+                      </>
+                    ) : (
+                      fmt(i.unit_cost)
+                    )}
+                  </td>
                   <td className="px-3 py-2 font-medium">{fmt(i.qty * i.unit_cost)}</td>
                   <td className={`px-3 py-2 font-medium ${done ? "text-green-700" : "text-orange-600"}`}>
                     {i.received_qty} / {i.qty}
@@ -694,6 +745,19 @@ export default function PoDetailPage() {
               <input type="number" className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
                 value={qty} onChange={(e) => setQty(e.target.value)} required />
             </div>
+            {units.length > 1 && (
+              <div className="w-28">
+                <label className="text-xs text-slate-500">{t("po_unit")}</label>
+                <select className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
+                  value={uomCode} onChange={(e) => setUomCode(e.target.value)}>
+                  {units.map((u) => (
+                    <option key={u.code} value={u.code}>
+                      {u.code}{u.is_base ? "" : ` (${u.factor})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="w-28">
               <label className="text-xs text-slate-500">{t("stockIn_unitCost")}</label>
               <input type="number" className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
@@ -703,6 +767,20 @@ export default function PoDetailPage() {
               {t("po_addItem")}
             </button>
           </div>
+
+          {/* Shown rather than left to be worked out in somebody's head. */}
+          {chosenUnit && !chosenUnit.is_base && unitFactor > 1 && Number(qty) > 0 && (
+            <p className="text-xs text-slate-500 mt-2">
+              {Number(qty)} {chosenUnit.code} = <strong>{Number(qty) * unitFactor} {baseCode}</strong>
+              {Number(unitCost) > 0 && (
+                <>
+                  {" · "}{fmt(Number(unitCost))}/{chosenUnit.code} ={" "}
+                  <strong>{fmt(Number(unitCost) / unitFactor)}/{baseCode}</strong>
+                  {" · "}{t("pos_total")} {fmt(Number(qty) * Number(unitCost))}
+                </>
+              )}
+            </p>
+          )}
         </form>
       )}
 
