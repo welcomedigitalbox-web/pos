@@ -320,12 +320,16 @@ export default function PoDetailPage() {
   async function approvePo(approver?: string) {
     setApproving(true);
     try {
-      const approvedBy = approver || profile?.email || null;
-      const { error } = await supabase
-        .from("purchase_orders")
-        .update({ status: "ordered", approved_by: approvedBy, approved_at: new Date().toISOString() })
-        .eq("id", id);
+      // The database decides who may approve. Sending the PIN rather than a
+      // claim about it means a hidden button is no longer the only guard.
+      const { data, error } = await supabase.rpc("approve_po", {
+        p_po: id,
+        p_pin: approvalPin || null,
+      });
       if (error) throw error;
+      const approvedBy =
+        (data as { approved_by: string }[] | null)?.[0]?.approved_by ||
+        approver || profile?.email || null;
       await logActivity({
         entityType: "purchase_order", entityId: id, action: "approved",
         detail: po?.po_number || "", actor: approvedBy,
@@ -399,7 +403,7 @@ export default function PoDetailPage() {
   }
 
   async function reopenPo() {
-    const { error } = await supabase.from("purchase_orders").update({ status: "ordered" }).eq("id", id);
+    const { error } = await supabase.rpc("reopen_po", { p_po: id });
     if (error) return showToast("❌ " + error.message);
     await logActivity({
       entityType: "purchase_order",
