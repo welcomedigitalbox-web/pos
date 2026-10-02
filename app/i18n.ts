@@ -1786,6 +1786,7 @@ export const translations = {
     nav_purchaseOrders: "Purchase Orders",
     nav_suppliers: "Suppliers",
     nav_consignment: "Consignment",
+    nav_approvals: "Approvals",
     nav_promotions: "Promotions",
     nav_productGrid: "Product Grid",
     nav_productImport: "Import",

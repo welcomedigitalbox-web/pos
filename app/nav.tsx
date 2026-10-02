@@ -7,6 +7,7 @@ import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
 import { PAGE_OPTIONS, PageGroup, hasPermission } from "./permissions";
+import { supabase } from "@/lib/supabase";
 import { APP_URL, canAccess, type AppKey } from "@/lib/apps";
 
 type DeptKey = PageGroup | "admin";
@@ -40,8 +41,21 @@ export default function Nav() {
   const { profile, signOut } = useAuth();
   const { lang, setLang, t } = useLanguage();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // How many things are waiting on this person's signature. One number from
+  // the server, because only the server knows what they may approve. Asked
+  // for again on every page change, so it goes down as the work is done.
+  const [waiting, setWaiting] = useState(0);
 
   useEffect(() => setMobileOpen(false), [pathname]);
+
+  useEffect(() => {
+    if (!profile || !hasPermission(profile, "approvals")) return;
+    let live = true;
+    supabase.rpc("my_pending_approvals").then(({ data }) => {
+      if (live) setWaiting(Number(data) || 0);
+    });
+    return () => { live = false; };
+  }, [profile, pathname]);
 
   if (pathname === "/login" || !profile) return null;
 
@@ -156,6 +170,17 @@ export default function Nav() {
                   EN
                 </button>
               </div>
+
+              {waiting > 0 && (
+                <Link
+                  href="/approvals"
+                  className="flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-lg px-2 py-1.5"
+                  title={t("nav_approvals" as any)}
+                >
+                  <span>🖊️</span>
+                  <span className="bg-red-600 text-white rounded-full px-1.5">{waiting}</span>
+                </Link>
+              )}
 
               <span className="text-xs text-slate-400 hidden md:inline">
                 {profile.email} ({profile.role})
