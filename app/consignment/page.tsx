@@ -27,7 +27,18 @@ type Row = {
   on_hand: number;
   sold_qty: number;
   returned_qty: number;
+  damaged_qty: number;
   owed: number;
+};
+
+type StatementRow = {
+  sold_on: string;
+  product: string;
+  store_id: string;
+  qty: number;
+  unit_cost: number;
+  amount: number;
+  kind: string;
 };
 
 type Entry = {
@@ -44,7 +55,7 @@ type Entry = {
   created_at: string;
 };
 
-type Tab = "orders" | "stock" | "suppliers" | "payable" | "movements";
+type Tab = "orders" | "stock" | "suppliers" | "payable" | "statement" | "movements";
 
 type PoRow = {
   id: string;
@@ -82,6 +93,16 @@ export default function ConsignmentPage() {
   const [backQty, setBackQty] = useState("");
   const [backNote, setBackNote] = useState("");
   const [sending, setSending] = useState(false);
+
+  const [dmg, setDmg] = useState<Row | null>(null);
+  const [dmgQty, setDmgQty] = useState("");
+  const [dmgWho, setDmgWho] = useState<"shop" | "supplier" | "shared">("shop");
+  const [dmgNote, setDmgNote] = useState("");
+
+  const [stmtSupplier, setStmtSupplier] = useState("");
+  const [stmtFrom, setStmtFrom] = useState("");
+  const [stmtTo, setStmtTo] = useState("");
+  const [stmt, setStmt] = useState<StatementRow[] | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "products")) router.replace("/");
@@ -179,6 +200,45 @@ export default function ConsignmentPage() {
     }
   }
 
+  // Breakage, loss and theft. The question the function will not let anyone
+  // skip is who carries it, because that is the only part that costs money.
+  async function recordDamage() {
+    if (!dmg) return;
+    const qty = Number(dmgQty);
+    if (!qty || qty <= 0) return showToast("❌ " + t("stockRequest_qtyInvalid"));
+    if (!dmgNote.trim()) return showToast("❌ Say what happened");
+    setSending(true);
+    try {
+      const { error } = await supabase.rpc("consignment_damage", {
+        p_supplier: dmg.supplier_id,
+        p_product: dmg.product_id,
+        p_variant: dmg.variant_id,
+        p_store: dmg.store_id,
+        p_qty: qty,
+        p_borne_by: dmgWho,
+        p_note: dmgNote.trim(),
+        p_shop_share: 0.5,
+      });
+      if (error) throw error;
+      setDmg(null); setDmgQty(""); setDmgNote(""); setDmgWho("shop");
+      showToast("✅");
+      await load();
+    } catch (err) {
+      showToast("❌ " + describeError(err));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function runStatement() {
+    if (!stmtSupplier || !stmtFrom || !stmtTo) return showToast("❌ supplier and dates");
+    const { data, error } = await supabase.rpc("consignment_statement", {
+      p_supplier: stmtSupplier, p_from: stmtFrom, p_to: stmtTo,
+    });
+    if (error) return showToast("❌ " + describeError(error));
+    setStmt((data as StatementRow[]) || []);
+  }
+
   async function sendBack() {
     if (!back) return;
     const qty = Number(backQty);
@@ -211,6 +271,7 @@ export default function ConsignmentPage() {
     { key: "stock", label: "Stock" },
     { key: "suppliers", label: t("nav_suppliers") },
     { key: "payable", label: t("suppliers_balance") },
+    { key: "statement", label: "Statement" },
     { key: "movements", label: "Movements" },
   ];
 
@@ -319,6 +380,7 @@ export default function ConsignmentPage() {
                 <th className={thr}>Here</th>
                 <th className={thr}>Sold</th>
                 <th className={thr}>Returned</th>
+                <th className={thr}>Damaged</th>
                 <th className={thr}>Owed</th>
                 <th className="px-4 py-2"></th>
               </tr>
@@ -332,17 +394,22 @@ export default function ConsignmentPage() {
                   <td className="px-4 py-2 text-right tabular-nums">{Number(r.on_hand)}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-slate-500">{Number(r.sold_qty)}</td>
                   <td className="px-4 py-2 text-right tabular-nums text-slate-400">{Number(r.returned_qty)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-red-500">{Number(r.damaged_qty || 0)}</td>
                   <td className="px-4 py-2 text-right tabular-nums font-semibold text-orange-600">{fmt(Number(r.owed))}</td>
                   <td className="px-4 py-2 text-right">
                     {Number(r.on_hand) > 0 && (
-                      <button onClick={() => { setBack(r); setBackQty(String(r.on_hand)); }}
-                        className="text-blue-600 text-xs font-medium">Send back</button>
+                      <span className="space-x-3 whitespace-nowrap">
+                        <button onClick={() => { setBack(r); setBackQty(String(r.on_hand)); }}
+                          className="text-blue-600 text-xs font-medium">Send back</button>
+                        <button onClick={() => { setDmg(r); setDmgQty("1"); }}
+                          className="text-red-600 text-xs font-medium">Damaged</button>
+                      </span>
                     )}
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={8} className="text-center text-slate-400 py-10">
+                <tr><td colSpan={9} className="text-center text-slate-400 py-10">
                   Nothing on consignment
                 </td></tr>
               )}
@@ -361,6 +428,7 @@ export default function ConsignmentPage() {
                 <th className={thr}>Here</th>
                 <th className={thr}>Sold</th>
                 <th className={thr}>Returned</th>
+                <th className={thr}>Damaged</th>
                 <th className={thr}>Owed</th>
               </tr>
             </thead>
@@ -420,6 +488,98 @@ export default function ConsignmentPage() {
               </tbody>
             </table>
           </div>
+        </>
+      )}
+
+      {!loading && tab === "statement" && (
+        <>
+          <p className="text-sm text-slate-500 mb-3">
+            What sold in a period, for the supplier to invoice. Returns appear
+            as negatives; damage the shop agreed to carry appears as a charge.
+          </p>
+          <div className="flex flex-wrap items-end gap-2 mb-4">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">{t("nav_suppliers")}</label>
+              <select value={stmtSupplier} onChange={(e) => setStmtSupplier(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
+                <option value="">{t("stockIn_selectPlaceholder")}</option>
+                {Object.entries(suppliers).map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">From</label>
+              <input type="date" value={stmtFrom} onChange={(e) => setStmtFrom(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">To</label>
+              <input type="date" value={stmtTo} onChange={(e) => setStmtTo(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm" />
+            </div>
+            <button onClick={runStatement}
+              className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg font-medium">
+              Show
+            </button>
+            {stmt && stmt.length > 0 && (
+              <button onClick={() => window.print()}
+                className="border border-slate-200 text-sm px-4 py-2 rounded-lg font-medium print:hidden">
+                🖨
+              </button>
+            )}
+          </div>
+
+          {stmt && (
+            <div className={box}>
+              <table className="w-full text-sm min-w-[700px]">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className={th}>Date</th>
+                    <th className={th}>{t("customers_name")}</th>
+                    <th className={th}>Store</th>
+                    <th className={thr}>Qty</th>
+                    <th className={thr}>{t("products_avgCost")}</th>
+                    <th className={thr}>{t("pos_total")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stmt.map((r, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-4 py-2 text-slate-500">{r.sold_on}</td>
+                      <td className="px-4 py-2">
+                        {r.product}
+                        {r.kind !== "sold" && (
+                          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                            {r.kind === "returned_by_customer" ? "returned" : r.kind}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-slate-500">{r.store_id}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{Number(r.qty)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{fmt(Number(r.unit_cost))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-medium">{fmt(Number(r.amount))}</td>
+                    </tr>
+                  ))}
+                  {stmt.length === 0 && (
+                    <tr><td colSpan={6} className="text-center text-slate-400 py-10">
+                      Nothing sold in that period
+                    </td></tr>
+                  )}
+                </tbody>
+                {stmt.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-200 font-semibold">
+                      <td className="px-4 py-2" colSpan={5}>{t("pos_total")}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-orange-600">
+                        {fmt(stmt.reduce((t2, r) => t2 + Number(r.amount), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -502,6 +662,55 @@ export default function ConsignmentPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {dmg && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">Damaged or lost</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {names[dmg.product_id]} · {dmg.supplier_name} · {Number(dmg.on_hand)} here
+            </p>
+
+            <label className="text-sm text-slate-600">Quantity</label>
+            <input type="number" autoFocus value={dmgQty} onChange={(e) => setDmgQty(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3" />
+
+            <label className="text-sm text-slate-600">Who carries it</label>
+            <div className="flex gap-2 mt-1 mb-1">
+              {([["shop", "We buy it"], ["supplier", "Supplier"], ["shared", "Shared 50/50"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setDmgWho(k)}
+                  className={
+                    "flex-1 py-2 rounded-lg text-xs font-medium border " +
+                    (dmgWho === k ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200")
+                  }>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mb-3">
+              {dmgWho === "shop" && "The supplier is owed for these units."}
+              {dmgWho === "supplier" && "Nothing is owed; tell the supplier."}
+              {dmgWho === "shared" && "Half the cost is owed."}
+            </p>
+
+            <label className="text-sm text-slate-600">What happened *</label>
+            <input value={dmgNote} onChange={(e) => setDmgNote(e.target.value)}
+              placeholder="dropped in the stockroom"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4" />
+
+            <div className="flex gap-2">
+              <button onClick={() => setDmg(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={recordDamage} disabled={sending}
+                className="flex-1 py-2.5 bg-red-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {sending ? "..." : "Record"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
