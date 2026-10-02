@@ -140,6 +140,26 @@ export default function ProductForm({ productId }: { productId?: string }) {
       return showToast("❌ Minimum price is above the selling price");
     }
 
+    if (!baseUom.trim()) return showToast(t("products_baseUnitRequired"));
+    for (const u of uoms) {
+      const touched = u.code.trim() || u.name.trim() || u.factor.trim();
+      if (!touched) continue;
+      if (!u.code.trim()) return showToast(t("products_unitCodeRequired"));
+      const f = Number(u.factor);
+      if (!(f > 1)) return showToast(t("products_unitFactorRequired"));
+      if (u.code.trim().toUpperCase() === baseUom.trim().toUpperCase()) {
+        return showToast(t("products_unitDuplicate"));
+      }
+    }
+    {
+      const codes = uoms
+        .map((u) => u.code.trim().toUpperCase())
+        .filter(Boolean);
+      if (new Set(codes).size !== codes.length) {
+        return showToast(t("products_unitDuplicate"));
+      }
+    }
+
     const payload = {
       name: name.trim(),
       sku: sku.trim() || null,
@@ -218,7 +238,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
           const u = uoms[n];
           const code = u.code.trim().toUpperCase();
           const factor = Number(u.factor);
-          if (!code || !(factor > 0)) continue;
+          if (!code || !(factor > 1)) continue;
           const row = {
             product_id: pid,
             code,
