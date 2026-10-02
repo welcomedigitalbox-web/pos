@@ -1,10 +1,14 @@
 "use client";
 
-// Consignment stock, apart from the shop's own.
+// Consignment, in four views of one ledger.
 //
-// Two questions get asked about these goods and nothing else: what is still
-// standing here, and what do we owe for the ones that sold. Both are on this
-// page, and the unsold ones can be handed back from it.
+//   Stock      what is standing here, by product
+//   Suppliers  the same thing totalled per supplier
+//   Payable    what has sold and is therefore owed
+//   Movements  every arrival, sale and return, in order
+//
+// They are tabs rather than pages because they answer the same question from
+// four sides, and a person checking one usually wants another.
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,10 +37,14 @@ type Entry = {
   unit_cost: number;
   amount_due: number;
   store_id: string;
+  product_id: string;
+  supplier_id: string | null;
   note: string | null;
   created_by: string | null;
   created_at: string;
 };
+
+type Tab = "stock" | "suppliers" | "payable" | "movements";
 
 const fmt = (n: number) => Math.round(n).toLocaleString() + " MMK";
 
@@ -46,11 +54,13 @@ export default function ConsignmentPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
+  const [tab, setTab] = useState<Tab>("stock");
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [suppliers, setSuppliers] = useState<Record<string, string>>({});
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [allStores, setAllStores] = useState(false);
+  const [allStores, setAllStores] = useState(true);
   const [toast, setToast] = useState("");
 
   const [back, setBack] = useState<Row | null>(null);
@@ -72,19 +82,23 @@ export default function ConsignmentPage() {
 
   async function load() {
     setLoading(true);
-    let q = supabase.from("consignment_stock_v").select("*").limit(1000);
+    let q = supabase.from("consignment_stock_v").select("*").limit(2000);
     if (!allStores) q = q.eq("store_id", storeId);
-    const [{ data }, { data: prods }, { data: log }] = await Promise.all([
+    const [{ data }, { data: prods }, { data: sups }, { data: log }] = await Promise.all([
       q,
       supabase.from("products").select("id, name").limit(5000),
+      supabase.from("suppliers").select("id, name").limit(2000),
       supabase.from("consignment_ledger")
-        .select("id, kind, qty, unit_cost, amount_due, store_id, note, created_by, created_at")
-        .order("created_at", { ascending: false }).limit(50),
+        .select("id, kind, qty, unit_cost, amount_due, store_id, product_id, supplier_id, note, created_by, created_at")
+        .order("created_at", { ascending: false }).limit(200),
     ]);
-    setRows(((data as Row[]) || []).filter((r) => r.on_hand !== 0 || r.sold_qty > 0));
-    const m: Record<string, string> = {};
-    for (const p of (prods as { id: string; name: string }[]) || []) m[p.id] = p.name;
-    setNames(m);
+    setRows(((data as Row[]) || []).filter((r) => Number(r.on_hand) !== 0 || Number(r.sold_qty) > 0));
+    const pm: Record<string, string> = {};
+    for (const p of (prods as { id: string; name: string }[]) || []) pm[p.id] = p.name;
+    setNames(pm);
+    const sm: Record<string, string> = {};
+    for (const s of (sups as { id: string; name: string }[]) || []) sm[s.id] = s.name;
+    setSuppliers(sm);
     setEntries((log as Entry[]) || []);
     setLoading(false);
   }
@@ -92,7 +106,27 @@ export default function ConsignmentPage() {
   const totals = useMemo(() => ({
     onHand: rows.reduce((s, r) => s + Number(r.on_hand), 0),
     owed: rows.reduce((s, r) => s + Number(r.owed), 0),
+    sold: rows.reduce((s, r) => s + Number(r.sold_qty), 0),
   }), [rows]);
+
+  // The same rows, gathered under whoever the goods belong to.
+  const bySupplier = useMemo(() => {
+    const m = new Map<string, { name: string; onHand: number; sold: number; returned: number; owed: number; lines: number }>();
+    for (const r of rows) {
+      const k = r.supplier_id || "?";
+      const e = m.get(k) || {
+        name: r.supplier_name || suppliers[k] || "—",
+        onHand: 0, sold: 0, returned: 0, owed: 0, lines: 0,
+      };
+      e.onHand += Number(r.on_hand);
+      e.sold += Number(r.sold_qty);
+      e.returned += Number(r.returned_qty);
+      e.owed += Number(r.owed);
+      e.lines += 1;
+      m.set(k, e);
+    }
+    return [...m.entries()].sort((a, b) => b[1].owed - a[1].owed);
+  }, [rows, suppliers]);
 
   async function sendBack() {
     if (!back) return;
@@ -121,10 +155,21 @@ export default function ConsignmentPage() {
 
   if (!profile || !hasPermission(profile, "products")) return null;
 
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "stock", label: "Stock" },
+    { key: "suppliers", label: t("nav_suppliers") },
+    { key: "payable", label: t("suppliers_balance") },
+    { key: "movements", label: "Movements" },
+  ];
+
+  const th = "text-left px-4 py-2";
+  const thr = "text-right px-4 py-2";
+  const box = "bg-white border border-slate-200 rounded-xl overflow-x-auto";
+
   return (
     <div className="pt-4">
       <div className="flex justify-between items-center mb-1">
-        <h2 className="font-semibold text-lg">Consignment</h2>
+        <h2 className="font-semibold text-lg">{t("nav_consignment")}</h2>
         <label className="flex items-center gap-2 text-sm text-slate-500">
           <input type="checkbox" checked={allStores} onChange={(e) => setAllStores(e.target.checked)} />
           all stores
@@ -135,98 +180,185 @@ export default function ConsignmentPage() {
         what is still standing here.
       </p>
 
-      <div className="flex flex-wrap gap-3 mb-5">
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 min-w-[140px]">
-          <div className="text-xs text-slate-500">Still here</div>
-          <div className="text-lg font-semibold mt-0.5">{totals.onHand}</div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 min-w-[160px]">
-          <div className="text-xs text-slate-500">Owed for what sold</div>
-          <div className="text-lg font-semibold mt-0.5 text-orange-600">{fmt(totals.owed)}</div>
-        </div>
+      <div className="flex flex-wrap gap-3 mb-4">
+        <Tile label="Still here" value={String(totals.onHand)} />
+        <Tile label="Sold" value={String(totals.sold)} />
+        <Tile label="Owed" value={fmt(totals.owed)} tone="text-orange-600" />
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
-        <table className="w-full text-sm min-w-[760px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="text-left px-4 py-2">{t("customers_name")}</th>
-              <th className="text-left px-4 py-2">{t("nav_suppliers")}</th>
-              {allStores && <th className="text-left px-4 py-2">Store</th>}
-              <th className="text-right px-4 py-2">Here</th>
-              <th className="text-right px-4 py-2">Sold</th>
-              <th className="text-right px-4 py-2">Returned</th>
-              <th className="text-right px-4 py-2">Owed</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">…</td></tr>}
-            {!loading && rows.map((r, i) => (
-              <tr key={i} className="border-t border-slate-100">
-                <td className="px-4 py-2 font-medium">{names[r.product_id] || r.product_id.slice(0, 8)}</td>
-                <td className="px-4 py-2 text-slate-500">{r.supplier_name || "-"}</td>
-                {allStores && <td className="px-4 py-2 text-slate-500">{r.store_id}</td>}
-                <td className="px-4 py-2 text-right tabular-nums">{Number(r.on_hand)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-500">{Number(r.sold_qty)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-400">{Number(r.returned_qty)}</td>
-                <td className="px-4 py-2 text-right tabular-nums font-semibold text-orange-600">{fmt(Number(r.owed))}</td>
-                <td className="px-4 py-2 text-right">
-                  {Number(r.on_hand) > 0 && (
-                    <button onClick={() => { setBack(r); setBackQty(String(r.on_hand)); }}
-                      className="text-blue-600 text-xs font-medium">
-                      Send back
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!loading && rows.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-10">
-                Nothing on consignment here
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+      <div className="flex gap-1 mb-4 border-b border-slate-200">
+        {tabs.map((x) => (
+          <button key={x.key} onClick={() => setTab(x.key)}
+            className={
+              "px-4 py-2 text-sm font-medium border-b-2 -mb-px " +
+              (tab === x.key
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-slate-500 hover:text-slate-700")
+            }>
+            {x.label}
+          </button>
+        ))}
       </div>
 
-      <h3 className="font-medium text-sm mb-2">Movements</h3>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[620px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="text-left px-4 py-2">Date</th>
-              <th className="text-left px-4 py-2">What</th>
-              <th className="text-right px-4 py-2">Qty</th>
-              <th className="text-right px-4 py-2">Owed</th>
-              <th className="text-left px-4 py-2">{t("pos_note")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.id} className="border-t border-slate-100">
-                <td className="px-4 py-2 text-slate-500">{e.created_at.slice(0, 16).replace("T", " ")}</td>
-                <td className="px-4 py-2">
-                  <span className={
-                    "px-2 py-0.5 rounded text-xs font-medium " +
-                    (e.kind === "sold" ? "bg-orange-100 text-orange-700"
-                      : e.kind === "returned" ? "bg-slate-100 text-slate-600"
-                      : "bg-green-100 text-green-700")
-                  }>{e.kind}</span>
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">{Number(e.qty)}</td>
-                <td className="px-4 py-2 text-right tabular-nums">
-                  {Number(e.amount_due) ? fmt(Number(e.amount_due)) : "-"}
-                </td>
-                <td className="px-4 py-2 text-slate-400">{e.note || "-"}</td>
+      {loading && <p className="text-sm text-slate-400">…</p>}
+
+      {!loading && tab === "stock" && (
+        <div className={box}>
+          <table className="w-full text-sm min-w-[760px]">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className={th}>{t("customers_name")}</th>
+                <th className={th}>{t("nav_suppliers")}</th>
+                {allStores && <th className={th}>Store</th>}
+                <th className={thr}>Here</th>
+                <th className={thr}>Sold</th>
+                <th className={thr}>Returned</th>
+                <th className={thr}>Owed</th>
+                <th className="px-4 py-2"></th>
               </tr>
-            ))}
-            {entries.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-slate-400 py-8">-</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t border-slate-100">
+                  <td className="px-4 py-2 font-medium">{names[r.product_id] || r.product_id.slice(0, 8)}</td>
+                  <td className="px-4 py-2 text-slate-500">{r.supplier_name || "-"}</td>
+                  {allStores && <td className="px-4 py-2 text-slate-500">{r.store_id}</td>}
+                  <td className="px-4 py-2 text-right tabular-nums">{Number(r.on_hand)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{Number(r.sold_qty)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-400">{Number(r.returned_qty)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-orange-600">{fmt(Number(r.owed))}</td>
+                  <td className="px-4 py-2 text-right">
+                    {Number(r.on_hand) > 0 && (
+                      <button onClick={() => { setBack(r); setBackQty(String(r.on_hand)); }}
+                        className="text-blue-600 text-xs font-medium">Send back</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={8} className="text-center text-slate-400 py-10">
+                  Nothing on consignment
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && tab === "suppliers" && (
+        <div className={box}>
+          <table className="w-full text-sm min-w-[620px]">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className={th}>{t("nav_suppliers")}</th>
+                <th className={thr}>Products</th>
+                <th className={thr}>Here</th>
+                <th className={thr}>Sold</th>
+                <th className={thr}>Returned</th>
+                <th className={thr}>Owed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bySupplier.map(([id, s]) => (
+                <tr key={id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 font-medium">{s.name}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{s.lines}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{s.onHand}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{s.sold}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-400">{s.returned}</td>
+                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-orange-600">{fmt(s.owed)}</td>
+                </tr>
+              ))}
+              {bySupplier.length === 0 && (
+                <tr><td colSpan={6} className="text-center text-slate-400 py-10">-</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && tab === "payable" && (
+        <>
+          <p className="text-sm text-slate-500 mb-3">
+            Only what has sold. Goods still on the shelf are the supplier&apos;s,
+            and appear here the day a customer buys one.
+          </p>
+          <div className={box}>
+            <table className="w-full text-sm min-w-[620px]">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className={th}>Date</th>
+                  <th className={th}>{t("customers_name")}</th>
+                  <th className={th}>{t("nav_suppliers")}</th>
+                  <th className={thr}>Qty</th>
+                  <th className={thr}>{t("suppliers_balance")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.filter((e) => e.kind === "sold").map((e) => (
+                  <tr key={e.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2 text-slate-500">{e.created_at.slice(0, 16).replace("T", " ")}</td>
+                    <td className="px-4 py-2">{names[e.product_id] || e.note || "-"}</td>
+                    <td className="px-4 py-2 text-slate-500">{suppliers[e.supplier_id || ""] || "-"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{Number(e.qty)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-orange-600">
+                      {fmt(Number(e.amount_due))}
+                    </td>
+                  </tr>
+                ))}
+                {entries.filter((e) => e.kind === "sold").length === 0 && (
+                  <tr><td colSpan={5} className="text-center text-slate-400 py-10">
+                    Nothing sold on consignment yet
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {!loading && tab === "movements" && (
+        <div className={box}>
+          <table className="w-full text-sm min-w-[700px]">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className={th}>Date</th>
+                <th className={th}>What</th>
+                <th className={th}>{t("customers_name")}</th>
+                <th className={th}>Store</th>
+                <th className={thr}>Qty</th>
+                <th className={thr}>Owed</th>
+                <th className={th}>{t("pos_note")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 text-slate-500">{e.created_at.slice(0, 16).replace("T", " ")}</td>
+                  <td className="px-4 py-2">
+                    <span className={
+                      "px-2 py-0.5 rounded text-xs font-medium " +
+                      (e.kind === "sold" ? "bg-orange-100 text-orange-700"
+                        : e.kind === "returned" ? "bg-slate-100 text-slate-600"
+                        : "bg-green-100 text-green-700")
+                    }>{e.kind}</span>
+                  </td>
+                  <td className="px-4 py-2">{names[e.product_id] || "-"}</td>
+                  <td className="px-4 py-2 text-slate-500">{e.store_id}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{Number(e.qty)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {Number(e.amount_due) ? fmt(Number(e.amount_due)) : "-"}
+                  </td>
+                  <td className="px-4 py-2 text-slate-400">{e.note || e.created_by || "-"}</td>
+                </tr>
+              ))}
+              {entries.length === 0 && (
+                <tr><td colSpan={7} className="text-center text-slate-400 py-10">-</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {back && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
@@ -263,6 +395,15 @@ export default function ConsignmentPage() {
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function Tile({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 min-w-[130px]">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={"text-lg font-semibold mt-0.5 " + (tone || "")}>{value}</div>
     </div>
   );
 }
