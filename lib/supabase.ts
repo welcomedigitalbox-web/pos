@@ -660,3 +660,17 @@ export type AdDailyStat = {
 export function yangonToday(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Yangon" });
 }
+
+
+// Supabase rejects with a plain object, not an Error, so String(err) gives
+// "[object Object]" — which is what the supplier form showed when the
+// database turned a save away. Say what the database said.
+export function describeError(err: unknown): string {
+  if (!err) return "Something went wrong";
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  const e = err as { message?: string; details?: string; hint?: string; code?: string };
+  const parts = [e.message, e.details, e.hint].filter(Boolean);
+  if (parts.length) return parts.join(" — ");
+  return e.code ? `Error ${e.code}` : JSON.stringify(err).slice(0, 200);
+}

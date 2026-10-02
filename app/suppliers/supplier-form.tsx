@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { supabase, describeError } from "@/lib/supabase";
 import { useLanguage } from "../language-context";
 
 export type BankRow = {
@@ -232,7 +232,7 @@ export default function SupplierForm({ supplierId }: { supplierId?: string }) {
       router.push("/suppliers");
       router.refresh();
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + describeError(err));
     } finally {
       setSaving(false);
     }
