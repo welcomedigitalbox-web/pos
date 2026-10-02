@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { supabase, SellableItem, fetchSellableItems, netLineTotal } from "@/lib/supabase";
+import { supabase, SellableItem, fetchSellableItems, netLineTotal, describeError } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -36,6 +36,55 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Correcting a cost used to be a tick box on a purchase order, where it
+  // was reached by accident. It lives here instead: the head of
+  // merchandising only, a reason required, and the whole change logged.
+  const [canCorrectCost, setCanCorrectCost] = useState(false);
+  const [fixRow, setFixRow] = useState<Row | null>(null);
+  const [fixCost, setFixCost] = useState("");
+  const [fixReason, setFixReason] = useState("");
+  const [fixing, setFixing] = useState(false);
+  const [toast, setToast] = useState("");
+
+  function showToast(m: string) {
+    setToast(m);
+    setTimeout(() => setToast(""), 4000);
+  }
+
+  function openFix(r: Row) {
+    setFixRow(r);
+    setFixCost(String(r.avg_cost || ""));
+    setFixReason("");
+  }
+
+  async function submitFix() {
+    if (!fixRow) return;
+    setFixing(true);
+    try {
+      const { data, error } = await supabase.rpc("correct_avg_cost", {
+        p_product: fixRow.product_id,
+        p_variant: fixRow.variant_id,
+        p_store: locId,
+        p_new_cost: Number(fixCost),
+        p_reason: fixReason,
+      });
+      if (error) throw error;
+      const d = (data as any[])?.[0];
+      showToast(
+        d
+          ? `\u2705 ${fmt(d.old_cost)} \u2192 ${fmt(d.new_cost)} (${t("warehouse_stockValue")} ${
+              d.value_change >= 0 ? "+" : ""
+            }${fmt(d.value_change)})`
+          : "\u2705"
+      );
+      setFixRow(null);
+      await load();
+    } catch (err) {
+      showToast("\u274c " + describeError(err));
+    } finally {
+      setFixing(false);
+    }
+  }
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "inventory")) router.replace("/");
@@ -45,6 +94,17 @@ export default function InventoryPage() {
   useEffect(() => {
     if (!locId && storeId) setLocId(storeId);
   }, [storeId, locId]);
+
+  // Asked of the server, which is also the only place the answer matters:
+  // correct_avg_cost refuses anyone else whatever the browser believes.
+  useEffect(() => {
+    if (!profile) return;
+    let live = true;
+    supabase
+      .rpc("can_approve_dept", { p_department: "merchandising" })
+      .then(({ data }) => { if (live) setCanCorrectCost(!!data); });
+    return () => { live = false; };
+  }, [profile?.id]);
 
   useEffect(() => {
     if (locId) load();
@@ -260,7 +320,13 @@ export default function InventoryPage() {
                       {expired && " ⚠️"}
                       {soon && " ⏰"}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-right space-x-2">
+                      {canCorrectCost && !r.is_consignment && r.stock_qty > 0 && (
+                        <button onClick={() => openFix(r)}
+                          className="text-slate-500 text-xs font-medium">
+                          {t("inv_fixCost")}
+                        </button>
+                      )}
                       {r.batches.length > 1 && (
                         <button onClick={() => setExpanded(expanded === r.key ? null : r.key)}
                           className="text-blue-600 text-xs font-medium">
@@ -300,6 +366,66 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
+
+      {fixRow && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-lg">
+            <h3 className="font-semibold text-lg mb-1">{t("inv_fixCostTitle")}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {fixRow.display_name} · {locId}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
+              <div className="bg-slate-50 rounded-lg px-3 py-2">
+                <div className="text-xs text-slate-500">{t("inv_fixCostNow")}</div>
+                <div className="font-medium">{fmt(fixRow.avg_cost)}</div>
+              </div>
+              <div className="bg-slate-50 rounded-lg px-3 py-2">
+                <div className="text-xs text-slate-500">{t("warehouse_colAvailable")}</div>
+                <div className="font-medium">{fixRow.stock_qty.toLocaleString()}</div>
+              </div>
+            </div>
+
+            <label className="text-xs text-slate-500">{t("inv_fixCostNew")}</label>
+            <input type="number" value={fixCost} onChange={(e) => setFixCost(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3" />
+
+            {/* The consequence, before the button rather than after it. */}
+            {Number(fixCost) >= 0 && fixCost !== "" && (
+              <p className="text-xs bg-amber-50 text-amber-800 rounded-lg px-3 py-2 mb-3">
+                {t("inv_fixCostImpact")}{" "}
+                <strong>
+                  {(Number(fixCost) - (fixRow.avg_cost || 0)) * fixRow.stock_qty >= 0 ? "+" : ""}
+                  {fmt((Number(fixCost) - (fixRow.avg_cost || 0)) * fixRow.stock_qty)}
+                </strong>
+              </p>
+            )}
+
+            <label className="text-xs text-slate-500">{t("inv_fixCostReason")}</label>
+            <textarea value={fixReason} onChange={(e) => setFixReason(e.target.value)} rows={2}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-1" />
+            <p className="text-xs text-slate-400 mb-4">{t("inv_fixCostHint")}</p>
+
+            <div className="flex gap-2">
+              <button onClick={() => setFixRow(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                {t("products_cancel")}
+              </button>
+              <button onClick={submitFix}
+                disabled={fixing || fixReason.trim().length < 10 || fixCost === ""}
+                className="flex-1 py-2.5 bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+                {fixing ? "..." : t("inv_fixCostSave")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

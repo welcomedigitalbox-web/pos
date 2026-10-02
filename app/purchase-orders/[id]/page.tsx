@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   supabase, SellableItem, PurchaseOrder, PurchaseOrderItem, PoPayment, PoStatus,
-  ActivityLog, fetchSellableItems, logActivity,
+  ActivityLog, fetchSellableItems, logActivity, describeError,
 } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
@@ -46,6 +46,14 @@ export default function PoDetailPage() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [sellables, setSellables] = useState<SellableItem[]>([]);
   const [notFound, setNotFound] = useState(false);
+  // The papers behind the order: a quotation, the supplier's invoice, a
+  // photo of the delivery note. Kept with the order so a figure questioned
+  // months later can be answered with the document it came from.
+  const [docs, setDocs] = useState<any[]>([]);
+  const [docKind, setDocKind] = useState("invoice");
+  const [docTitle, setDocTitle] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docBusy, setDocBusy] = useState(false);
   const [toast, setToast] = useState("");
 
   // add-item form
@@ -53,7 +61,6 @@ export default function PoDetailPage() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [qty, setQty] = useState("");
   const [unitCost, setUnitCost] = useState("");
-  const [updateCost, setUpdateCost] = useState(false);
 
   // receive modal
   const [receiveRow, setReceiveRow] = useState<ItemRow | null>(null);
@@ -80,6 +87,67 @@ export default function PoDetailPage() {
 
   // Hooks must run on every render, so the guard is applied just before the JSX.
   const pageBlocked = !profile || !hasPermission(profile, "purchase-orders");
+
+  // Files live in a private bucket, so they are reached by a link that
+  // expires rather than by a URL anyone could pass on.
+  async function openDoc(path: string) {
+    const { data } = await supabase.storage.from("po-docs").createSignedUrl(path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+    else showToast("\u274c " + t("po_docMissing"));
+  }
+
+  async function uploadDoc(e: React.FormEvent) {
+    e.preventDefault();
+    if (!docFile) return showToast("\u274c " + t("po_docPickFile"));
+    setDocBusy(true);
+    try {
+      const ext = docFile.name.split(".").pop() || "bin";
+      const path = `${id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const up = await supabase.storage.from("po-docs").upload(path, docFile);
+      if (up.error) throw up.error;
+
+      const { error } = await supabase.from("po_documents").insert({
+        po_id: id,
+        kind: docKind,
+        title: docTitle.trim() || null,
+        file_path: path,
+        file_name: docFile.name,
+        uploaded_by: profile?.email || null,
+      });
+      if (error) throw error;
+
+      await logActivity({
+        entityType: "purchase_order",
+        entityId: id,
+        action: "document_attached",
+        detail: `${docKind}: ${docTitle.trim() || docFile.name}`,
+      });
+      setDocTitle("");
+      setDocFile(null);
+      await load();
+      showToast("\u2705");
+    } catch (err) {
+      showToast("\u274c " + describeError(err));
+    } finally {
+      setDocBusy(false);
+    }
+  }
+
+  async function removeDoc(d: any) {
+    setDocBusy(true);
+    try {
+      const { error } = await supabase.from("po_documents").delete().eq("id", d.id);
+      if (error) throw error;
+      // The row is the record; the file is only its body. If the object
+      // fails to go the row is already gone, which is the honest state.
+      await supabase.storage.from("po-docs").remove([d.file_path]);
+      await load();
+    } catch (err) {
+      showToast("\u274c " + describeError(err));
+    } finally {
+      setDocBusy(false);
+    }
+  }
 
   async function load() {
     const { data: poData } = await supabase
@@ -127,6 +195,13 @@ export default function PoDetailPage() {
           : r.products?.name || "-",
       }))
     );
+
+    const { data: docData } = await supabase
+      .from("po_documents")
+      .select("*")
+      .eq("po_id", id)
+      .order("created_at", { ascending: false });
+    setDocs((docData as any[]) || []);
 
     const { data: logData } = await supabase
       .from("activity_log")
@@ -180,7 +255,6 @@ export default function PoDetailPage() {
       variant_id: sel.variant_id,
       qty: qtyNum,
       unit_cost: isNaN(costNum) ? 0 : costNum,
-      update_cost: updateCost,
     });
     if (error) return showToast("❌ " + error.message);
     await logActivity({
@@ -193,7 +267,6 @@ export default function PoDetailPage() {
     setItemKey("");
     setQty("");
     setUnitCost("");
-    setUpdateCost(false);
     await load();
   }
 
@@ -537,6 +610,9 @@ export default function PoDetailPage() {
                     {i.received_qty} / {i.qty}
                   </td>
                   <td className="px-3 py-2 text-xs">
+                    {/* Set on orders raised before the cost correction moved
+                        to its own manager-only screen. Left showing so an
+                        old receipt's cost still explains itself. */}
                     {i.is_consignment ? "—" : i.update_cost ? "✅" : "-"}
                   </td>
                   <td className="px-3 py-2 text-right space-x-2">
@@ -623,17 +699,71 @@ export default function PoDetailPage() {
               <input type="number" className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
                 value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
             </div>
-            <label className="flex items-center gap-1.5 text-xs pb-2">
-              <input type="checkbox" checked={updateCost} onChange={(e) => setUpdateCost(e.target.checked)} />
-              {t("po_updateCost")}
-            </label>
             <button type="submit" className="px-4 py-2 bg-slate-700 text-white rounded-lg text-sm font-medium">
               {t("po_addItem")}
             </button>
           </div>
-          <p className="text-xs text-slate-400 mt-2">{t("po_updateCostHint")}</p>
         </form>
       )}
+
+      {/* Papers attached to this order */}
+      <h3 className="font-semibold mb-2">{t("po_documents")}</h3>
+      <div className="bg-white border border-slate-200 rounded-xl p-3 mb-6">
+        {docs.length === 0 && (
+          <p className="text-sm text-slate-400 mb-3">{t("po_documentsEmpty")}</p>
+        )}
+        {docs.length > 0 && (
+          <ul className="divide-y divide-slate-100 mb-3">
+            {docs.map((d) => (
+              <li key={d.id} className="py-2 flex items-center gap-3">
+                <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                  {t(`po_docKind_${d.kind}` as any)}
+                </span>
+                <button onClick={() => openDoc(d.file_path)}
+                  className="text-sm text-blue-600 underline truncate flex-1 text-left">
+                  {d.title || d.file_name || "document"}
+                </button>
+                <span className="text-xs text-slate-400 shrink-0 hidden sm:inline">
+                  {d.uploaded_by} · {(d.created_at || "").slice(0, 10)}
+                </span>
+                {po.status === "draft" && (
+                  <button onClick={() => removeDoc(d)} disabled={docBusy}
+                    className="text-xs text-red-600 shrink-0">
+                    {t("po_delete")}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={uploadDoc} className="flex flex-wrap items-end gap-2 print:hidden">
+          <div>
+            <label className="text-xs text-slate-500">{t("po_docKind")}</label>
+            <select value={docKind} onChange={(e) => setDocKind(e.target.value)}
+              className="block border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1">
+              {["quotation", "invoice", "delivery_note", "packing_list", "payment_slip", "other"].map((k) => (
+                <option key={k} value={k}>{t(`po_docKind_${k}` as any)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-xs text-slate-500">{t("po_docTitle")}</label>
+            <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500">{t("po_docFile")}</label>
+            <input type="file" onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+              accept="image/*,application/pdf"
+              className="block text-sm mt-1 max-w-[190px]" />
+          </div>
+          <button type="submit" disabled={docBusy || !docFile}
+            className="px-4 py-2 bg-slate-700 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">
+            {docBusy ? "..." : t("po_docUpload")}
+          </button>
+        </form>
+      </div>
 
       {/* Receipt history */}
       {receipts.length > 0 && (
