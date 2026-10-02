@@ -26,7 +26,6 @@ export default function PoDetailPage() {
   const { warehouses, defaultWarehouseId } = useStore();
   const [receiveWhId, setReceiveWhId] = useState("");
   const [showApprove, setShowApprove] = useState(false);
-  const [approvalPin, setApprovalPin] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [approving, setApproving] = useState(false);
   const [editRow, setEditRow] = useState<any | null>(null);
@@ -317,44 +316,23 @@ export default function PoDetailPage() {
     await load();
   }
 
-  async function approvePo(approver?: string) {
+  async function approvePo() {
     setApproving(true);
     try {
       // The database decides who may approve. Sending the PIN rather than a
       // claim about it means a hidden button is no longer the only guard.
-      const { data, error } = await supabase.rpc("approve_po", {
-        p_po: id,
-        p_pin: approvalPin || null,
-      });
+      const { data, error } = await supabase.rpc("approve_po", { p_po: id });
       if (error) throw error;
       const approvedBy =
         (data as { approved_by: string }[] | null)?.[0]?.approved_by ||
-        approver || profile?.email || null;
+        profile?.email || null;
       await logActivity({
         entityType: "purchase_order", entityId: id, action: "approved",
         detail: po?.po_number || "", actor: approvedBy,
       });
       showToast(t("po_approved"));
       setShowApprove(false);
-      setApprovalPin("");
       await load();
-    } catch (err) {
-      showToast("❌ " + describeError(err));
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  async function approveWithPin() {
-    if (!approvalPin.trim()) return showToast(t("returns_pinRequired"));
-    setApproving(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
-        body: { pin: approvalPin.trim() },
-      });
-      if (error) throw error;
-      if (!data?.approved) return showToast("❌ " + (data?.error || t("returns_pinInvalid")));
-      await approvePo(data.approver_email);
     } catch (err) {
       showToast("❌ " + describeError(err));
     } finally {
@@ -1004,23 +982,17 @@ export default function PoDetailPage() {
                 </button>
               </div>
             ) : (
+              /* No PIN here. A PIN is for a shop floor where one screen is
+                 shared; in the office the manager signs in as themselves,
+                 so the only honest answer is to fetch them. */
               <>
-                <label className="text-sm text-slate-600">{t("returns_managerPin")}</label>
-                <input type="password" inputMode="numeric" autoFocus
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4 tracking-widest text-center"
-                  placeholder="••••"
-                  value={approvalPin} onChange={(e) => setApprovalPin(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && approveWithPin()} />
-                <div className="flex gap-2">
-                  <button onClick={() => setShowApprove(false)}
-                    className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
-                    {t("products_cancel")}
-                  </button>
-                  <button onClick={approveWithPin} disabled={approving}
-                    className="flex-1 py-2.5 bg-green-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
-                    {approving ? "..." : t("returns_approveWithPin")}
-                  </button>
-                </div>
+                <p className="text-sm text-slate-600 mb-4">
+                  Only the merchandising manager can approve this order.
+                </p>
+                <button onClick={() => setShowApprove(false)}
+                  className="w-full py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
+                  {t("products_cancel")}
+                </button>
               </>
             )}
           </div>
