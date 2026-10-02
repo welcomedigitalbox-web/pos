@@ -26,7 +26,6 @@ export default function PoDetailPage() {
   const { warehouses, defaultWarehouseId } = useStore();
   const [receiveWhId, setReceiveWhId] = useState("");
   const [showApprove, setShowApprove] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [approving, setApproving] = useState(false);
   const [editRow, setEditRow] = useState<any | null>(null);
   const [showHeaderEdit, setShowHeaderEdit] = useState(false);

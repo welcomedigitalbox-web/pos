@@ -182,12 +182,15 @@ export function inventoryKey(productId: string, variantId: string | null) {
 // exactly like a product that is out of stock — so anything that can outgrow
 // a thousand rows is read a page at a time.
 async function allRows<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
 ): Promise<T[]> {
   const page = 1000;
   const out: T[] = [];
   for (let from = 0; ; from += page) {
-    const { data } = await build(from, from + page - 1);
+    const { data, error } = await build(from, from + page - 1);
+    // A failure on page two used to return page one as if it were the whole
+    // catalogue — a short list that looks complete is worse than no list.
+    if (error) throw new Error(error.message);
     const rows = data || [];
     out.push(...rows);
     if (rows.length < page) return out;
@@ -199,23 +202,26 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
   // the other: the till opens in the time of the slowest, not of the sum.
   const [products, variants, inv, offRows] = await Promise.all([
     allRows<Product>((from, to) => {
-      let q = supabase.from("products").select("*").order("name").range(from, to);
+      // name is not unique, so id breaks the tie and keeps the paging stable.
+      let q = supabase.from("products").select("*").order("name").order("id").range(from, to);
       if (!includeInactive) q = q.eq("is_active", true);
       return q;
     }),
     allRows<ProductVariant>((from, to) => {
-      let q = supabase.from("product_variants").select("*").order("created_at").range(from, to);
+      let q = supabase.from("product_variants").select("*").order("created_at").order("id").range(from, to);
       if (!includeInactive) q = q.eq("is_active", true);
       return q;
     }),
     allRows<any>((from, to) =>
-      supabase.from("store_inventory").select("*").eq("store_id", storeId).range(from, to)
+      supabase.from("store_inventory").select("*").eq("store_id", storeId)
+        .order("product_id").order("variant_id", { nullsFirst: true }).range(from, to)
     ),
     allRows<{ product_id: string }>((from, to) =>
       supabase.from("store_product_settings")
         .select("product_id")
         .eq("store_id", storeId)
         .eq("is_available", false)
+        .order("product_id")
         .range(from, to)
     ),
   ]);
