@@ -37,6 +37,9 @@ export default function PurchaseOrdersPage() {
   const router = useRouter();
 
   const [rows, setRows] = useState<PoRow[]>([]);
+  // Whether this person can sign orders off. A manager who is not told which
+  // orders are waiting will not go looking for them.
+  const [canApprove, setCanApprove] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -51,6 +54,8 @@ export default function PurchaseOrdersPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    supabase.rpc("can_approve_dept", { p_department: "merchandising" })
+      .then(({ data }) => setCanApprove(!!data));
     if (profile && !hasPermission(profile, "purchase-orders")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
@@ -123,6 +128,11 @@ export default function PurchaseOrdersPage() {
   // Status and search both narrow the same list. They used to narrow two
   // different lists, and the table showed the one the search box never
   // touched — so typing in it did nothing at all.
+  // Drafts are the ones that need a signature; everything else is under way.
+  const waiting = rows.filter(
+    (r) => r.status === "draft" && !(r as { is_consignment?: boolean }).is_consignment
+  ).length;
+
   const q = search.trim().toLowerCase();
   const filtered = rows
     .filter((r) => statusFilter === "all" || r.status === statusFilter)
@@ -143,6 +153,16 @@ export default function PurchaseOrdersPage() {
           {t("po_addNew")}
         </button>
       </div>
+
+      {canApprove && waiting > 0 && (
+        <button onClick={() => setStatusFilter("draft")}
+          className="w-full sm:w-auto flex items-center gap-2 mb-4 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-800">
+          <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-semibold flex items-center justify-center">
+            {waiting}
+          </span>
+          {waiting === 1 ? "order waiting for your approval" : "orders waiting for your approval"}
+        </button>
+      )}
 
       <select
         className="border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4"

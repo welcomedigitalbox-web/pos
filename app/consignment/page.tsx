@@ -81,6 +81,7 @@ export default function ConsignmentPage() {
   const [poDate, setPoDate] = useState("");
   const [poNote, setPoNote] = useState("");
   const [creating, setCreating] = useState(false);
+  const [canApprove, setCanApprove] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [suppliers, setSuppliers] = useState<Record<string, string>>({});
@@ -108,6 +109,11 @@ export default function ConsignmentPage() {
     if (profile && !hasPermission(profile, "products")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
+
+  useEffect(() => {
+    supabase.rpc("can_approve_dept", { p_department: "merchandising" })
+      .then(({ data }) => setCanApprove(!!data));
+  }, []);
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [storeId, allStores]);
 
@@ -317,6 +323,15 @@ export default function ConsignmentPage() {
 
       {!loading && tab === "orders" && (
         <>
+          {canApprove && pos.filter((p) => p.status === "draft").length > 0 && (
+            <div className="mb-3 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-800">
+              <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-semibold flex items-center justify-center">
+                {pos.filter((p) => p.status === "draft").length}
+              </span>
+              waiting for your approval
+            </div>
+          )}
+
           <div className="flex justify-between items-center mb-3">
             <p className="text-sm text-slate-500">
               Orders for goods taken on consignment. Nothing on them is owed
@@ -340,7 +355,9 @@ export default function ConsignmentPage() {
                 </tr>
               </thead>
               <tbody>
-                {pos.map((p) => (
+                {[...pos]
+                  .sort((a, b) => (a.status === "draft" ? 0 : 1) - (b.status === "draft" ? 0 : 1))
+                  .map((p) => (
                   <tr key={p.id} className="border-t border-slate-100">
                     <td className="px-4 py-2 font-medium">{p.po_number}</td>
                     <td className="px-4 py-2 text-slate-500">{suppliers[p.supplier_id || ""] || "-"}</td>
