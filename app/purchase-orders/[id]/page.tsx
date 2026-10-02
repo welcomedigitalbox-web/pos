@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   supabase, SellableItem, PurchaseOrder, PurchaseOrderItem, PoPayment, PoStatus,
-  ActivityLog, fetchSellableItems, receivePoItem, logActivity,
+  ActivityLog, fetchSellableItems, logActivity,
 } from "@/lib/supabase";
 import { useAuth } from "../../auth-context";
 import { useStore } from "../../store-context";
@@ -225,43 +225,18 @@ export default function PoDetailPage() {
 
     setReceiving(true);
     try {
-      // Goods are received into the central pool; Warehouse distributes from there
-      await receivePoItem({
-        storeId: receiveWhId || defaultWarehouseId,
-        productId: receiveRow.product_id,
-        variantId: receiveRow.variant_id,
-        qty: q,
-        unitCost: c,
-        updateCost: receiveRow.update_cost,
-        isConsignment: receiveRow.is_consignment,
-        poId: id,
-        supplier: supplierName,
-        expiryDate: receiveExpiry || null,
-        requiresExpiry: receiveRow.requires_expiry,
-        receivedBy: profile?.email || null,
+      // One call, one transaction. The receipt, the stock, the line and the
+      // order's status move together or not at all — and the line is locked
+      // while it happens, so a double-click receives once.
+      const { error } = await supabase.rpc("receive_po_item", {
+        p_item: receiveRow.id,
+        p_store: receiveWhId || defaultWarehouseId,
+        p_qty: q,
+        p_unit_cost: c,
+        p_expiry: receiveExpiry || null,
       });
+      if (error) throw error;
 
-      const newReceived = receiveRow.received_qty + q;
-      await supabase
-        .from("purchase_order_items")
-        // The ordered cost is what the supplier agreed; the received cost is
-        // recorded with the goods. Overwriting one with the other made the PO
-        // total change after the fact.
-        .update({ received_qty: newReceived })
-        .eq("id", receiveRow.id);
-
-      const nextItems = items.map((i) =>
-        i.id === receiveRow.id ? { ...i, received_qty: newReceived } : i
-      );
-      await refreshStatus(nextItems);
-
-      await logActivity({
-        entityType: "purchase_order",
-        entityId: id,
-        action: "received",
-        detail: `${receiveRow.display_name} × ${q} @ ${c}${receiveExpiry ? ` (exp ${receiveExpiry})` : ""}`,
-        actor: profile?.email,
-      });
       showToast(t("po_received"));
       setReceiveRow(null);
       await load();
