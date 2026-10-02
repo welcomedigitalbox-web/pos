@@ -482,6 +482,21 @@ export async function receivePoItem(params: {
     last_purchase_cost: unitCost,
   });
 
+  // Consignment goods sit here but belong to the supplier until they sell,
+  // so their arrival is recorded in the consignment ledger and owes nothing.
+  // The debt is raised by the sale, in the database, not here.
+  if (isConsignment && poId) {
+    const { error } = await supabase.rpc("consignment_receive", {
+      p_po: poId,
+      p_product: productId,
+      p_variant: variantId,
+      p_store: storeId,
+      p_qty: qty,
+      p_unit_cost: unitCost,
+    });
+    if (error) throw error;
+  }
+
   return { newQty, newAvgCost };
 }
 

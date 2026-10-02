@@ -40,48 +40,28 @@ export default function SuppliersPage() {
 
   if (!profile || !hasPermission(profile, "suppliers")) return null;
 
+  // The database works out what is owed, because consignment changes the
+  // answer: goods on consignment are owed for only once they have sold, and
+  // that is a rule the ledger keeps, not a sum the screen can do.
   async function load() {
     setLoading(true);
-    const { data: sups } = await supabase.from("suppliers").select("*").order("name");
-
-    // Ordered value per supplier (exclude cancelled POs)
-    const { data: pos } = await supabase
-      .from("purchase_orders")
-      .select("id, supplier_id, status, purchase_order_items(qty, unit_cost)")
-      .neq("status", "cancelled");
-
-    const { data: payments } = await supabase.from("po_payments").select("po_id, amount");
-
-    const poTotal = new Map<string, number>();
-    const poSupplier = new Map<string, string>();
-    for (const po of (pos as any[]) || []) {
-      const total = (po.purchase_order_items || []).reduce(
-        (s: number, i: any) => s + Number(i.qty) * Number(i.unit_cost),
-        0
-      );
-      poTotal.set(po.id, total);
-      if (po.supplier_id) poSupplier.set(po.id, po.supplier_id);
-    }
-
-    const orderedBySupplier = new Map<string, number>();
-    for (const [poId, total] of poTotal) {
-      const sid = poSupplier.get(poId);
-      if (!sid) continue;
-      orderedBySupplier.set(sid, (orderedBySupplier.get(sid) || 0) + total);
-    }
-
-    const paidBySupplier = new Map<string, number>();
-    for (const p of payments || []) {
-      const sid = poSupplier.get(p.po_id);
-      if (!sid) continue;
-      paidBySupplier.set(sid, (paidBySupplier.get(sid) || 0) + Number(p.amount));
-    }
-
+    const [{ data: sups }, { data: due }] = await Promise.all([
+      supabase.from("suppliers").select("*").order("name").limit(2000),
+      supabase.from("supplier_payable_v").select("*").limit(2000),
+    ]);
+    const byId = new Map(
+      ((due as { supplier_id: string; ordered: number; consignment_sold: number; paid: number; balance: number }[]) || [])
+        .map((d) => [d.supplier_id, d])
+    );
     setRows(
       ((sups as Supplier[]) || []).map((s) => {
-        const ordered = orderedBySupplier.get(s.id) || 0;
-        const paid = paidBySupplier.get(s.id) || 0;
-        return { ...s, ordered, paid, balance: ordered - paid };
+        const d = byId.get(s.id);
+        return {
+          ...s,
+          ordered: Number(d?.ordered || 0) + Number(d?.consignment_sold || 0),
+          paid: Number(d?.paid || 0),
+          balance: Number(d?.balance || 0),
+        };
       })
     );
     setLoading(false);

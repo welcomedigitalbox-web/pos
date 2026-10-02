@@ -35,6 +35,7 @@ export type PageKey =
   | "suppliers"
   | "purchase-orders"
   | "promotions"
+  | "consignment"
   | "gp-report"
   | "product-grid"
   | "product-import"
@@ -116,6 +117,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "purchase-orders", href: "/purchase-orders", labelKey: "nav_purchaseOrders", group: "merchandising" },
   { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
   { key: "promotions", href: "/promotions", labelKey: "nav_promotions", group: "merchandising" },
+  { key: "consignment", href: "/consignment", labelKey: "nav_consignment", group: "merchandising" },
   { key: "gp-report", href: "/gp-report", labelKey: "nav_gpReport", group: "reports" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
@@ -174,7 +176,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
   // dept heads, so can_approve_for() refuses them by construction.
   merchandising_staff: [
     "products", "product-category", "product-variant",
-    "suppliers", "purchase-orders", "inventory", "barcode",
+    "suppliers", "purchase-orders", "consignment", "inventory", "barcode",
     ...COMMON_ALL_ROLES,
   ],
   warehouse_staff: [
