@@ -110,6 +110,14 @@ export default function POSPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCustomer, loyaltyTiers]);
 
+  // Typing in the customer box asks the database a moment after the typing
+  // stops, so a till on a slow line is not sending a query per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => searchCustomers(customerSearch), 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerSearch]);
+
   // Any change to the discount invalidates a prior approval — must re-approve
   useEffect(() => {
     setDiscountApproved(false);
@@ -148,12 +156,37 @@ export default function POSPage() {
     setItems(data);
   }
 
+  // The till does not need every customer in the business on screen before
+  // the first sale of the day — it needs the ones likely to walk in, and a
+  // way to find anybody else. Pulling the whole table made the page slower
+  // every month, and past a thousand rows the ones beyond the cap could not
+  // be found at all.
   async function loadCustomers() {
     const { data } = await supabase
       .from("customers")
       .select("*")
-      .order("name");
+      .order("created_at", { ascending: false })
+      .limit(300);
     setCustomers(data || []);
+  }
+
+  // Anyone not in that window is found by asking the database, which is what
+  // an index is for.
+  async function searchCustomers(q: string) {
+    const term = q.trim();
+    if (term.length < 2) return;
+    const like = `%${term}%`;
+    const { data } = await supabase
+      .from("customers")
+      .select("*")
+      .or(`name.ilike.${like},phone.ilike.${like}`)
+      .order("name")
+      .limit(25);
+    if (!data?.length) return;
+    setCustomers((prev) => {
+      const seen = new Set(prev.map((c) => c.id));
+      return [...prev, ...data.filter((c) => !seen.has(c.id))];
+    });
   }
 
   async function loadLoyaltyTiers() {
@@ -371,7 +404,13 @@ export default function POSPage() {
   // Some items may never be discounted, and some carry a floor price. Both are
   // set by merchandising on the product itself, so the till just enforces them.
   useEffect(() => {
-    supabase.from("products").select("id, name, allow_discount, allow_promotion, min_price, category_id")
+    // Only the products that carry a rule. Fetching the whole catalogue to
+    // find the few with a floor price meant the list was cut off at a
+    // thousand rows, and a rule past the cut silently stopped applying.
+    supabase.from("products")
+      .select("id, name, allow_discount, allow_promotion, min_price, category_id")
+      .or("allow_discount.is.false,allow_promotion.is.false,min_price.not.is.null")
+      .limit(5000)
       .then(({ data }) => {
         const no: Record<string, string> = {};
         const mn: Record<string, number> = {};
@@ -384,7 +423,7 @@ export default function POSPage() {
         setNoDiscount(no); setMinPrice(mn); setNoPromo(np);
       });
     supabase.from("product_uoms").select("*").eq("is_active", true)
-      .order("factor")
+      .order("factor").limit(5000)
       .then(({ data }) => {
         const by: Record<string, Uom[]> = {};
         for (const u of ((data as Uom[]) || [])) (by[u.product_id] ||= []).push(u);

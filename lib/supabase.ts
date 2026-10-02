@@ -177,36 +177,64 @@ export function inventoryKey(productId: string, variantId: string | null) {
   return `${productId}:${variantId || "base"}`;
 }
 
+// Supabase returns at most a thousand rows per request. A catalogue or an
+// inventory larger than that came back quietly short, which at the till looks
+// exactly like a product that is out of stock — so anything that can outgrow
+// a thousand rows is read a page at a time.
+async function allRows<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
+): Promise<T[]> {
+  const page = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += page) {
+    const { data } = await build(from, from + page - 1);
+    const rows = data || [];
+    out.push(...rows);
+    if (rows.length < page) return out;
+  }
+}
+
 export async function fetchSellableItems(storeId: string, includeInactive = false): Promise<SellableItem[]> {
-  let productQuery = supabase.from("products").select("*").order("name");
-  if (!includeInactive) productQuery = productQuery.eq("is_active", true);
-  const { data: products } = await productQuery;
+  // Four independent questions, asked at the same time rather than one after
+  // the other: the till opens in the time of the slowest, not of the sum.
+  const [products, variants, inv, offRows] = await Promise.all([
+    allRows<Product>((from, to) => {
+      let q = supabase.from("products").select("*").order("name").range(from, to);
+      if (!includeInactive) q = q.eq("is_active", true);
+      return q;
+    }),
+    allRows<ProductVariant>((from, to) => {
+      let q = supabase.from("product_variants").select("*").order("created_at").range(from, to);
+      if (!includeInactive) q = q.eq("is_active", true);
+      return q;
+    }),
+    allRows<any>((from, to) =>
+      supabase.from("store_inventory").select("*").eq("store_id", storeId).range(from, to)
+    ),
+    allRows<{ product_id: string }>((from, to) =>
+      supabase.from("store_product_settings")
+        .select("product_id")
+        .eq("store_id", storeId)
+        .eq("is_available", false)
+        .range(from, to)
+    ),
+  ]);
 
-  let variantQuery = supabase.from("product_variants").select("*").order("created_at");
-  if (!includeInactive) variantQuery = variantQuery.eq("is_active", true);
-  const { data: variants } = await variantQuery;
-
-  const { data: inv } = await supabase.from("store_inventory").select("*").eq("store_id", storeId);
   const invMap = new Map(
-    (inv || []).map((i) => [inventoryKey(i.product_id, i.variant_id), i])
+    inv.map((i) => [inventoryKey(i.product_id, i.variant_id), i])
   );
 
   const variantsByProduct = new Map<string, ProductVariant[]>();
-  for (const v of (variants || []) as ProductVariant[]) {
+  for (const v of variants) {
     const list = variantsByProduct.get(v.product_id) || [];
     list.push(v);
     variantsByProduct.set(v.product_id, list);
   }
 
-  const { data: offRows } = await supabase
-    .from("store_product_settings")
-    .select("product_id")
-    .eq("store_id", storeId)
-    .eq("is_available", false);
-  const unavailable = new Set(((offRows as any[]) || []).map((r) => r.product_id));
+  const unavailable = new Set(offRows.map((r) => r.product_id));
 
   const items: SellableItem[] = [];
-  for (const p of (products || []) as Product[]) {
+  for (const p of products) {
     // Switched off for this store, so it should not appear at the till
     if (unavailable.has(p.id)) continue;
     const children = variantsByProduct.get(p.id) || [];
