@@ -449,6 +449,11 @@ export default function PoDetailPage() {
         <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
           {t(`po_status_${po.status}` as any)}
         </span>
+        {(po as { is_consignment?: boolean }).is_consignment && (
+          <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+            {t("nav_consignment")}
+          </span>
+        )}
         <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
           {t(`po_term_${po.payment_term}` as any)}
         </span>
