@@ -86,6 +86,22 @@ export default function ProductsPage() {
       }
 
       const key = (pid: string, v: string | null) => `${pid}:${v || "base"}`;
+
+      // This list totals stock across every store, so the consignment position
+      // has to be read the same way — the per-store figure that came back with
+      // each item is only this store's.
+      const consignAll = new Map<string, number>();
+      {
+        const { data } = await supabase
+          .from("consignment_stock_v")
+          .select("product_id, variant_id, on_hand")
+          .limit(5000);
+        for (const r of (data as { product_id: string; variant_id: string | null; on_hand: number }[]) || []) {
+          const k = key(r.product_id, r.variant_id);
+          consignAll.set(k, (consignAll.get(k) || 0) + Number(r.on_hand));
+        }
+      }
+
       const totals = new Map<string, { qty: number; value: number }>();
       for (const r of invRows) {
         const k = key(r.product_id, r.variant_id);
@@ -100,7 +116,14 @@ export default function ProductsPage() {
         // With no stock anywhere there is no average to take, so fall back to
         // the quoted cost rather than showing a bare zero.
         const cost = agg.qty > 0 ? agg.value / agg.qty : refCost.get(i.sku || "") ?? 0;
-        return { ...i, stock_qty: agg.qty, avg_cost: cost };
+        const consigned = consignAll.get(key(i.product_id, i.variant_id)) || 0;
+        return {
+          ...i,
+          stock_qty: agg.qty,
+          avg_cost: cost,
+          consigned_qty: consigned,
+          owned_qty: agg.qty - consigned,
+        };
       });
       setItems(merged);
     } finally {
@@ -313,6 +336,7 @@ export default function ProductsPage() {
               <th className="text-left px-4 py-2">{t("products_price")}</th>
               <th className="text-left px-4 py-2">{t("products_avgCost")}</th>
               <th className="text-left px-4 py-2">{t("productDetail_totalStock")}</th>
+              <th className="text-left px-4 py-2">{t("nav_consignment")}</th>
               <th className="text-left px-4 py-2"></th>
             </tr>
           </thead>
@@ -345,6 +369,19 @@ export default function ProductsPage() {
                 </td>
                 <td className={`px-4 py-2 ${row.stock_qty <= 5 ? "text-red-600 font-medium" : ""}`}>
                   {row.stock_qty}
+                  {row.consigned_qty > 0 && (
+                    // What is here, and what of it is ours.
+                    <span className="ml-1 text-xs text-slate-400">({row.owned_qty} own)</span>
+                  )}
+                </td>
+                <td className="px-4 py-2">
+                  {row.consigned_qty > 0 ? (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                      {row.consigned_qty}
+                    </span>
+                  ) : (
+                    <span className="text-slate-300 text-xs">-</span>
+                  )}
                 </td>
                 <td className="px-4 py-2 text-right space-x-2">
                   <Link href={`/products/${row.product_id}`} className="text-slate-500 text-xs font-medium">

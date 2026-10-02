@@ -171,6 +171,12 @@ export type SellableItem = {
   avg_cost: number;
   previous_avg_cost: number;
   last_purchase_cost: number;
+  // What is on the shelf is not all the shop's. Consigned goods belong to the
+  // supplier until they sell, so stock_qty is what is here and owned_qty is
+  // what the business actually owns and can count as its own.
+  consigned_qty: number;
+  owned_qty: number;
+  is_consignment: boolean;
 };
 
 export function inventoryKey(productId: string, variantId: string | null) {
@@ -226,6 +232,20 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
     ),
   ]);
 
+  // Which of these goods are the supplier's. Read once, for this store.
+  const consigned = new Map<string, number>();
+  {
+    const { data } = await supabase
+      .from("consignment_stock_v")
+      .select("product_id, variant_id, store_id, on_hand")
+      .eq("store_id", storeId)
+      .limit(5000);
+    for (const r of (data as { product_id: string; variant_id: string | null; on_hand: number }[]) || []) {
+      const k = inventoryKey(r.product_id, r.variant_id);
+      consigned.set(k, (consigned.get(k) || 0) + Number(r.on_hand));
+    }
+  }
+
   const invMap = new Map(
     inv.map((i) => [inventoryKey(i.product_id, i.variant_id), i])
   );
@@ -263,6 +283,9 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
         avg_cost: i?.avg_cost ?? 0,
         previous_avg_cost: i?.previous_avg_cost ?? 0,
         last_purchase_cost: i?.last_purchase_cost ?? 0,
+        consigned_qty: consigned.get(inventoryKey(p.id, null)) ?? 0,
+        owned_qty: (i?.stock_qty ?? 0) - (consigned.get(inventoryKey(p.id, null)) ?? 0),
+        is_consignment: !!(p as Product & { is_consignment?: boolean }).is_consignment,
       });
       continue;
     }
@@ -286,6 +309,9 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
         avg_cost: i?.avg_cost ?? 0,
         previous_avg_cost: i?.previous_avg_cost ?? 0,
         last_purchase_cost: i?.last_purchase_cost ?? 0,
+        consigned_qty: consigned.get(inventoryKey(p.id, v.id)) ?? 0,
+        owned_qty: (i?.stock_qty ?? 0) - (consigned.get(inventoryKey(p.id, v.id)) ?? 0),
+        is_consignment: !!(p as Product & { is_consignment?: boolean }).is_consignment,
       });
     }
   }
