@@ -84,16 +84,17 @@ export default function StockTransferPage() {
   const [resolvePhoto, setResolvePhoto] = useState<string | null>(null);
   const [zoomPhoto, setZoomPhoto] = useState<string | null>(null);
 
-  // Only offer the stores this warehouse supplies. Unassigned stores stay listed
-  // so a half-configured setup never blocks a transfer.
-  // Warehouses live in the same table, so they must be excluded explicitly —
-  // otherwise they slip through the "unmapped" fallback below.
-  const retailStores = stores.filter(
-    (s) =>
-      !s.is_warehouse &&
-      s.is_active &&
-      (s.supply_warehouse_id === whId || !s.supply_warehouse_id)
-  );
+  // Anywhere but here. A warehouse sends to its own shops most days, but it
+  // also sends to the other warehouse when one site runs short, and to the
+  // online counter that has already sold the goods. Hiding those made the
+  // list look broken rather than safe — whether a transfer is allowed is
+  // settled on the server by can_write_store, not by what the dropdown shows.
+  const retailStores = stores
+    .filter((s) => s.is_active && s.id !== whId)
+    .sort((a, b) =>
+      Number(!!b.is_warehouse) - Number(!!a.is_warehouse) ||
+      a.name.localeCompare(b.name)
+    );
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "stock-transfer")) router.replace("/");
