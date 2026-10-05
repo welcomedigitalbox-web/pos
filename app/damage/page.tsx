@@ -138,7 +138,7 @@ export default function StockDamagePage() {
     const { data, error } = await supabase
       .from("stock_damages")
       .select("damage_no, store_id, reported_by, created_at, qty, unit_cost, reason, product_id")
-      .eq("status", "pending")
+      .eq("status", "approved")
       .order("created_at", { ascending: false })
       .limit(1000);
     if (error) {
@@ -332,7 +332,7 @@ export default function StockDamagePage() {
 
   const tabs: { k: typeof tab; label: string; show: boolean }[] = [
     { k: "file", label: "File a damage", show: canFile },
-    { k: "receive", label: `Waiting at the warehouse${pending.length ? ` (${pending.length})` : ""}`, show: canReceive },
+    { k: "receive", label: `Approved, waiting to be received${pending.length ? ` (${pending.length})` : ""}`, show: canReceive },
     { k: "hold", label: "Held / to return", show: true },
   ];
 
