@@ -158,7 +158,7 @@ export default function LabelsPage() {
         );
         if (hit) { addItem(hit, Number(row.received_qty) || 0); added++; }
       }
-      say(added ? `✅ ${added}` : "❌ " + t("stockIn_noItems"));
+      say(added ? `✅ ${added}` : "❌ " + t("warehouse_empty"));
     } catch (err) {
       say("❌ " + describeError(err));
     } finally {

@@ -314,6 +314,45 @@ export default function POSPage() {
     addToCart(group.items[0]);
   }
 
+  // A scan may be the supplier's own barcode, one we printed ourselves, a
+  // carton barcode, or the article number. The database knows which of
+  // those a code is; the till used to know only the last one, so anything
+  // the manufacturer printed scanned as nothing.
+  //
+  // The SKU is still matched first, so a scan that already worked still
+  // answers at once without waiting on a round trip.
+  async function scanned(value: string) {
+    const code = value.trim();
+    if (!code) return;
+
+    const bySku = items.find(
+      (i) => (i.sku || "").toLowerCase() === code.toLowerCase()
+    );
+    if (bySku) {
+      addToCart(bySku);
+      setSearch("");
+      return;
+    }
+
+    // Short strings are somebody typing a name, not a scanner finishing.
+    if (code.length < 6) return;
+
+    const { data } = await supabase.rpc("resolve_barcode", { p_code: code });
+    const hit = (data as { product_id: string; variant_id: string | null; qty_each: number }[] | null)?.[0];
+    if (!hit) return;
+
+    const found = items.find(
+      (i) => i.product_id === hit.product_id &&
+        (i.variant_id || null) === (hit.variant_id || null)
+    );
+    if (!found) return;
+
+    // A carton barcode means a carton of them, not one of them.
+    const each = Math.max(1, Number(hit.qty_each) || 1);
+    for (let n = 0; n < each; n++) addToCart(found);
+    setSearch("");
+  }
+
   function addToCart(item: SellableItem) {
     if (item.stock_qty <= 0) return showToast(t("pos_outOfStock"));
     if (cartQtyForItem(item.key) >= item.stock_qty) return showToast(t("pos_notEnoughStock"));
