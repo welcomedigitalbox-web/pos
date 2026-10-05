@@ -18,6 +18,7 @@ export type PageKey =
   | "incoming-transfers"
   | "barcode"
   | "labels"
+  | "transfer-report"
   | "ledger"
   | "sales-performance"
   | "warehouse"
@@ -110,6 +111,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   // Printing the stickers belongs beside receiving the goods, because
   // that is when they are printed.
   { key: "labels", href: "/labels", labelKey: "nav_labels", group: "warehouse" },
+  { key: "transfer-report", href: "/transfer-report", labelKey: "nav_transferReport", group: "warehouse" },
   { key: "request-approval", href: "/request-approval", labelKey: "nav_requestApproval", group: "sale" },
   { key: "request-inbox", href: "/request-inbox", labelKey: "nav_requestInbox", group: "warehouse" },
   { key: "to-send", href: "/to-send", labelKey: "toSend_title", group: "warehouse" },
