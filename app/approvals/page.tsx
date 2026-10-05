@@ -297,7 +297,7 @@ export default function ApprovalsPage() {
           dept: "warehouse",
           icon: "⚠️",
           title: L.g_dmg,
-          href: "/request-inbox",
+          href: "/damage",
           items: dmgRows.map((d) => ({
             id: d.id,
             ref: d.damage_no || d.id.slice(0, 8),
