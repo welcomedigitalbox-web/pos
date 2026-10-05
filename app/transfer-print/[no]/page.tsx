@@ -112,10 +112,30 @@ export default function TransferPrintPage() {
           decides a page is. */}
       <style>{`
         @page { size: A4; margin: 14mm 12mm; }
+
+        /* The app is a fixed-height shell with its own scrolling box, and
+           a printer asked to print that gets one blank viewport. So for
+           printing the sheet is lifted out: everything else is hidden,
+           the page is allowed to grow, and the sheet is pinned to the
+           top-left of the paper. */
         @media print {
-          .no-print { display: none !important; }
-          body { background: #fff; }
-          .sheet { box-shadow: none; margin: 0; padding: 0; width: auto; }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: #fff !important;
+          }
+          body * { visibility: hidden !important; }
+          .sheet, .sheet * { visibility: visible !important; }
+          .sheet {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+          }
+          .no-print, .no-print * { display: none !important; visibility: hidden !important; }
           thead { display: table-header-group; }
           tr { break-inside: avoid; }
         }
