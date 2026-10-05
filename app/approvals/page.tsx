@@ -146,6 +146,9 @@ export default function ApprovalsPage() {
     try {
       // Everything is asked for at once; a manager opening this page is
       // waiting on the slowest query, not the sum of them.
+      const { data: signDamage } = await supabase.rpc("can_approve_damage");
+      const canSignDamage = !!signDamage;
+
       const [pos, returns, requests, damages, transfers] = await Promise.all([
         may("merchandising")
           ? supabase
@@ -176,7 +179,7 @@ export default function ApprovalsPage() {
               .limit(500)
           : Promise.resolve({ data: [], error: null }),
 
-        may("warehouse") || may("sale")
+        canSignDamage
           ? supabase
               .from("stock_damages")
               .select("id, damage_no, store_id, qty, reason, reported_by, created_at")
