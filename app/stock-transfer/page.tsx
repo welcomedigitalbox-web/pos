@@ -300,13 +300,12 @@ export default function StockTransferPage() {
 
       if (resolution === "damaged") {
         // Written off against the warehouse, which is where the loss occurred
-        await supabase.from("stock_damages").insert({
-          store_id: whId,
-          product_id: resolveRow.product_id,
-          variant_id: resolveRow.variant_id,
-          qty: missing,
-          reason: `Transfer shortage → ${resolveRow.to_store_id}${resolutionNote.trim() ? ` · ${resolutionNote.trim()}` : ""}`,
-          reported_by: profile?.email || null,
+        await supabase.rpc("record_damage_writeoff", {
+          p_store_id: whId,
+          p_product_id: resolveRow.product_id,
+          p_variant_id: resolveRow.variant_id,
+          p_qty: missing,
+          p_reason: `Transfer shortage → ${resolveRow.to_store_id}${resolutionNote.trim() ? ` · ${resolutionNote.trim()}` : ""}`,
         });
 
         const { data: after } = await (resolveRow.variant_id
