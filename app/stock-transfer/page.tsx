@@ -143,6 +143,47 @@ export default function StockTransferPage() {
     setTimeout(() => setToast(""), 3500);
   }
 
+  // Postgres speaks through a plain object; pull the sentence out of it.
+  function errText(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    const e = err as { message?: string; details?: string; hint?: string };
+    return e?.message || e?.details || e?.hint || String(err);
+  }
+
+  // Releasing a transfer is the warehouse head's job. The buttons were
+  // shown to everyone and the database refused the click, which taught
+  // people the system is broken rather than that the job is not theirs.
+  const [canRelease, setCanRelease] = useState(false);
+  useEffect(() => {
+    supabase
+      .rpc("can_approve_dept", { p_department: "warehouse" })
+      .then(({ data }) => setCanRelease(!!data));
+  }, []);
+
+  // The picker's own undo, before a manager has seen it. Not an edit:
+  // the stock goes back and the cancelled transfer stays on the record,
+  // so "sent ten, wrote eight" has nowhere to hide.
+  async function cancelTransfer(ref: string) {
+    const why = window.prompt(
+      `Cancel ${ref}?\n\nThe stock goes back to this warehouse and the cancelled transfer stays on the record.\n\nReason:`
+    );
+    if (!why) return;
+    setReleaseBusy(ref);
+    try {
+      const { error } = await supabase.rpc("cancel_transfer", {
+        p_transfer_no: ref,
+        p_reason: why,
+      });
+      if (error) throw error;
+      showToast(`\u21a9 ${ref} cancelled \u00b7 stock returned`);
+      await load();
+    } catch (err) {
+      showToast("\u274c " + errText(err));
+    } finally {
+      setReleaseBusy(null);
+    }
+  }
+
   function openTransfer(item: SellableItem) {
     setTransferItem(item);
     setTransferQty("");
@@ -253,7 +294,7 @@ export default function StockTransferPage() {
       setDraftLines([]);
       await load();
     } catch (err) {
-      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+      showToast("\u274c " + errText(err));
     } finally {
       setSending(false);
     }
@@ -273,7 +314,7 @@ export default function StockTransferPage() {
       showToast(reject ? t("returns_status_rejected") : t("warehouseTransfer_sent"));
       await load();
     } catch (err) {
-      showToast("\u274c " + (err instanceof Error ? err.message : String(err)));
+      showToast("\u274c " + errText(err));
     } finally {
       setReleaseBusy(null);
     }
@@ -574,7 +615,14 @@ export default function StockTransferPage() {
                 </td>
                 <td className="px-3 py-2 text-slate-500 text-xs">{g.receivedBy || "-"}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {g.status === "pending_approval" && (
+                  {g.status === "pending_approval" && !canRelease && (
+                    <button onClick={() => cancelTransfer(g.ref)}
+                      disabled={releaseBusy === g.ref}
+                      className="text-red-700 text-xs font-medium mr-3">
+                      {releaseBusy === g.ref ? "\u2026" : "Cancel"}
+                    </button>
+                  )}
+                  {g.status === "pending_approval" && canRelease && (
                     <>
                       <button onClick={() => releaseTransfer(g.ref)}
                         disabled={releaseBusy === g.ref}
