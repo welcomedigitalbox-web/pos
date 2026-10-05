@@ -18,9 +18,10 @@
 // that gets attention.
 // =====================================================================
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, describeError } from "@/lib/supabase";
+import Link from "next/link";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
 
@@ -80,6 +81,9 @@ export default function TransferReportPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [capped, setCapped] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [canCancel, setCanCancel] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "warehouse")) router.replace("/");
@@ -92,6 +96,9 @@ export default function TransferReportPage() {
       .select("id, name")
       .order("id")
       .then(({ data }) => setStores(data || []));
+    supabase
+      .rpc("can_approve_dept", { p_department: "warehouse" })
+      .then(({ data }) => setCanCancel(!!data));
   }, []);
 
   const load = useCallback(async () => {
@@ -160,6 +167,91 @@ export default function TransferReportPage() {
     () => (onlyShort ? rows.filter((r) => shortOf(r) > 0) : rows),
     [rows, onlyShort]
   );
+
+  // A transfer is a crate, not a line. One dispatch carries several
+  // products, and the paperwork, the signature and the shortfall all
+  // belong to the crate — so the table is one row per transfer, opened
+  // up when somebody wants to see what was in it.
+  type Group = {
+    no: string;
+    route: string;
+    from: string;
+    to: string;
+    at: string;
+    status: string;
+    by: string | null;
+    got_by: string | null;
+    sent: number;
+    got: number;
+    short: number;
+    value: number;
+    lines: Row[];
+  };
+
+  const groups = useMemo<Group[]>(() => {
+    const m = new Map<string, Group>();
+    for (const r of shown) {
+      const no = r.transfer_no || r.id;
+      let g = m.get(no);
+      if (!g) {
+        g = {
+          no,
+          route: `${r.from_store_id} → ${r.to_store_id}`,
+          from: r.from_store_id,
+          to: r.to_store_id,
+          at: r.created_at,
+          status: r.status,
+          by: r.transferred_by,
+          got_by: r.received_by,
+          sent: 0,
+          got: 0,
+          short: 0,
+          value: 0,
+          lines: [],
+        };
+        m.set(no, g);
+      }
+      g.lines.push(r);
+      g.sent += Number(r.qty) || 0;
+      g.got += Number(r.received_qty) || 0;
+      const sh = shortOf(r);
+      g.short += sh;
+      g.value += sh * (costs.get(r.product_id) || 0);
+      // The worst thing that happened to any line is the state of the crate.
+      const rank = (st: string) =>
+        st === "discrepancy" ? 4 : st === "pending_approval" ? 3 : st === "in_transit" ? 2 : 1;
+      if (rank(r.status) > rank(g.status)) g.status = r.status;
+    }
+    return [...m.values()].sort(
+      (a, b) => b.short - a.short || +new Date(b.at) - +new Date(a.at)
+    );
+  }, [shown, costs]);
+
+  function toggle(no: string) {
+    setOpen((p) => {
+      const n = new Set(p);
+      n.has(no) ? n.delete(no) : n.add(no);
+      return n;
+    });
+  }
+
+  // Nothing is edited after it is sent. The stock has already left the
+  // shelf, so changing the number on the paper would put the books and
+  // the building out of step — the honest undo is a cancellation, which
+  // puts the goods back and leaves the cancelled transfer on the record.
+  async function cancel(no: string) {
+    const why = window.prompt(`Cancel ${no}? The stock goes back to the sender.\n\nReason:`);
+    if (!why) return;
+    setBusy(no);
+    const { error } = await supabase.rpc("approve_transfer", {
+      p_transfer_no: no,
+      p_reject: true,
+      p_reason: why,
+    });
+    setBusy(null);
+    if (error) return setErr(describeError(error));
+    load();
+  }
 
   const totals = useMemo(() => {
     let sent = 0,
@@ -345,64 +437,112 @@ export default function TransferReportPage() {
 
       {/* lines */}
       <h2 className="mt-8 text-base font-semibold">
-        Every line {loading && <span className="text-xs font-normal text-gray-400">loading…</span>}
+        Transfers{" "}
+        {loading && <span className="text-xs font-normal text-gray-400">loading…</span>}
       </h2>
 
-      {shown.length === 0 && !loading ? (
+      {groups.length === 0 && !loading ? (
         <p className="mt-3 text-sm text-gray-500">Nothing in this period.</p>
       ) : (
         <div className="mt-3 overflow-x-auto border rounded">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left">
               <tr>
+                <th className="px-3 py-2 w-8" />
                 <th className="px-3 py-2">No.</th>
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Route</th>
-                <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2 text-right">Items</th>
                 <th className="px-3 py-2 text-right">Sent</th>
                 <th className="px-3 py-2 text-right">Got</th>
                 <th className="px-3 py-2 text-right">Short</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Sent by</th>
-                <th className="px-3 py-2">Received by</th>
+                <th className="px-3 py-2 w-28" />
               </tr>
             </thead>
             <tbody>
-              {shown.map((r) => {
-                const s = shortOf(r);
-                const st = STATUS[r.status] || { label: r.status, tone: "text-gray-600" };
+              {groups.map((g) => {
+                const st = STATUS[g.status] || { label: g.status, tone: "text-gray-600" };
+                const isOpen = open.has(g.no);
                 return (
-                  <tr key={r.id} className={`border-t ${s > 0 ? "bg-red-50/40" : ""}`}>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {r.transfer_no || r.id.slice(0, 8)}
-                    </td>
-                    <td className="px-3 py-2 text-gray-600">{day(r.created_at)}</td>
-                    <td className="px-3 py-2 text-gray-600">
-                      {r.from_store_id} → {r.to_store_id}
-                    </td>
-                    <td className="px-3 py-2">{names.get(r.product_id) || "—"}</td>
-                    <td className="px-3 py-2 text-right">{money(r.qty)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {r.received_qty === null ? "—" : money(r.received_qty)}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${s > 0 ? "text-red-700 font-medium" : "text-gray-300"}`}>
-                      {s > 0 ? money(s) : "—"}
-                    </td>
-                    <td className={`px-3 py-2 ${st.tone}`}>
-                      {st.label}
-                      {r.resolution && (
-                        <div className="text-xs text-gray-500">{r.resolution}</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{r.transferred_by || "—"}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{r.received_by || "—"}</td>
-                  </tr>
+                  <Fragment key={g.no}>
+                    <tr
+                      className={`border-t cursor-pointer hover:bg-gray-50 ${
+                        g.short > 0 ? "bg-red-50/40" : ""
+                      }`}
+                      onClick={() => toggle(g.no)}
+                    >
+                      <td className="px-3 py-2 text-gray-400">{isOpen ? "▾" : "▸"}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{g.no}</td>
+                      <td className="px-3 py-2 text-gray-600">{day(g.at)}</td>
+                      <td className="px-3 py-2 text-gray-600">{g.route}</td>
+                      <td className="px-3 py-2 text-right">{g.lines.length}</td>
+                      <td className="px-3 py-2 text-right">{money(g.sent)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {g.got ? money(g.got) : "—"}
+                      </td>
+                      <td className={`px-3 py-2 text-right ${g.short > 0 ? "text-red-700 font-medium" : "text-gray-300"}`}>
+                        {g.short > 0 ? money(g.short) : "—"}
+                      </td>
+                      <td className={`px-3 py-2 ${st.tone}`}>{st.label}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{g.by || "—"}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <Link
+                          href={`/transfer-print/${encodeURIComponent(g.no)}`}
+                          target="_blank"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          Print
+                        </Link>
+                        {canCancel && g.status === "pending_approval" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); cancel(g.no); }}
+                            disabled={busy === g.no}
+                            className="ml-3 text-red-700 hover:underline text-xs disabled:opacity-40"
+                          >
+                            {busy === g.no ? "…" : "Cancel"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+
+                    {isOpen &&
+                      g.lines.map((r) => {
+                        const sh = shortOf(r);
+                        return (
+                          <tr key={r.id} className="border-t bg-gray-50/60 text-xs">
+                            <td />
+                            <td className="px-3 py-1.5" colSpan={3}>
+                              {names.get(r.product_id) || r.product_id}
+                            </td>
+                            <td />
+                            <td className="px-3 py-1.5 text-right">{money(r.qty)}</td>
+                            <td className="px-3 py-1.5 text-right">
+                              {r.received_qty === null ? "—" : money(r.received_qty)}
+                            </td>
+                            <td className={`px-3 py-1.5 text-right ${sh > 0 ? "text-red-700" : "text-gray-300"}`}>
+                              {sh > 0 ? money(sh) : "—"}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-500" colSpan={3}>
+                              {r.resolution
+                                ? `${r.resolution}${r.resolution_note ? ` · ${r.resolution_note}` : ""}`
+                                : r.received_by
+                                ? `received by ${r.received_by}`
+                                : ""}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
+
     </div>
   );
 }
