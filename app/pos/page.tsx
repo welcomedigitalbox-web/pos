@@ -698,14 +698,7 @@ export default function POSPage() {
           onChange={(e) => {
             const value = e.target.value;
             setSearch(value);
-            // Barcode scanner support: exact SKU match -> add to cart immediately, clear search
-            const exactSkuMatch = items.find(
-              (i) => (i.sku || "").toLowerCase() === value.trim().toLowerCase() && value.trim() !== ""
-            );
-            if (exactSkuMatch) {
-              addToCart(exactSkuMatch);
-              setSearch("");
-            }
+            scanned(value);
           }}
         />
 

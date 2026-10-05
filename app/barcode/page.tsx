@@ -43,10 +43,22 @@ export default function BarcodePage() {
     const query = code.trim();
     if (!query) return;
 
-    // Search across every sellable unit (variant SKUs included), not just parent SKUs
+    // Any label that points at this product answers: the supplier's own
+    // barcode, one we printed, a carton barcode, or the article number.
     const allItems = await fetchSellableItems(storeId, true);
-    const prod =
+    let prod =
       allItems.find((i) => (i.sku || "").toLowerCase() === query.toLowerCase()) || null;
+
+    if (!prod) {
+      const { data } = await supabase.rpc("resolve_barcode", { p_code: query });
+      const hit = (data as { product_id: string; variant_id: string | null }[] | null)?.[0];
+      if (hit) {
+        prod = allItems.find(
+          (i) => i.product_id === hit.product_id &&
+            (i.variant_id || null) === (hit.variant_id || null)
+        ) || null;
+      }
+    }
 
     if (!prod) {
       setProduct(null);
