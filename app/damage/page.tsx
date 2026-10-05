@@ -83,9 +83,10 @@ export default function StockDamagePage() {
   const [canFile, setCanFile] = useState(false);
   const [canReceive, setCanReceive] = useState(false);
   const [canDispose, setCanDispose] = useState(false);
+  const [canApprove, setCanApprove] = useState(false);
   const [checking, setChecking] = useState(true);
 
-  const [tab, setTab] = useState<"file" | "receive" | "hold">("file");
+  const [tab, setTab] = useState<"file" | "approve" | "receive" | "hold">("file");
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -101,22 +102,25 @@ export default function StockDamagePage() {
 
   // --- receiving ---------------------------------------------------
   const [pending, setPending] = useState<Pending[]>([]);
+  const [unsigned, setUnsigned] = useState<Pending[]>([]);
   const [holding, setHolding] = useState<Holding[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [f, r, d] = await Promise.all([
+      const [f, r, d, ap] = await Promise.all([
         supabase.rpc("can_file_damage"),
         supabase.rpc("can_receive_damage"),
         supabase.rpc("can_dispose_damage"),
+        supabase.rpc("can_approve_damage"),
       ]);
       const file = !!f.data;
       const recv = !!r.data;
       setCanFile(file);
       setCanReceive(recv);
       setCanDispose(!!d.data);
-      setTab(file ? "file" : recv ? "receive" : "hold");
+      setCanApprove(!!ap.data);
+      setTab(ap.data ? "approve" : file ? "file" : recv ? "receive" : "hold");
       setChecking(false);
     })();
   }, []);
@@ -134,46 +138,60 @@ export default function StockDamagePage() {
     fetchSellableItems(store).then(setItems).catch(() => setItems([]));
   }, [store]);
 
-  const loadPending = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("stock_damages")
-      .select("damage_no, store_id, reported_by, created_at, qty, unit_cost, reason, product_id")
-      .eq("status", "approved")
-      .order("created_at", { ascending: false })
-      .limit(1000);
-    if (error) {
-      setErr(describeError(error));
-      return;
-    }
-    const names = new Map(items.map((i) => [i.product_id, i.display_name]));
-    const byNo = new Map<string, Pending>();
-    for (const r of data || []) {
-      const no = r.damage_no || "—";
-      let g = byNo.get(no);
-      if (!g) {
-        g = {
-          damage_no: no,
-          store_id: r.store_id,
-          reported_by: r.reported_by,
-          created_at: r.created_at,
-          lines: 0,
-          qty: 0,
-          value: 0,
-          items: [],
-        };
-        byNo.set(no, g);
+  // Two queues, same shape: what is waiting to be signed, and what has
+  // been signed and is waiting for the goods to turn up.
+  const loadQueue = useCallback(
+    async (status: string, set: (p: Pending[]) => void) => {
+      const { data, error } = await supabase
+        .from("stock_damages")
+        .select("damage_no, store_id, reported_by, created_at, qty, unit_cost, reason, product_id")
+        .eq("status", status)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      if (error) {
+        setErr(describeError(error));
+        return;
       }
-      g.lines += 1;
-      g.qty += Number(r.qty || 0);
-      g.value += Number(r.qty || 0) * Number(r.unit_cost || 0);
-      g.items.push({
-        name: names.get(r.product_id) || r.product_id,
-        qty: Number(r.qty || 0),
-        reason: r.reason,
-      });
-    }
-    setPending([...byNo.values()]);
-  }, [items]);
+      const names = new Map(items.map((i) => [i.product_id, i.display_name]));
+      const byNo = new Map<string, Pending>();
+      for (const r of data || []) {
+        const no = r.damage_no || "—";
+        let g = byNo.get(no);
+        if (!g) {
+          g = {
+            damage_no: no,
+            store_id: r.store_id,
+            reported_by: r.reported_by,
+            created_at: r.created_at,
+            lines: 0,
+            qty: 0,
+            value: 0,
+            items: [],
+          };
+          byNo.set(no, g);
+        }
+        g.lines += 1;
+        g.qty += Number(r.qty || 0);
+        g.value += Number(r.qty || 0) * Number(r.unit_cost || 0);
+        g.items.push({
+          name: names.get(r.product_id) || r.product_id,
+          qty: Number(r.qty || 0),
+          reason: r.reason,
+        });
+      }
+      set([...byNo.values()]);
+    },
+    [items]
+  );
+
+  const loadUnsigned = useCallback(
+    () => loadQueue("pending", setUnsigned),
+    [loadQueue]
+  );
+  const loadPending = useCallback(
+    () => loadQueue("approved", setPending),
+    [loadQueue]
+  );
 
   const loadHolding = useCallback(async () => {
     const { data, error } = await supabase
@@ -186,9 +204,15 @@ export default function StockDamagePage() {
   }, []);
 
   useEffect(() => {
+    if (tab === "approve") loadUnsigned();
     if (tab === "receive") loadPending();
     if (tab === "hold") loadHolding();
-  }, [tab, loadPending, loadHolding]);
+  }, [tab, loadUnsigned, loadPending, loadHolding]);
+
+  // The count on the tab has to be right before the tab is opened.
+  useEffect(() => {
+    if (canApprove) loadUnsigned();
+  }, [canApprove, loadUnsigned]);
 
   // -----------------------------------------------------------------
   // A scan, or a typed name. Anything the system knows as a code for
@@ -285,6 +309,17 @@ export default function StockDamagePage() {
     scanRef.current?.focus();
   }
 
+  async function approve(no: string) {
+    setErr(null);
+    setMsg(null);
+    setBusy(no);
+    const { error } = await supabase.rpc("approve_stock_damage", { p_damage_no: no });
+    setBusy(null);
+    if (error) return setErr(describeError(error));
+    setMsg(`${no} approved — the warehouse can take it in now`);
+    loadUnsigned();
+  }
+
   async function receive(no: string) {
     setErr(null);
     setMsg(null);
@@ -312,13 +347,14 @@ export default function StockDamagePage() {
     if (error) return setErr(describeError(error));
     setMsg(`${no} rejected — no stock moved`);
     loadPending();
+    loadUnsigned();
   }
 
   if (checking) {
     return <div className="p-6 text-sm text-gray-500">Loading…</div>;
   }
 
-  if (!canFile && !canReceive && !canDispose) {
+  if (!canFile && !canReceive && !canDispose && !canApprove) {
     return (
       <div className="p-6">
         <h1 className="text-xl font-semibold">Damage</h1>
@@ -332,7 +368,8 @@ export default function StockDamagePage() {
 
   const tabs: { k: typeof tab; label: string; show: boolean }[] = [
     { k: "file", label: "File a damage", show: canFile },
-    { k: "receive", label: `Approved, waiting to be received${pending.length ? ` (${pending.length})` : ""}`, show: canReceive },
+    { k: "approve", label: `Waiting for approval${unsigned.length ? ` (${unsigned.length})` : ""}`, show: canApprove },
+    { k: "receive", label: `Approved, to receive${pending.length ? ` (${pending.length})` : ""}`, show: canReceive },
     { k: "hold", label: "Held / to return", show: true },
   ];
 
@@ -506,6 +543,58 @@ export default function StockDamagePage() {
       )}
 
       {/* ---------------------------------------------------------- */}
+      {tab === "approve" && canApprove && (
+        <div className="mt-5 space-y-3">
+          <p className="text-sm text-gray-500">
+            A damage is a loss. Nothing reaches the warehouse until it is signed.
+          </p>
+          {unsigned.length === 0 && <p className="text-sm text-gray-500">Nothing waiting.</p>}
+          {unsigned.map((p) => (
+            <div key={p.damage_no} className="border rounded p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium font-mono">{p.damage_no}</div>
+                  <div className="text-xs text-gray-500">
+                    {p.store_id} · {p.reported_by || "—"} ·{" "}
+                    {new Date(p.created_at).toLocaleString()}
+                  </div>
+                </div>
+                <div className="text-right text-sm">
+                  <div>{p.qty} pcs · {p.lines} lines</div>
+                  <div className="text-xs text-gray-500">{money(p.value)} at cost</div>
+                </div>
+              </div>
+
+              <ul className="mt-2 text-sm text-gray-700 space-y-0.5">
+                {p.items.map((it, i) => (
+                  <li key={i}>
+                    {it.qty} × {it.name}
+                    {it.reason && <span className="text-gray-400"> — {it.reason}</span>}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => approve(p.damage_no)}
+                  disabled={busy === p.damage_no}
+                  className="rounded bg-green-600 px-3 py-1.5 text-white text-sm disabled:opacity-40"
+                >
+                  {busy === p.damage_no ? "…" : "Approve"}
+                </button>
+                <button
+                  onClick={() => reject(p.damage_no)}
+                  disabled={busy === p.damage_no}
+                  className="rounded border px-3 py-1.5 text-sm text-red-700 border-red-200 disabled:opacity-40"
+                >
+                  Refuse
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {tab === "receive" && canReceive && (
         <div className="mt-5 space-y-3">
           {pending.length === 0 && (
