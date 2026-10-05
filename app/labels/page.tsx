@@ -38,14 +38,12 @@ type Line = {
   qty: number;
 };
 
-// The roll the department buys. Other sizes are here because a second roll
-// turns up eventually and nobody should have to change code for it.
-const PRESETS: Record<string, { w: number; h: number; across: number; label: string }> = {
-  "40x25x3": { w: 40, h: 25, across: 3, label: "40 × 25mm · 3 across (115mm)" },
-  "50x25x2": { w: 50, h: 25, across: 2, label: "50 × 25mm · 2 across" },
-  "40x30x3": { w: 40, h: 30, across: 3, label: "40 × 30mm · 3 across" },
-  "70x40x1": { w: 70, h: 40, across: 1, label: "70 × 40mm · 1 across" },
-};
+// The roll the department buys today, as far as a photograph shows: three
+// labels across 115mm of backing paper, which puts each one near 38mm.
+// "Near" is not good enough for a printer, so the numbers are editable and
+// what is set is remembered. Measure the roll once, type it in once.
+const DEFAULT_SIZE = { w: 38, h: 25, across: 3 };
+const SIZE_KEY = "edu.labelSize";
 
 export default function LabelsPage() {
   const { profile } = useAuth();
@@ -57,14 +55,27 @@ export default function LabelsPage() {
   const [barcodes, setBarcodes] = useState<Record<string, { barcode: string; kind: string }>>({});
   const [lines, setLines] = useState<Line[]>([]);
   const [search, setSearch] = useState("");
-  const [preset, setPreset] = useState("40x25x3");
+  const [size, setSize] = useState(DEFAULT_SIZE);
   const [showPrice, setShowPrice] = useState(false);
   const [showName, setShowName] = useState(true);
   const [pos, setPos] = useState<{ id: string; po_number: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
 
-  const size = PRESETS[preset];
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SIZE_KEY);
+      if (saved) setSize({ ...DEFAULT_SIZE, ...JSON.parse(saved) });
+    } catch {
+      // A browser that will not keep it is not a reason to stop working.
+    }
+  }, []);
+
+  function setDim(k: "w" | "h" | "across", v: number) {
+    const next = { ...size, [k]: v };
+    setSize(next);
+    try { localStorage.setItem(SIZE_KEY, JSON.stringify(next)); } catch {}
+  }
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "labels")) router.replace("/");
@@ -221,13 +232,26 @@ export default function LabelsPage() {
         <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="text-xs text-slate-500">{t("labels_size")}</label>
-              <select value={preset} onChange={(e) => setPreset(e.target.value)}
-                className="block border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1">
-                {Object.entries(PRESETS).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
-                ))}
-              </select>
+              <label className="text-xs text-slate-500">{t("labels_w")}</label>
+              <input type="number" step="0.5" value={size.w}
+                onChange={(e) => setDim("w", Number(e.target.value))}
+                className="block w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">{t("labels_h")}</label>
+              <input type="number" step="0.5" value={size.h}
+                onChange={(e) => setDim("h", Number(e.target.value))}
+                className="block w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">{t("labels_across")}</label>
+              <input type="number" min={1} max={6} value={size.across}
+                onChange={(e) => setDim("across", Number(e.target.value))}
+                className="block w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1" />
+            </div>
+            <div className="text-xs text-slate-500 pb-2">
+              {t("labels_rollWidth")}: <strong>{(size.w * size.across).toFixed(1)}mm</strong>
+              <span className="block text-slate-400">{t("labels_rollHint")}</span>
             </div>
             <div>
               <label className="text-xs text-slate-500">{t("labels_fromPo")}</label>
