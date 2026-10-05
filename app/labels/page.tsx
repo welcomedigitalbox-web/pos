@@ -52,7 +52,12 @@ export default function LabelsPage() {
   const router = useRouter();
 
   const [items, setItems] = useState<SellableItem[]>([]);
-  const [barcodes, setBarcodes] = useState<Record<string, { barcode: string; kind: string }>>({});
+  // Every code a product answers to, so the person printing can say which
+  // one goes on the sticker — the warehouse's and the showroom's are not
+  // always the same code.
+  const [barcodes, setBarcodes] = useState<Record<string, { barcode: string; kind: string }[]>>({});
+  const [adding, setAdding] = useState<string | null>(null);
+  const [newCode, setNewCode] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [search, setSearch] = useState("");
   const [size, setSize] = useState(DEFAULT_SIZE);
@@ -99,12 +104,10 @@ export default function LabelsPage() {
           .limit(30),
       ]);
       setItems(list);
-      const map: Record<string, { barcode: string; kind: string }> = {};
+      const map: Record<string, { barcode: string; kind: string }[]> = {};
       for (const b of (bc.data as any[]) || []) {
         const k = `${b.product_id}:${b.variant_id || "base"}`;
-        // A supplier's own barcode is what is already on the box, so it
-        // wins: reprinting our own over it only adds a second answer.
-        if (!map[k] || b.kind === "supplier") map[k] = { barcode: b.barcode, kind: b.kind };
+        (map[k] ||= []).push({ barcode: b.barcode, kind: b.kind });
       }
       setBarcodes(map);
       setPos(((po.data as any[]) || []).map((p) => ({ id: p.id, po_number: p.po_number })));
@@ -116,11 +119,56 @@ export default function LabelsPage() {
     setTimeout(() => setToast(""), 3500);
   }
 
+  // Every code this product answers to, best first. The one we printed is
+  // offered ahead of the supplier's, because a warehouse sticker is the
+  // reason somebody is on this page.
+  function codesFor(product_id: string, variant_id: string | null, sku?: string | null) {
+    const list = [...(barcodes[`${product_id}:${variant_id || "base"}`] || [])];
+    list.sort((a, b) => {
+      const rank = (k: string) => (k === "internal" ? 0 : k === "supplier" ? 1 : 2);
+      return rank(a.kind) - rank(b.kind);
+    });
+    if (sku && !list.some((c) => c.barcode === sku)) {
+      list.push({ barcode: sku, kind: "sku" });
+    }
+    return list;
+  }
+
   function codeFor(i: SellableItem) {
-    const hit = barcodes[`${i.product_id}:${i.variant_id || "base"}`];
-    if (hit) return { code: hit.barcode, kind: hit.kind };
-    if (i.sku) return { code: i.sku, kind: "sku" };
-    return { code: "", kind: "none" };
+    const list = codesFor(i.product_id, i.variant_id, i.sku);
+    return list.length ? { code: list[0].barcode, kind: list[0].kind } : { code: "", kind: "none" };
+  }
+
+  // A code typed in here is a code the system will answer to afterwards.
+  // Printing one it does not know would make a sticker that scans as
+  // nothing, which is worse than no sticker.
+  async function saveCode(line: Line, raw: string) {
+    const code = raw.trim();
+    if (!code) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.from("product_barcodes").insert({
+        product_id: line.product_id,
+        variant_id: line.variant_id,
+        barcode: code,
+        // Ours starts with EDU; anything else came off a box.
+        kind: /^EDU\d/i.test(code) ? "internal" : "supplier",
+        created_by: profile?.email || null,
+      });
+      if (error) throw error;
+
+      const k = `${line.product_id}:${line.variant_id || "base"}`;
+      const kind = /^EDU\d/i.test(code) ? "internal" : "supplier";
+      setBarcodes((m) => ({ ...m, [k]: [...(m[k] || []), { barcode: code, kind }] }));
+      setLines((rows) => rows.map((r) =>
+        r.key === line.key ? { ...r, code, codeKind: kind } : r));
+      setAdding(null);
+      setNewCode("");
+    } catch (err) {
+      say("❌ " + describeError(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function addItem(i: SellableItem, qty = 1) {
@@ -178,9 +226,10 @@ export default function LabelsPage() {
       const code = String(data);
       setLines((rows) => rows.map((r) =>
         r.key === line.key ? { ...r, code, codeKind: "internal" } : r));
+      const k = `${line.product_id}:${line.variant_id || "base"}`;
       setBarcodes((m) => ({
         ...m,
-        [`${line.product_id}:${line.variant_id || "base"}`]: { barcode: code, kind: "internal" },
+        [k]: [...(m[k] || []).filter((c) => c.barcode !== code), { barcode: code, kind: "internal" }],
       }));
     } catch (err) {
       say("❌ " + describeError(err));
@@ -309,18 +358,72 @@ export default function LabelsPage() {
                   <tr key={l.key} className="border-t border-slate-100">
                     <td className="px-3 py-2">{l.name}</td>
                     <td className="px-3 py-2">
-                      {l.code ? (
-                        <>
-                          <span className="font-mono">{l.code}</span>
-                          <span className="text-xs text-slate-400 ml-2">
-                            {t(`labels_kind_${l.codeKind}` as never)}
-                          </span>
-                        </>
+                      {adding === l.key ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            value={newCode}
+                            onChange={(e) => setNewCode(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveCode(l, newCode); }}
+                            placeholder={t("labels_newCode")}
+                            className="border border-slate-200 rounded px-2 py-1 text-sm font-mono w-40"
+                          />
+                          <button onClick={() => saveCode(l, newCode)} disabled={busy}
+                            className="text-xs text-blue-600">{t("labels_save")}</button>
+                          <button onClick={() => { setAdding(null); setNewCode(""); }}
+                            className="text-xs text-slate-400">✕</button>
+                        </div>
                       ) : (
-                        <button onClick={() => issueCode(l)} disabled={busy}
-                          className="text-xs text-blue-600 underline">
-                          {t("labels_issue")}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {(() => {
+                            const list = codesFor(l.product_id, l.variant_id, l.sku);
+                            if (!list.length) {
+                              return (
+                                <button onClick={() => issueCode(l)} disabled={busy}
+                                  className="text-xs text-blue-600 underline">
+                                  {t("labels_issue")}
+                                </button>
+                              );
+                            }
+                            return (
+                              <select
+                                value={l.code}
+                                onChange={(e) => {
+                                  const pick = list.find((c) => c.barcode === e.target.value);
+                                  setLines((rows) => rows.map((r) => r.key === l.key
+                                    ? { ...r, code: e.target.value, codeKind: pick?.kind || "sku" }
+                                    : r));
+                                }}
+                                className="border border-slate-200 rounded px-2 py-1 text-sm font-mono">
+                                {list.map((c) => (
+                                  <option key={c.barcode} value={c.barcode}>
+                                    {c.barcode} · {t(`labels_kind_${c.kind}` as never)}
+                                  </option>
+                                ))}
+                              </select>
+                            );
+                          })()}
+                          <button onClick={() => { setAdding(l.key); setNewCode(""); }}
+                            className="text-xs text-blue-600">+ {t("labels_addCode")}</button>
+                          {/* Goods that arrived with a barcode do not need
+                              one of ours, and a second code on the same
+                              product is a second answer to the same scan.
+                              So this is offered only when there is nothing
+                              to scan yet. */}
+                          {!codesFor(l.product_id, l.variant_id, l.sku)
+                            .some((c) => c.kind === "supplier" || c.kind === "internal") && (
+                            <button onClick={() => issueCode(l)} disabled={busy}
+                              className="text-xs text-slate-500">{t("labels_issue")}</button>
+                          )}
+                          {codesFor(l.product_id, l.variant_id, l.sku)
+                            .some((c) => c.kind === "supplier") &&
+                            !codesFor(l.product_id, l.variant_id, l.sku)
+                              .some((c) => c.kind === "internal") && (
+                            <span className="text-xs text-amber-700">
+                              {t("labels_hasSupplier")}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
