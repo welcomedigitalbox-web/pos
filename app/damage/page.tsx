@@ -145,7 +145,7 @@ export default function StockDamagePage() {
       setErr(describeError(error));
       return;
     }
-    const names = new Map(items.map((i) => [i.product_id, i.name]));
+    const names = new Map(items.map((i) => [i.product_id, i.display_name]));
     const byNo = new Map<string, Pending>();
     for (const r of data || []) {
       const no = r.damage_no || "—";
@@ -217,7 +217,7 @@ export default function StockDamagePage() {
         const matches = items.filter(
           (i) =>
             (i.sku || "").toLowerCase() === low ||
-            i.name.toLowerCase().includes(low)
+            i.display_name.toLowerCase().includes(low)
         );
         if (matches.length === 1) found = matches[0];
         else if (matches.length > 1) {
@@ -244,7 +244,7 @@ export default function StockDamagePage() {
             key,
             product_id: found!.product_id,
             variant_id: found!.variant_id || null,
-            name: found!.name,
+            name: found!.display_name,
             sku: found!.sku || null,
             qty: 1,
             reason: REASONS[0],
