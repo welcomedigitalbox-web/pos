@@ -266,7 +266,7 @@ export default function LabelsPage() {
       <style>{`
         @media print {
           /* The roll, not a page of A4. Margins are the printer's job. */
-          @page { size: ${size.across * size.w}mm auto; margin: 0; }
+          @page { size: ${size.across * size.w}mm ${size.h}mm; margin: 0; }
           body * { visibility: hidden; }
           #sheet, #sheet * { visibility: visible; }
           #sheet { position: absolute; left: 0; top: 0; }
