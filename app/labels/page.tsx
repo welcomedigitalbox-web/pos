@@ -270,6 +270,9 @@ export default function LabelsPage() {
           body * { visibility: hidden; }
           #sheet, #sheet * { visibility: visible; }
           #sheet { position: absolute; left: 0; top: 0; }
+          /* Hidden is not gone: the shell still took up height, so the
+             printer was handed three blank labels after the real one. */
+          html, body { height: 0 !important; overflow: hidden !important; }
           .no-print { display: none !important; }
         }
       `}</style>
