@@ -262,7 +262,7 @@ export default function LabelsPage() {
   if (!profile || !hasPermission(profile, "labels")) return null;
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl">
+    <div className="p-4 sm:p-6 max-w-5xl print:p-0">
       <style>{`
         @media print {
           /* The roll, not a page of A4. Margins are the printer's job. */
@@ -458,7 +458,7 @@ export default function LabelsPage() {
           </p>
         )}
 
-        <div className="flex items-center gap-3 mb-6">
+        <div className="no-print flex items-center gap-3 mb-6">
           <button
             onClick={() => window.print()}
             disabled={!total || noCode.length > 0}
