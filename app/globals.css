@@ -85,3 +85,4 @@ body {
 @media print {
   nav { display: none !important; }
   main { margin: 0 !important; padding: 0 !important; }
+}
