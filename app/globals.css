@@ -77,3 +77,11 @@ body {
     page-break-inside: avoid;
   }
 }
+
+/* Printing is not screen reading. The shell — the nav rail and the
+   padding that keeps content off the bottom of a phone — has no place
+   on a label roll, and left in place it was being fed out as blank
+   stickers after every real one. */
+@media print {
+  nav { display: none !important; }
+  main { margin: 0 !important; padding: 0 !important; }
