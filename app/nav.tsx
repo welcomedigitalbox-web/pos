@@ -127,7 +127,7 @@ export default function Nav() {
       </aside>
 
       {/* Top bar + sub-page header */}
-      <div className="sm:ml-20">
+      <div className="sm:ml-20 no-print">
         <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
           <div className="px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">

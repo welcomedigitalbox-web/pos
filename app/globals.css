@@ -86,3 +86,7 @@ body {
   nav { display: none !important; }
   main { margin: 0 !important; padding: 0 !important; }
 }
+
+@media print {
+  aside, .no-print { display: none !important; }
+}
