@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -10,7 +10,7 @@ import { hasPermission } from "../permissions";
 
 type Hit = {
   key: string; product_id: string; variant_id: string | null;
-  display_name: string; sku: string | null; stock_qty: number;
+  display_name: string; sku: string | null; stock_qty: number; codes?: string;
 };
 
 type Past = {
@@ -36,6 +36,7 @@ export default function StockAdjustPage() {
   const [locId, setLocId] = useState("");
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
+  const [all, setAll] = useState<Hit[]>([]);
   const [picked, setPicked] = useState<Hit | null>(null);
   const [newQty, setNewQty] = useState("");
   const [reason, setReason] = useState(REASONS[0]);
@@ -51,7 +52,19 @@ export default function StockAdjustPage() {
   }, [profile]);
 
   useEffect(() => { if (!locId && storeId) setLocId(storeId); }, [storeId, locId]);
-  useEffect(() => { if (locId) loadPast(); /* eslint-disable-next-line */ }, [locId]);
+  useEffect(() => { if (locId) { loadPast(); loadAll(); } /* eslint-disable-next-line */ }, [locId]);
+
+  // The shop's whole catalogue, held once, so typing a code answers instantly
+  // and no filter has to survive a round trip.
+  async function loadAll() {
+    const items = await fetchSellableItems(locId);
+    setAll(items.map((i) => ({
+      key: i.key, product_id: i.product_id, variant_id: i.variant_id,
+      display_name: i.display_name, sku: i.sku,
+      stock_qty: Number(i.stock_qty || 0),
+      codes: String(i.codes || ""),
+    })));
+  }
 
   async function loadPast() {
     const { data } = await supabase.from("stock_adjustments")
@@ -68,22 +81,17 @@ export default function StockAdjustPage() {
     }
   }
 
-  async function search(text: string) {
+  function search(text: string) {
     setQ(text); setPicked(null);
-    if (text.trim().length < 2 || !locId) { setHits([]); return; }
-    const { data } = await supabase
-      .rpc("sellable_items", { p_store: locId, p_include_inactive: false })
-      .or([
-        `display_name.ilike.*${text.trim()}*`,
-        `sku.ilike.*${text.trim()}*`,
-        `codes.ilike.*${text.trim()}*`,
-      ].join(","))
-      .order("display_name").limit(20);
-    setHits(((data as any[]) || []).map((r) => ({
-      key: r.key, product_id: r.product_id, variant_id: r.variant_id,
-      display_name: r.display_name, sku: r.sku, stock_qty: Number(r.stock_qty || 0),
-    })));
+    const needle = text.trim().toLowerCase();
+    if (needle.length < 2) { setHits([]); return; }
+    setHits(all.filter((i) =>
+      i.display_name.toLowerCase().includes(needle)
+      || (i.sku || "").toLowerCase().includes(needle)
+      || (i.codes || "").toLowerCase().includes(needle)
+    ).slice(0, 25));
   }
+
 
   async function apply() {
     if (!picked) return;
