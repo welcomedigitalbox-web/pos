@@ -41,6 +41,7 @@ export type PageKey =
   | "approvals"
   | "gp-report"
   | "product-grid"
+  | "price-schedule"
   | "product-import"
   | "stock-import"
   | "uom-import"
@@ -98,6 +99,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "reports" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
   { key: "product-grid", href: "/product-grid", labelKey: "nav_productGrid", group: "merchandising" },
+  { key: "price-schedule", href: "/price-schedule", labelKey: "nav_priceSchedule", group: "merchandising" },
   { key: "product-import", href: "/product-import", labelKey: "nav_productImport", group: "setup" },
   { key: "stock-import", href: "/stock-import", labelKey: "nav_stockImport", group: "setup" },
   { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },

@@ -468,6 +468,7 @@ export default function POSPage() {
         }
         setNoDiscount(no); setMinPrice(mn); setNoPromo(np);
       });
+    supabase.rpc("apply_due_price_changes");
     supabase.from("product_uoms").select("*").eq("is_active", true)
       .order("factor").limit(5000)
       .then(({ data }) => {
