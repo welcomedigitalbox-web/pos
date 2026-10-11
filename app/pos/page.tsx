@@ -410,7 +410,14 @@ export default function POSPage() {
   // cashier searches or picks a category, show a workable slice.
   const POS_GRID_LIMIT = 60;
   const isNarrowed = search.trim() !== "" || categoryFilter !== "all";
-  const visibleGroups = isNarrowed ? filteredGroups : filteredGroups.slice(0, POS_GRID_LIMIT);
+  // Three thousand items will not fit on a till screen, and a cashier who
+  // does not know the name cannot search for it. Pages let them look.
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(filteredGroups.length / POS_GRID_LIMIT));
+  const atPage = Math.min(page, pageCount - 1);
+  const visibleGroups = isNarrowed
+    ? filteredGroups
+    : filteredGroups.slice(atPage * POS_GRID_LIMIT, (atPage + 1) * POS_GRID_LIMIT);
   const hiddenCount = filteredGroups.length - visibleGroups.length;
 
   const filteredCustomers = customers.filter(
@@ -804,7 +811,15 @@ export default function POSPage() {
           )}
           {hiddenCount > 0 && (
             <div className="col-span-full text-center text-slate-400 text-xs py-4">
-              {t("pos_moreHidden").replace("{n}", String(hiddenCount))}
+              <span className="inline-flex items-center gap-3">
+                <button type="button" onClick={() => setPage((n) => Math.max(0, n - 1))}
+                  disabled={atPage === 0}
+                  className="px-2 py-1 border border-slate-200 rounded disabled:opacity-30">‹</button>
+                <span>{atPage + 1} / {pageCount}</span>
+                <button type="button" onClick={() => setPage((n) => Math.min(pageCount - 1, n + 1))}
+                  disabled={atPage >= pageCount - 1}
+                  className="px-2 py-1 border border-slate-200 rounded disabled:opacity-30">›</button>
+              </span>
             </div>
           )}
         </div>
