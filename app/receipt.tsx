@@ -72,7 +72,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
             </>
           )}
           {data.cashierEmail && (
-            <div style={{ ...MUTED, fontSize: 11, marginTop: 2 }}>{data.cashierEmail}</div>
+            <div style={{ ...MUTED, fontSize: 11, marginTop: 2 }}>{data.cashierEmail.split("@")[0]}</div>
           )}
         </>
       )}
