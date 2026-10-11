@@ -4,10 +4,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { supabase, StoreRow } from "@/lib/supabase";
 import { useAuth } from "./auth-context";
 
-const STORE_LOCKED_ROLES = ["cashier", "online_sale", "wholesale",
-  "warehouse_manager",
-  "warehouse_staff",
-];
+// A till account sees its own shop and nothing else. Warehouse people move
+// goods between branches, so they open on their own warehouse but may look
+// anywhere; what they are allowed to release is still checked on the server.
+const STORE_LOCKED_ROLES = ["cashier", "online_sale", "wholesale"];
 
 type StoreContextType = {
   storeId: string;
