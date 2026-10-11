@@ -207,22 +207,13 @@ async function allRows<T>(
 }
 
 export async function fetchSellableItems(storeId: string, includeInactive = false): Promise<SellableItem[]> {
-  // The browser used to pull every product, variant, inventory row, store
-  // setting and consignment line and join them itself. The database does
-  // that join in one pass; a thousand rows is all one answer may carry, so
-  // this walks the pages.
-  const out: SellableItem[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .rpc("sellable_items", { p_store: storeId, p_include_inactive: includeInactive })
-      .order("display_name")
-      .range(from, from + 999);
-    if (error) break;
-    const page = (data as SellableItem[]) || [];
-    out.push(...page);
-    if (page.length < 1000) break;
-  }
-  return out;
+  // One answer, one pass. Paging an RPC made the database redo the whole
+  // join for every page.
+  const { data, error } = await supabase.rpc("sellable_items_json", {
+    p_store: storeId, p_include_inactive: includeInactive,
+  });
+  if (error) return [];
+  return (data as SellableItem[]) || [];
 }
 
 export async function fetchSellableItem(

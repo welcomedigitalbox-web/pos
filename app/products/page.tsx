@@ -70,14 +70,8 @@ export default function ProductsPage() {
     try {
       // The catalogue, the company-wide stock and the quoted cost, joined by
       // the database. The browser used to pull five tables and do it itself.
-      const rows: any[] = [];
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.rpc("product_catalogue")
-          .order("display_name").range(from, from + 999);
-        const page = (data as any[]) || [];
-        rows.push(...page);
-        if (page.length < 1000) break;
-      }
+      const { data: cat } = await supabase.rpc("product_catalogue_json");
+      const rows = (cat as any[]) || [];
       setItems(rows as SellableItem[]);
 
       const raw: Product[] = [];
