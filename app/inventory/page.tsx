@@ -67,9 +67,20 @@ export default function InventoryPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.rpc("inventory_rows", { p_store: locId });
-    if (error) { setRows([]); setLoading(false); return; }
-    setRows(((data as any[]) || []).map((r) => ({
+    // The database caps one answer at a thousand rows, and the shop carries
+    // nearly three thousand products.
+    const all: any[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .rpc("inventory_rows", { p_store: locId })
+        .order("display_name")
+        .range(from, from + 999);
+      if (error) { setRows([]); setLoading(false); return; }
+      const page = (data as any[]) || [];
+      all.push(...page);
+      if (page.length < 1000) break;
+    }
+    setRows(all.map((r) => ({
       key: `${r.product_id}:${r.variant_id || "base"}`,
       product_id: r.product_id,
       variant_id: r.variant_id,
