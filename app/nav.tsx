@@ -81,10 +81,7 @@ export default function Nav() {
           mobileOpen ? "translate-x-0" : "-translate-x-full sm:translate-x-0"
         }`}
       >
-        <Link href="/" onClick={() => setMobileOpen(false)}
-          className="mb-2 font-bold tracking-tight text-blue-600 text-lg">
-          EDU
-        </Link>
+
         {visibleDepartments.map((d) => (
           <Link
             key={d.key}
@@ -123,7 +120,9 @@ export default function Nav() {
               <button className="sm:hidden text-xl leading-none shrink-0" onClick={() => setMobileOpen(true)}>
                 ☰
               </button>
-              <h1 className="font-semibold text-base sm:text-lg truncate">{t("appName")}</h1>
+              <Link href="/" className="font-semibold text-base sm:text-lg truncate hover:text-blue-600">
+                {t("appName")}
+              </Link>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {showStoreSelector &&
