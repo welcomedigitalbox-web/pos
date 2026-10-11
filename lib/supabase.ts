@@ -204,118 +204,23 @@ async function allRows<T>(
 }
 
 export async function fetchSellableItems(storeId: string, includeInactive = false): Promise<SellableItem[]> {
-  // Four independent questions, asked at the same time rather than one after
-  // the other: the till opens in the time of the slowest, not of the sum.
-  const [products, variants, inv, offRows] = await Promise.all([
-    allRows<Product>((from, to) => {
-      // name is not unique, so id breaks the tie and keeps the paging stable.
-      let q = supabase.from("products").select("*").order("name").order("id").range(from, to);
-      if (!includeInactive) q = q.eq("is_active", true);
-      return q;
-    }),
-    allRows<ProductVariant>((from, to) => {
-      let q = supabase.from("product_variants").select("*").order("created_at").order("id").range(from, to);
-      if (!includeInactive) q = q.eq("is_active", true);
-      return q;
-    }),
-    allRows<any>((from, to) =>
-      supabase.from("store_inventory").select("*").eq("store_id", storeId)
-        .order("product_id").order("variant_id", { nullsFirst: true }).range(from, to)
-    ),
-    allRows<{ product_id: string }>((from, to) =>
-      supabase.from("store_product_settings")
-        .select("product_id")
-        .eq("store_id", storeId)
-        .eq("is_available", false)
-        .order("product_id")
-        .range(from, to)
-    ),
-  ]);
-
-  // Which of these goods are the supplier's. Read once, for this store.
-  const consigned = new Map<string, number>();
-  {
-    const { data } = await supabase
-      .from("consignment_stock_v")
-      .select("product_id, variant_id, store_id, on_hand")
-      .eq("store_id", storeId)
-      .limit(5000);
-    for (const r of (data as { product_id: string; variant_id: string | null; on_hand: number }[]) || []) {
-      const k = inventoryKey(r.product_id, r.variant_id);
-      consigned.set(k, (consigned.get(k) || 0) + Number(r.on_hand));
-    }
+  // The browser used to pull every product, variant, inventory row, store
+  // setting and consignment line and join them itself. The database does
+  // that join in one pass; a thousand rows is all one answer may carry, so
+  // this walks the pages.
+  if (!storeId) return [];
+  const out: SellableItem[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .rpc("sellable_items", { p_store: storeId, p_include_inactive: includeInactive })
+      .order("display_name")
+      .range(from, from + 999);
+    if (error) break;
+    const page = (data as SellableItem[]) || [];
+    out.push(...page);
+    if (page.length < 1000) break;
   }
-
-  const invMap = new Map(
-    inv.map((i) => [inventoryKey(i.product_id, i.variant_id), i])
-  );
-
-  const variantsByProduct = new Map<string, ProductVariant[]>();
-  for (const v of variants) {
-    const list = variantsByProduct.get(v.product_id) || [];
-    list.push(v);
-    variantsByProduct.set(v.product_id, list);
-  }
-
-  const unavailable = new Set(offRows.map((r) => r.product_id));
-
-  const items: SellableItem[] = [];
-  for (const p of products) {
-    // Switched off for this store, so it should not appear at the till
-    if (unavailable.has(p.id)) continue;
-    const children = variantsByProduct.get(p.id) || [];
-
-    if (children.length === 0) {
-      const i = invMap.get(inventoryKey(p.id, null));
-      items.push({
-        key: inventoryKey(p.id, null),
-        product_id: p.id,
-        variant_id: null,
-        product_name: p.name,
-        variant_name: null,
-        display_name: p.name,
-        sku: p.sku,
-        price: p.price,
-        category_id: p.category_id,
-        is_active: p.is_active,
-        requires_expiry: p.requires_expiry,
-        stock_qty: i?.stock_qty ?? 0,
-        avg_cost: i?.avg_cost ?? 0,
-        previous_avg_cost: i?.previous_avg_cost ?? 0,
-        last_purchase_cost: i?.last_purchase_cost ?? 0,
-        consigned_qty: consigned.get(inventoryKey(p.id, null)) ?? 0,
-        owned_qty: (i?.stock_qty ?? 0) - (consigned.get(inventoryKey(p.id, null)) ?? 0),
-        is_consignment: !!(p as Product & { is_consignment?: boolean }).is_consignment,
-      });
-      continue;
-    }
-
-    // Parent with children: only the children are sellable/stockable
-    for (const v of children) {
-      const i = invMap.get(inventoryKey(p.id, v.id));
-      items.push({
-        key: inventoryKey(p.id, v.id),
-        product_id: p.id,
-        variant_id: v.id,
-        product_name: p.name,
-        variant_name: v.variant_name,
-        display_name: `${p.name} (${v.variant_name})`,
-        sku: v.sku || p.sku,
-        price: v.price_override ?? p.price,
-        category_id: p.category_id,
-        is_active: p.is_active && v.is_active,
-        requires_expiry: p.requires_expiry,
-        stock_qty: i?.stock_qty ?? 0,
-        avg_cost: i?.avg_cost ?? 0,
-        previous_avg_cost: i?.previous_avg_cost ?? 0,
-        last_purchase_cost: i?.last_purchase_cost ?? 0,
-        consigned_qty: consigned.get(inventoryKey(p.id, v.id)) ?? 0,
-        owned_qty: (i?.stock_qty ?? 0) - (consigned.get(inventoryKey(p.id, v.id)) ?? 0),
-        is_consignment: !!(p as Product & { is_consignment?: boolean }).is_consignment,
-      });
-    }
-  }
-  return items;
+  return out;
 }
 
 export async function fetchSellableItem(
