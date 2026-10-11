@@ -68,68 +68,32 @@ export default function ProductsPage() {
   async function load() {
     setLoading(true);
     try {
-      // One pass: the catalog, the company-wide stock, and the cost
-      // merchandising quoted for items that have never been received yet.
-      const [rawRes, itemsRes, invRows, costRes] = await Promise.all([
-        supabase.from("products").select("*").order("name"),
-        fetchSellableItems(storeId, true),
-        fetchAllInventory(),
-        supabase.from("product_cost_reference").select("sku, cost"),
-      ]);
-
-      setRawProducts((rawRes.data as Product[]) || []);
-      const data = itemsRes;
-
-      const refCost = new Map<string, number>();
-      for (const r of (costRes.data as { sku: string; cost: number }[]) || []) {
-        refCost.set(r.sku, Number(r.cost));
+      // The catalogue, the company-wide stock and the quoted cost, joined by
+      // the database. The browser used to pull five tables and do it itself.
+      const rows: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.rpc("product_catalogue")
+          .order("display_name").range(from, from + 999);
+        const page = (data as any[]) || [];
+        rows.push(...page);
+        if (page.length < 1000) break;
       }
+      setItems(rows as SellableItem[]);
 
-      const key = (pid: string, v: string | null) => `${pid}:${v || "base"}`;
-
-      // This list totals stock across every store, so the consignment position
-      // has to be read the same way — the per-store figure that came back with
-      // each item is only this store's.
-      const consignAll = new Map<string, number>();
-      {
-        const { data } = await supabase
-          .from("consignment_stock_v")
-          .select("product_id, variant_id, on_hand")
-          .limit(5000);
-        for (const r of (data as { product_id: string; variant_id: string | null; on_hand: number }[]) || []) {
-          const k = key(r.product_id, r.variant_id);
-          consignAll.set(k, (consignAll.get(k) || 0) + Number(r.on_hand));
-        }
+      const raw: Product[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from("products").select("*")
+          .order("name").order("id").range(from, from + 999);
+        const page = (data as Product[]) || [];
+        raw.push(...page);
+        if (page.length < 1000) break;
       }
-
-      const totals = new Map<string, { qty: number; value: number }>();
-      for (const r of invRows) {
-        const k = key(r.product_id, r.variant_id);
-        const cur = totals.get(k) || { qty: 0, value: 0 };
-        cur.qty += Number(r.stock_qty);
-        cur.value += Number(r.stock_qty) * Number(r.avg_cost);
-        totals.set(k, cur);
-      }
-
-      const merged = data.map((i) => {
-        const agg = totals.get(key(i.product_id, i.variant_id)) || { qty: 0, value: 0 };
-        // With no stock anywhere there is no average to take, so fall back to
-        // the quoted cost rather than showing a bare zero.
-        const cost = agg.qty > 0 ? agg.value / agg.qty : refCost.get(i.sku || "") ?? 0;
-        const consigned = consignAll.get(key(i.product_id, i.variant_id)) || 0;
-        return {
-          ...i,
-          stock_qty: agg.qty,
-          avg_cost: cost,
-          consigned_qty: consigned,
-          owned_qty: agg.qty - consigned,
-        };
-      });
-      setItems(merged);
+      setRawProducts(raw);
     } finally {
       setLoading(false);
     }
   }
+
 
   // Supabase caps a response at 1,000 rows, so the ledger is read in pages —
   // otherwise the stock of everything past the first page reads as zero.

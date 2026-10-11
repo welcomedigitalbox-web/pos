@@ -61,10 +61,10 @@ export default function ProductGridPage() {
     const [p, c, inv, ref] = await Promise.all([
       supabase.from("products")
         .select("id, sku, name, category_id, price, is_active, allow_discount, allow_promotion, min_price")
-        .order("sku", { nullsFirst: false }).order("name"),
+        .order("sku", { nullsFirst: false }).order("name").range(0, 4999),
       supabase.from("product_categories").select("id,name").order("sort_order"),
-      fetchAllInventory(),
-      supabase.from("product_cost_reference").select("sku, cost"),
+      supabase.rpc("product_cost_rollup"),
+      supabase.from("product_cost_reference").select("sku, cost").range(0, 4999),
     ]);
     const refCost = new Map<string, number>();
     for (const r of ((ref.data as { sku: string; cost: number }[]) || [])) {
@@ -72,12 +72,12 @@ export default function ProductGridPage() {
     }
     // One cost per product: the weighted average across every shop holding it.
     const cost: Record<string, { qty: number; value: number; last: number }> = {};
-    for (const r of inv) {
-      const e = cost[r.product_id] || { qty: 0, value: 0, last: 0 };
-      e.qty += Number(r.stock_qty || 0);
-      e.value += Number(r.stock_qty || 0) * Number(r.avg_cost || 0);
-      if (Number(r.avg_cost || 0) > 0) e.last = Number(r.avg_cost);
-      cost[r.product_id] = e;
+    for (const r of ((inv.data as any[]) || [])) {
+      cost[r.product_id] = {
+        qty: Number(r.qty || 0),
+        value: Number(r.value || 0),
+        last: Number(r.last_cost || 0),
+      };
     }
     setRows(((p.data as Omit<Row, "avg_cost">[]) || []).map((r) => {
       const e = cost[r.id];
