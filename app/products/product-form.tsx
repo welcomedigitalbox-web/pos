@@ -28,6 +28,9 @@ export default function ProductForm({ productId }: { productId?: string }) {
 
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
+  // What the manufacturer printed on the box. Kept apart from our own
+  // code so a scan finds the item whichever label is facing up.
+  const [supplierCode, setSupplierCode] = useState("");
   const [price, setPrice] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [minPrice, setMinPrice] = useState("");
@@ -89,6 +92,10 @@ export default function ProductForm({ productId }: { productId?: string }) {
       if (!prod) { showToast("❌ not found"); setLoading(false); return; }
       setName(prod.name);
       setSku(prod.sku || "");
+      supabase.from("product_barcodes")
+        .select("barcode").eq("product_id", productId)
+        .eq("kind", "supplier").eq("is_active", true).limit(1)
+        .then(({ data }) => setSupplierCode(((data as any[]) || [])[0]?.barcode || ""));
       setPrice(String(prod.price ?? ""));
       setCategoryId(prod.category_id || "");
       setMinPrice(prod.min_price == null ? "" : String(prod.min_price));
@@ -215,6 +222,19 @@ export default function ProductForm({ productId }: { productId?: string }) {
           await upsertStoreInventory(storeId, created.id, null, { stock_qty: qty, avg_cost: cost });
         }
       }
+      const codeOwner = productId || savedId;
+      if (codeOwner) {
+        await supabase.from("product_barcodes").delete()
+          .eq("product_id", codeOwner).eq("kind", "supplier");
+        if (supplierCode.trim()) {
+          const { error: bErr } = await supabase.from("product_barcodes").insert({
+            product_id: codeOwner, variant_id: null,
+            barcode: supplierCode.trim(), kind: "supplier", is_active: true,
+          });
+          if (bErr) throw bErr;
+        }
+      }
+
       // The base unit is what stock is counted in, so it exists even when
       // nobody adds a second unit. Written after the product so there is an
       // id to hang it on.
@@ -289,6 +309,10 @@ export default function ProductForm({ productId }: { productId?: string }) {
             <label className={label}>{t("products_sku")} *</label>
             <div className="flex gap-2">
               <input className={field} value={sku} onChange={(e) => setSku(e.target.value)} required />
+            <label className={label} style={{ marginTop: 12 }}>{t("products_supplierCode")}</label>
+            <input className={field} value={supplierCode}
+              placeholder="8851234567890"
+              onChange={(e) => setSupplierCode(e.target.value)} />
               <button type="button" onClick={() => setSku(generateSku())}
                 className="shrink-0 text-xs border border-slate-200 rounded-lg px-3">↻</button>
             </div>
