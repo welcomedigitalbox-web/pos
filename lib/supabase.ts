@@ -211,7 +211,6 @@ export async function fetchSellableItems(storeId: string, includeInactive = fals
   // setting and consignment line and join them itself. The database does
   // that join in one pass; a thousand rows is all one answer may carry, so
   // this walks the pages.
-  if (!storeId) return [];
   const out: SellableItem[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
