@@ -81,7 +81,10 @@ export default function Nav() {
           mobileOpen ? "translate-x-0" : "-translate-x-full sm:translate-x-0"
         }`}
       >
-        <div className="text-2xl mb-2">🛒</div>
+        <Link href="/" onClick={() => setMobileOpen(false)}
+          className="mb-2 font-bold tracking-tight text-blue-600 text-lg">
+          EDU
+        </Link>
         {visibleDepartments.map((d) => (
           <Link
             key={d.key}

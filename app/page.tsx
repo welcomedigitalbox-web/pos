@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "./auth-context";
+import { useStore } from "./store-context";
 import { useLanguage } from "./language-context";
 import { PAGE_OPTIONS, GROUP_LABELS, hasPermission, type PageGroup } from "./permissions";
 
@@ -36,6 +37,7 @@ export default function HomePage() {
   const router = useRouter();
   const { profile, loading } = useAuth();
   const { t } = useLanguage();
+  const { storeId, isStoreLocked } = useStore();
 
   // A tile is worth showing only if the account can open something behind
   // it. Warehouse staff used to land on the till, fail to load it, and be
@@ -58,6 +60,15 @@ export default function HomePage() {
 
   return (
     <div className="pt-6 max-w-4xl mx-auto">
+
+      {/* An office account belongs to no branch. Until one is picked, every
+          page would quietly read nothing, so say so here instead. */}
+      {!storeId && !isStoreLocked && (
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          {t("store_chooseFirst")} ↗
+        </div>
+      )}
+
 
       <a href="https://report.edubabyhouse.store"
 
