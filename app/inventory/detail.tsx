@@ -7,6 +7,7 @@ type Move = {
   at: string; kind: string; qty: number;
   ref: string | null; party: string | null;
   amount: number | null; store_id: string;
+  who: string | null; balance: number | null;
 };
 
 export type DetailRow = {
@@ -127,7 +128,7 @@ export default function ProductDetail({
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
-                  {["When", "What", "Qty", "Invoice", "Who", "Amount", "Shop"].map((h) => (
+                  {["When", "What", "Qty", "Left", "Ref", "Who / Customer", "Amount", "Shop"].map((h) => (
                     <th key={h} className="text-left px-2 py-2 font-medium">{h}</th>
                   ))}
                 </tr>
@@ -143,8 +144,14 @@ export default function ProductDetail({
                       (Number(m.qty) < 0 ? "text-red-600" : "text-green-700")}>
                       {Number(m.qty) > 0 ? "+" : ""}{Number(m.qty).toLocaleString()}
                     </td>
+                    <td className="px-2 py-1.5 text-right text-slate-500">
+                      {m.balance === null || m.balance === undefined
+                        ? "" : Number(m.balance).toLocaleString()}
+                    </td>
                     <td className="px-2 py-1.5 text-slate-500">{m.ref || ""}</td>
-                    <td className="px-2 py-1.5 text-slate-500">{m.party || ""}</td>
+                    <td className="px-2 py-1.5 text-slate-500">
+                      {[m.party, m.who].filter(Boolean).join(" · ")}
+                    </td>
                     <td className="px-2 py-1.5 text-right text-slate-500">{money(m.amount)}</td>
                     <td className="px-2 py-1.5 text-slate-400">{m.store_id}</td>
                   </tr>
