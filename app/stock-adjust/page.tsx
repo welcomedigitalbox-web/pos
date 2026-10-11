@@ -73,7 +73,11 @@ export default function StockAdjustPage() {
     if (text.trim().length < 2 || !locId) { setHits([]); return; }
     const { data } = await supabase
       .rpc("sellable_items", { p_store: locId, p_include_inactive: false })
-      .ilike("display_name", `%${text.trim()}%`)
+      .or([
+        `display_name.ilike.*${text.trim()}*`,
+        `sku.ilike.*${text.trim()}*`,
+        `codes.ilike.*${text.trim()}*`,
+      ].join(","))
       .order("display_name").limit(20);
     setHits(((data as any[]) || []).map((r) => ({
       key: r.key, product_id: r.product_id, variant_id: r.variant_id,
