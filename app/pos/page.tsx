@@ -401,7 +401,9 @@ export default function POSPage() {
       if (!q) return true;
       return (
         g.productName.toLowerCase().includes(q) ||
-        g.items.some((i) => (i.sku || "").toLowerCase().includes(q) || i.display_name.toLowerCase().includes(q))
+        g.items.some((i) => (i.sku || "").toLowerCase().includes(q)
+          || i.display_name.toLowerCase().includes(q)
+          || (i.codes || "").toLowerCase().includes(q))
       );
     });
   }, [productGroups, categoryFilter, search]);

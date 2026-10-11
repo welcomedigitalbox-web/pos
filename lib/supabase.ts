@@ -177,6 +177,9 @@ export type SellableItem = {
   consigned_qty: number;
   owned_qty: number;
   is_consignment: boolean;
+  // Every code this thing answers to: our article number, the supplier's
+  // barcode, a carton barcode. Typing any of them should find it.
+  codes?: string | null;
 };
 
 export function inventoryKey(productId: string, variantId: string | null) {
