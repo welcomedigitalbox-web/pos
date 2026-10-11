@@ -68,9 +68,30 @@ export default function StockImportPage() {
     const sheet = wb.Sheets["Opening Stock"] || wb.Sheets[wb.SheetNames[0]];
     const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
 
-    const { data: prods } = await supabase.from("products").select("sku, name");
-    const known = new Map(((prods as { sku: string | null; name: string }[]) || [])
-      .filter((p) => p.sku).map((p) => [String(p.sku).trim().toLowerCase(), p.name]));
+    // 2,800 products do not come back in one request, and the rows that fell
+    // off the end were being reported as unknown SKUs.
+    const known = new Map<string, string>();
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from("products").select("sku, name")
+        .order("id").range(from, from + 999);
+      const page = (data as { sku: string | null; name: string }[]) || [];
+      for (const p of page) if (p.sku) known.set(String(p.sku).trim().toLowerCase(), p.name);
+      if (page.length < 1000) break;
+    }
+
+    // A shop counts quantities, not costs. Where the sheet leaves the cost
+    // blank, the agreed cost list fills it in.
+    const refCost = new Map<string, number>();
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from("product_cost_reference").select("sku, cost")
+        .order("sku").range(from, from + 999);
+      const page = (data as { sku: string | null; cost: number | null }[]) || [];
+      for (const c of page) {
+        const k = String(c.sku || "").trim().toLowerCase();
+        if (k && Number(c.cost) > 0 && !refCost.has(k)) refCost.set(k, Number(c.cost));
+      }
+      if (page.length < 1000) break;
+    }
     const storeIds = new Set(stores.map((s) => s.id));
 
     const out: Draft[] = [];
@@ -78,16 +99,17 @@ export default function StockImportPage() {
       const sku = String(r["SKU"] ?? r["sku"] ?? "").trim();
       const store = String(r["Store"] ?? r["store"] ?? "").trim();
       if (!sku && !store) continue;
+      if (String(r["Qty"] ?? r["qty"] ?? "").trim() === "") continue;
       const d: Draft = {
         sku, store, qty: num(r["Qty"] ?? r["qty"]),
-        unit_cost: num(r["Unit Cost"] ?? r["unit_cost"]),
+        unit_cost: num(r["Unit Cost"] ?? r["unit_cost"]) || refCost.get(sku.toLowerCase()) || 0,
         expiry: asDate(r["Expiry Date"] ?? r["expiry"]),
         ok: true, name: known.get(sku.toLowerCase()),
       };
       if (!known.has(sku.toLowerCase())) { d.ok = false; d.why = "unknown SKU"; }
       else if (!storeIds.has(store)) { d.ok = false; d.why = "unknown store code"; }
       else if (d.qty <= 0) { d.ok = false; d.why = "quantity must be above zero"; }
-      else if (d.unit_cost <= 0) { d.ok = false; d.why = "cost must be above zero"; }
+      else if (d.unit_cost <= 0) { d.ok = false; d.why = "no cost on the sheet and none in the cost list"; }
       out.push(d);
     }
     setRows(out);
