@@ -7,6 +7,7 @@ import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
+import * as XLSX from "xlsx";
 
 function fmt(n: number) {
   return Number(n || 0).toLocaleString() + " MMK";
@@ -182,6 +183,33 @@ export default function InventoryPage() {
     setLoading(false);
   }
 
+  // Two sheets: what the page shows, and a blank count sheet shaped exactly
+  // like the opening-stock importer so a shop can fill the Qty column.
+  function exportExcel() {
+    const view = filtered.map((r) => ({
+      Product: r.display_name,
+      Barcode: r.sku || "",
+      Available: r.stock_qty,
+      "Units Sold": r.soldQty,
+      Price: r.price,
+      ...(canSeeCost ? { "Stock Value": r.stockValue } : {}),
+      Expiry: r.batches[0]?.expiry || "",
+    }));
+    const count = filtered.map((r) => ({
+      SKU: r.sku || "",
+      Store: locId,
+      Qty: "",
+      "Unit Cost": r.avg_cost || "",
+      "Expiry Date": "",
+      Product: r.display_name,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(view), "Inventory");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(count), "Opening Stock");
+    const day = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `inventory-${locId}-${day}.xlsx`);
+  }
+
   const now = Date.now();
   const thirtyDays = 30 * 86400000;
 
@@ -251,6 +279,11 @@ export default function InventoryPage() {
         <input className="flex-1 min-w-[200px] border border-slate-200 rounded-lg px-3 py-2 text-sm"
           placeholder={t("warehouse_searchPlaceholder")}
           value={search} onChange={(e) => setSearch(e.target.value)} />
+
+        <button type="button" onClick={exportExcel} disabled={loading || filtered.length === 0}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium disabled:opacity-40">
+          Excel
+        </button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
