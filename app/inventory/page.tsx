@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { supabase, SellableItem, fetchSellableItems, netLineTotal } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -13,8 +13,18 @@ function fmt(n: number) {
   return Number(n || 0).toLocaleString() + " MMK";
 }
 
-type Row = SellableItem & {
+type Row = {
+  key: string;
+  product_id: string;
+  variant_id: string | null;
+  display_name: string;
+  sku: string | null;
+  price: number;
+  stock_qty: number;
+  avg_cost: number;
   batches: { expiry: string | null; qty: number }[];
+  nearestExpiry: string | null;
+  batchCount: number;
   stockValue: number;
   soldQty: number;
   salesValue: number;
@@ -57,70 +67,43 @@ export default function InventoryPage() {
 
   async function load() {
     setLoading(true);
-    const items = await fetchSellableItems(locId);
+    const { data, error } = await supabase.rpc("inventory_rows", { p_store: locId });
+    if (error) { setRows([]); setLoading(false); return; }
+    setRows(((data as any[]) || []).map((r) => ({
+      key: `${r.product_id}:${r.variant_id || "base"}`,
+      product_id: r.product_id,
+      variant_id: r.variant_id,
+      display_name: r.display_name,
+      sku: r.sku,
+      price: Number(r.price || 0),
+      stock_qty: Number(r.stock_qty || 0),
+      avg_cost: Number(r.avg_cost || 0),
+      batches: [],
+      nearestExpiry: (r.nearest_expiry as string | null) ?? null,
+      batchCount: Number(r.batch_count || 0),
+      stockValue: Number(r.stock_qty || 0) * Number(r.avg_cost || 0),
+      soldQty: Number(r.sold_qty || 0),
+      salesValue: Number(r.sold_value || 0),
+    })));
+    setLoading(false);
+  }
 
-    const { data: batchRows } = await supabase
-      .from("stock_purchases")
-      .select("product_id, variant_id, expiry_date, remaining_qty")
-      .eq("store_id", locId)
+  async function loadBatches(row: Row) {
+    if (row.batches.length) return;
+    let q = supabase.from("stock_purchases")
+      .select("expiry_date, remaining_qty")
+      .eq("store_id", locId).eq("product_id", row.product_id)
       .gt("remaining_qty", 0)
       .order("expiry_date", { ascending: true, nullsFirst: false });
-
-    const key = (p: string, v: string | null) => `${p}:${v || "base"}`;
-    const batchMap = new Map<string, { expiry: string | null; qty: number }[]>();
-    for (const b of (batchRows as any[]) || []) {
-      const k = key(b.product_id, b.variant_id);
-      const list = batchMap.get(k) || [];
+    q = row.variant_id ? q.eq("variant_id", row.variant_id) : q.is("variant_id", null);
+    const { data } = await q;
+    const list: { expiry: string | null; qty: number }[] = [];
+    for (const b of (data as any[]) || []) {
       const hit = list.find((e) => e.expiry === b.expiry_date);
       if (hit) hit.qty += Number(b.remaining_qty);
       else list.push({ expiry: b.expiry_date, qty: Number(b.remaining_qty) });
-      batchMap.set(k, list);
     }
-
-    // "What's on the shelf" only half answers the question — staff also want to
-    // know how much has gone out of this store.
-    const { data: saleRows } = await supabase
-      .from("sale_items")
-      .select("product_id, variant_id, qty, line_total, sales!inner(store_id, subtotal, discount_amount)")
-      .eq("sales.store_id", locId);
-
-    const soldMap = new Map<string, { qty: number; value: number }>();
-    for (const r of (saleRows as any[]) || []) {
-      const k = key(r.product_id, r.variant_id);
-      const cur = soldMap.get(k) || { qty: 0, value: 0 };
-      cur.qty += Number(r.qty);
-      cur.value += netLineTotal(r.line_total, r.sales?.subtotal, r.sales?.discount_amount);
-      soldMap.set(k, cur);
-    }
-
-    // Approved returns came back, so they are not sales
-    const { data: returnRows } = await supabase
-      .from("sale_return_items")
-      .select("product_id, variant_id, qty, unit_price, sale_returns!inner(store_id, status)")
-      .eq("sale_returns.status", "approved")
-      .eq("sale_returns.store_id", locId);
-
-    for (const r of (returnRows as any[]) || []) {
-      const k = key(r.product_id, r.variant_id);
-      const cur = soldMap.get(k) || { qty: 0, value: 0 };
-      cur.qty -= Number(r.qty);
-      cur.value -= Number(r.qty) * Number(r.unit_price);
-      soldMap.set(k, cur);
-    }
-
-    setRows(
-      items.map((i) => {
-        const sold = soldMap.get(key(i.product_id, i.variant_id)) || { qty: 0, value: 0 };
-        return {
-          ...i,
-          batches: batchMap.get(key(i.product_id, i.variant_id)) || [],
-          stockValue: i.stock_qty * i.avg_cost,
-          soldQty: sold.qty,
-          salesValue: sold.value,
-        };
-      })
-    );
-    setLoading(false);
+    setRows((rs) => rs.map((x) => (x.key === row.key ? { ...x, batches: list } : x)));
   }
 
   // Two sheets: what the page shows, and a blank count sheet shaped exactly
@@ -133,7 +116,7 @@ export default function InventoryPage() {
       "Units Sold": r.soldQty,
       Price: r.price,
       ...(canSeeCost ? { "Stock Value": r.stockValue } : {}),
-      Expiry: r.batches[0]?.expiry || "",
+      Expiry: r.nearestExpiry || "",
     }));
     const count = filtered.map((r) => ({
       SKU: r.sku || "",
@@ -160,14 +143,12 @@ export default function InventoryPage() {
       if (statusFilter === "out_of_stock" && r.stock_qty > 0) return false;
       if (statusFilter === "low" && !(r.stock_qty > 0 && r.stock_qty <= 5)) return false;
       if (statusFilter === "expiring") {
-        const soon = r.batches.some(
-          (b) => b.expiry && new Date(b.expiry).getTime() - now < thirtyDays && new Date(b.expiry).getTime() >= now
-        );
-        if (!soon) return false;
+        const e = r.nearestExpiry ? new Date(r.nearestExpiry).getTime() : null;
+        if (!(e !== null && e >= now && e - now < thirtyDays)) return false;
       }
       if (statusFilter === "expired") {
-        const bad = r.batches.some((b) => b.expiry && new Date(b.expiry).getTime() < now);
-        if (!bad) return false;
+        const e = r.nearestExpiry ? new Date(r.nearestExpiry).getTime() : null;
+        if (!(e !== null && e < now)) return false;
       }
       if (q && !r.display_name.toLowerCase().includes(q) && !(r.sku || "").toLowerCase().includes(q))
         return false;
@@ -279,7 +260,7 @@ export default function InventoryPage() {
           <tbody>
             {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filtered.map((r) => {
-              const nearest = r.batches[0]?.expiry || null;
+              const nearest = r.nearestExpiry;
               const expired = nearest ? new Date(nearest).getTime() < now : false;
               const soon = nearest && !expired ? new Date(nearest).getTime() - now < thirtyDays : false;
               return (
@@ -301,8 +282,8 @@ export default function InventoryPage() {
                       {soon && " ⏰"}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {r.batches.length > 1 && (
-                        <button onClick={() => setExpanded(expanded === r.key ? null : r.key)}
+                      {r.batchCount > 1 && (
+                        <button onClick={() => { const open = expanded === r.key ? null : r.key; setExpanded(open); if (open) loadBatches(r); }}
                           className="text-blue-600 text-xs font-medium">
                           {expanded === r.key ? t("ledger_hideMovement") : t("ledger_expiryBatches")}
                         </button>
