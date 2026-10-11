@@ -198,8 +198,9 @@ export default function InventoryPage() {
 
       <div className="flex flex-wrap gap-2 mb-4">
         {!isStoreLocked && (
-          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          <select className={"border rounded-lg px-3 py-2 text-sm " + (locId ? "border-slate-200" : "border-blue-500 ring-2 ring-blue-100")}
             value={locId} onChange={(e) => setLocId(e.target.value)}>
+            {!locId && <option value="">{t("store_choose")}</option>}
             {stores.map((s) => (
               <option key={s.id} value={s.id}>{s.is_warehouse ? `🏭 ${s.name}` : s.name}</option>
             ))}
@@ -226,7 +227,7 @@ export default function InventoryPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+      {locId && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("warehouse_products")}</div>
           <div className="text-xl font-bold mt-1">{totals.products}</div>
@@ -253,9 +254,15 @@ export default function InventoryPage() {
           <div className="text-xs text-slate-500 uppercase">{t("warehouse_outOfStock")}</div>
           <div className="text-xl font-bold mt-1 text-red-600">{totals.outOfStock}</div>
         </div>
-      </div>
+      </div>}
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+      {!locId && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-sm">
+          {t("store_chooseFirst")}
+        </div>
+      )}
+
+      {locId && <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
@@ -332,7 +339,7 @@ export default function InventoryPage() {
             )}
           </tbody>
         </table>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -41,9 +41,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // arrived - long enough for a cashier to see another branch's screen.
     if (isStoreLocked) return;
 
-    if (data && data.length > 0 && !storeId) {
-      const firstRetail = data.find((s) => !s.is_warehouse) || data[0];
-      setStoreIdState(firstRetail.id);
+    // An account with a branch on its profile opens on that branch. An office
+    // account has none, and guessing one for them is how stock gets counted
+    // against the wrong shop - so it stays empty until a person picks.
+    if (!storeId && profile?.store_id && (data || []).some((s) => s.id === profile.store_id)) {
+      setStoreIdState(profile.store_id);
     }
   }
 
