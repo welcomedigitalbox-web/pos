@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
 import * as XLSX from "xlsx";
+import ProductDetail from "./detail";
 
 function fmt(n: number) {
   return Number(n || 0).toLocaleString() + " MMK";
@@ -47,6 +48,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Row | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "inventory")) router.replace("/");
@@ -254,6 +256,11 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {detail && (
+        <ProductDetail row={detail} storeId={locId} canSeeCost={canSeeCost}
+          onClose={() => setDetail(null)} />
+      )}
+
       {locId && <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-slate-50 text-slate-500">
@@ -277,7 +284,12 @@ export default function InventoryPage() {
               return (
                 <Fragment key={r.key}>
                   <tr className="border-t border-slate-100">
-                    <td className="px-3 py-2">{r.display_name}</td>
+                    <td className="px-3 py-2">
+                      <button onClick={() => setDetail(r)}
+                        className="text-left hover:text-blue-600 hover:underline">
+                        {r.display_name}
+                      </button>
+                    </td>
                     <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                     <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : r.stock_qty <= 5 ? "text-orange-600" : ""}`}>
                       {r.stock_qty.toLocaleString()}
