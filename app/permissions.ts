@@ -15,6 +15,7 @@ export type PageKey =
   | "stock-in"
   | "stock-request"
   | "damage"
+  | "stock-adjust"
   | "incoming-transfers"
   | "barcode"
   | "labels"
@@ -106,6 +107,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
   { key: "damage", href: "/damage", labelKey: "nav_damage", group: "inventory" },
+  { key: "stock-adjust", href: "/stock-adjust", labelKey: "nav_stockAdjust", group: "inventory" },
   { key: "incoming-transfers", href: "/incoming-transfers", labelKey: "nav_incomingTransfers", group: "inventory" },
   { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "setup" },
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "warehouse" },
