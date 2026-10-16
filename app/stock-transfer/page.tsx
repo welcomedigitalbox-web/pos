@@ -506,57 +506,6 @@ export default function StockTransferPage() {
         </div>
       </div>
 
-      {/* Available to send */}
-      <h3 className="font-semibold mb-2">{t("stockTransfer_availableTitle")}</h3>
-      <input
-        className="w-full sm:w-96 border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2"
-        placeholder={t("warehouse_searchPlaceholder")}
-        value={search}
-        onChange={(e) => {
-          const v = e.target.value;
-          setSearch(v);
-          const hit = items.find(
-            (i) => (i.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
-          );
-          if (hit) {
-            openTransfer(hit);
-            setSearch("");
-          }
-        }}
-      />
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colAvgCost")}</th>
-              <th className="text-left px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={5} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && filteredItems.map((i) => (
-              <tr key={i.key} className="border-t border-slate-100">
-                <td className="px-3 py-2">{i.display_name}</td>
-                <td className="px-3 py-2 text-slate-400">{i.sku || "-"}</td>
-                <td className="px-3 py-2 font-medium">{i.stock_qty.toLocaleString()}</td>
-                <td className="px-3 py-2 text-slate-500">{fmt(i.avg_cost)}</td>
-                <td className="px-3 py-2 text-right">
-                  <button onClick={() => openTransfer(i)} className="text-blue-600 text-xs font-medium">
-                    {t("warehouseTransfer_button")}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {!loading && filteredItems.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-slate-400 py-8">{t("stockTransfer_noneAvailable")}</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
       {/* Outgoing tracking */}
       <h3 className="font-semibold mb-2">{t("stockTransfer_outgoingTitle")}</h3>
       <div className="flex flex-wrap gap-2 mb-2">
