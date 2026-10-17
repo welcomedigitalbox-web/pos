@@ -55,7 +55,7 @@ export default function ReceivablesPage() {
 
   useEffect(() => {
     supabase
-      .from("payment_methods")
+      .from("pay_methods_v")
       .select("code,name,is_cash")
       .eq("use_in_pos", true)
       .order("sort_order")
