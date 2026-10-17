@@ -21,6 +21,9 @@ type PoRow = {
   supplierName: string;
   total: number;
   paid: number;
+  payStatus: string;
+  voucherNo: string | null;
+  lastPaidOn: string | null;
 };
 
 const statusColor: Record<PoStatus, string> = {
@@ -74,8 +77,16 @@ export default function PurchaseOrdersPage() {
 
     const { data: pos } = await supabase
       .from("purchase_orders")
-      .select("*, suppliers(name), purchase_order_items(qty, unit_cost), po_payments(amount)")
+      .select("*, suppliers(name), purchase_order_items(qty, unit_cost)")
       .order("created_at", { ascending: false });
+
+    // What was actually paid lives in finance, not in this app's own
+    // po_payments table - reading that one is why a paid bill still looked due.
+    const { data: payRows } = await supabase
+      .from("po_payment_status")
+      .select("po_id, paid_amount, pay_status, voucher_no, last_paid_on");
+    const payByPo = new Map<string, any>();
+    for (const p of (payRows as any[]) || []) payByPo.set(p.po_id, p);
 
     setRows(
       ((pos as any[]) || []).map((po) => ({
@@ -87,7 +98,10 @@ export default function PurchaseOrdersPage() {
         supplierName: po.suppliers?.name || "-",
         total: (po.purchase_order_items || []).reduce(
           (s: number, i: any) => s + Number(i.qty) * Number(i.unit_cost), 0),
-        paid: (po.po_payments || []).reduce((s: number, p: any) => s + Number(p.amount), 0),
+        paid: Number(payByPo.get(po.id)?.paid_amount || 0),
+        payStatus: payByPo.get(po.id)?.pay_status || "no_bill",
+        voucherNo: payByPo.get(po.id)?.voucher_no || null,
+        lastPaidOn: payByPo.get(po.id)?.last_paid_on || null,
       }))
     );
     setLoading(false);
@@ -195,11 +209,12 @@ export default function PurchaseOrdersPage() {
               <th className="text-left px-4 py-2">{t("pos_total")}</th>
               <th className="text-left px-4 py-2">{t("po_balance")}</th>
               <th className="text-left px-4 py-2">{t("saleOrder_status")}</th>
+              <th className="text-left px-4 py-2">Payment</th>
               <th className="text-left px-4 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-8">...</td></tr>}
+            {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
             {!loading && filtered.map((r) => {
               const balance = r.total - r.paid;
               return (
@@ -217,6 +232,23 @@ export default function PurchaseOrdersPage() {
                       {t(`po_status_${r.status}` as any)}
                     </span>
                   </td>
+                  <td className="px-4 py-2">
+                    {r.payStatus === "no_bill" ? (
+                      <span className="text-xs text-slate-400">no bill yet</span>
+                    ) : (
+                      <>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          r.payStatus === "paid" ? "bg-green-100 text-green-700"
+                          : r.payStatus === "partial" ? "bg-yellow-100 text-yellow-700"
+                          : "bg-red-100 text-red-700"}`}>
+                          {r.payStatus}
+                        </span>
+                        <div className="text-[10px] text-slate-400">
+                          {r.voucherNo}{r.lastPaidOn ? ` \u00b7 ${r.lastPaidOn}` : ""}
+                        </div>
+                      </>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <Link href={`/purchase-orders/${r.id}`} className="text-blue-600 text-xs font-medium">
                       {t("products_view")}
@@ -226,7 +258,7 @@ export default function PurchaseOrdersPage() {
               );
             })}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
+              <tr><td colSpan={9} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
