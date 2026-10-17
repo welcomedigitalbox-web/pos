@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { supabase, upsertStoreInventory, logActivity, uploadTransferPhoto, getTransferPhotoUrl } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
-import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
+import { hasPermission, isManagerTier } from "../permissions";
 
 type TransferRow = {
   id: string;
+  transfer_no: string | null;
   product_id: string;
   variant_id: string | null;
   from_store_id: string | null;
@@ -27,11 +28,28 @@ type TransferRow = {
   sku: string | null;
 };
 
+// A delivery is one shipment, not a pile of loose lines. The page groups by the
+// transfer number so a person signs for what actually turned up at the door.
+type Group = {
+  ref: string;
+  created_at: string;
+  from_store_id: string | null;
+  to_store_id: string;
+  transferred_by: string | null;
+  received_by: string | null;
+  received_at: string | null;
+  lines: TransferRow[];
+  sentQty: number;
+  gotQty: number | null;
+  status: string;
+};
+
 const statusColor: Record<string, string> = {
   in_transit: "bg-yellow-100 text-yellow-700",
   pending_approval: "bg-orange-100 text-orange-700",
   received: "bg-green-100 text-green-700",
   discrepancy: "bg-red-100 text-red-700",
+  mixed: "bg-slate-100 text-slate-600",
 };
 
 export default function IncomingTransfersPage() {
@@ -46,14 +64,16 @@ export default function IncomingTransfersPage() {
   const [rows, setRows] = useState<TransferRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
 
-  const [confirmRow, setConfirmRow] = useState<TransferRow | null>(null);
-  const [actualQty, setActualQty] = useState("");
+  const [confirmGroup, setConfirmGroup] = useState<Group | null>(null);
+  const [counts, setCounts] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [approvalPin, setApprovalPin] = useState("");
   const [photoLink, setPhotoLink] = useState<string | null>(null);
+  const [printGroup, setPrintGroup] = useState<Group | null>(null);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "incoming-transfers")) router.replace("/");
@@ -75,7 +95,7 @@ export default function IncomingTransfersPage() {
       .from("stock_transfers")
       .select("*, products(name, sku), product_variants(variant_name, sku)")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(500);
     if (!isManagerLevel) query = query.eq("to_store_id", storeId);
     const { data } = await query;
 
@@ -96,27 +116,150 @@ export default function IncomingTransfersPage() {
     setTimeout(() => setToast(""), 3500);
   }
 
-  function openConfirm(row: TransferRow) {
-    setConfirmRow(row);
-    setActualQty(String(row.qty));
+  // Rows that arrived together share a transfer number. Older rows predate it,
+  // so they fall back to their own id and simply appear on their own.
+  const groups: Group[] = (() => {
+    const by = new Map<string, Group>();
+    for (const r of rows) {
+      const ref = r.transfer_no || r.id;
+      let g = by.get(ref);
+      if (!g) {
+        g = {
+          ref,
+          created_at: r.created_at,
+          from_store_id: r.from_store_id,
+          to_store_id: r.to_store_id,
+          transferred_by: r.transferred_by,
+          received_by: r.received_by,
+          received_at: r.received_at,
+          lines: [],
+          sentQty: 0,
+          gotQty: null,
+          status: r.status,
+        };
+        by.set(ref, g);
+      }
+      g.lines.push(r);
+      g.sentQty += Number(r.qty || 0);
+      if (r.received_qty !== null) g.gotQty = Number(g.gotQty || 0) + Number(r.received_qty);
+      if (g.status !== r.status) g.status = "mixed";
+      if (!g.received_by && r.received_by) g.received_by = r.received_by;
+      if (!g.received_at && r.received_at) g.received_at = r.received_at;
+    }
+    return Array.from(by.values());
+  })();
+
+  function openConfirm(g: Group) {
+    const pending = g.lines.filter((l) => l.status === "in_transit");
+    setConfirmGroup({ ...g, lines: pending });
+    const c: Record<string, string> = {};
+    for (const l of pending) c[l.id] = String(l.qty);
+    setCounts(c);
     setNote("");
     setPhotoFile(null);
     setApprovalPin("");
   }
 
-  async function submitConfirm() {
-    if (!confirmRow) return;
-    const actual = Number(actualQty);
-    if (isNaN(actual) || actual < 0) return showToast(t("stockRequest_qtyInvalid"));
+  /** Move one line's goods into the receiving store: stock, average cost and
+   *  the batches that carry the expiry dates. */
+  async function applyLine(line: TransferRow, actual: number) {
+    const dest = line.to_store_id;
 
-    const mismatch = actual !== confirmRow.qty;
+    const { data: existing } = await (line.variant_id
+      ? supabase.from("store_inventory").select("*")
+          .eq("store_id", dest).eq("product_id", line.product_id)
+          .eq("variant_id", line.variant_id).maybeSingle()
+      : supabase.from("store_inventory").select("*")
+          .eq("store_id", dest).eq("product_id", line.product_id)
+          .is("variant_id", null).maybeSingle());
+
+    const sourceStore = line.from_store_id || "";
+    const { data: sourceInv } = await (line.variant_id
+      ? supabase.from("store_inventory").select("avg_cost")
+          .eq("store_id", sourceStore).eq("product_id", line.product_id)
+          .eq("variant_id", line.variant_id).maybeSingle()
+      : supabase.from("store_inventory").select("avg_cost")
+          .eq("store_id", sourceStore).eq("product_id", line.product_id)
+          .is("variant_id", null).maybeSingle());
+
+    const stampedCost = Number(line.unit_cost || 0);
+    const incomingCost = stampedCost > 0
+      ? stampedCost
+      : Number(sourceInv?.avg_cost ?? existing?.avg_cost ?? 0);
+    const heldQty = Number(existing?.stock_qty || 0);
+    const heldCost = Number(existing?.avg_cost || 0);
+    const newQty = heldQty + actual;
+    const newAvg =
+      newQty > 0 ? (heldQty * heldCost + actual * incomingCost) / newQty : incomingCost;
+
+    await upsertStoreInventory(dest, line.product_id, line.variant_id, {
+      stock_qty: newQty,
+      avg_cost: newAvg,
+      last_purchase_cost: incomingCost,
+    });
+
+    let batchQuery = supabase
+      .from("stock_purchases")
+      .select("*")
+      .eq("store_id", sourceStore)
+      .eq("product_id", line.product_id)
+      .gt("remaining_qty", 0);
+    batchQuery = line.variant_id
+      ? batchQuery.eq("variant_id", line.variant_id)
+      : batchQuery.is("variant_id", null);
+    const { data: sourceBatches } = await batchQuery.order("expiry_date", {
+      ascending: true,
+      nullsFirst: false,
+    });
+
+    // First to expire leaves first
+    let toMove = actual;
+    for (const b of (sourceBatches as any[]) || []) {
+      if (toMove <= 0) break;
+      const take = Math.min(toMove, Number(b.remaining_qty));
+
+      await supabase
+        .from("stock_purchases")
+        .update({ remaining_qty: Number(b.remaining_qty) - take })
+        .eq("id", b.id);
+
+      await supabase.from("stock_purchases").insert({
+        product_id: line.product_id,
+        variant_id: line.variant_id,
+        store_id: dest,
+        supplier: b.supplier,
+        qty: take,
+        unit_cost: b.unit_cost,
+        total_cost: take * Number(b.unit_cost),
+        new_avg_cost: newAvg,
+        remaining_qty: take,
+        expiry_date: b.expiry_date,
+        received_by: profile?.email || null,
+        received_at: new Date().toISOString(),
+      });
+
+      toMove -= take;
+    }
+  }
+
+  async function submitConfirm() {
+    if (!confirmGroup) return;
+    const lines = confirmGroup.lines;
+
+    for (const l of lines) {
+      const n = Number(counts[l.id]);
+      if (isNaN(n) || n < 0) return showToast(t("stockRequest_qtyInvalid"));
+    }
+    const shortLines = lines.filter((l) => Number(counts[l.id]) !== l.qty);
+    const mismatch = shortLines.length > 0;
     if (mismatch && !note.trim()) return showToast(t("transferIn_noteRequired"));
     if (mismatch && !photoFile) return showToast(t("transferIn_photoRequired"));
+
     setSaving(true);
     try {
-      // A discrepancy writes off stock, so it needs a manager. Either they enter a
-      // PIN here, or it waits in pending_approval for them to approve from their
-      // own account — same two paths as a sale return.
+      // A short delivery writes off stock, so it needs a manager. Either they
+      // enter a PIN here, or it waits in pending_approval for them to approve
+      // from their own account.
       let approvedBy: string | null = isManagerLevel ? profile?.email || null : null;
       if (mismatch && !isManagerLevel && approvalPin.trim()) {
         const { data: verify, error: verifyErr } = await supabase.functions.invoke(
@@ -131,201 +274,122 @@ export default function IncomingTransfersPage() {
         approvedBy = verify.approver_email;
       }
 
-      const needsApproval = mismatch && !approvedBy;
-
       let photoPath: string | null = null;
-      if (photoFile) photoPath = await uploadTransferPhoto(photoFile, storeId, confirmRow.id);
-
-      // Credit the store with what actually arrived, not what was sent
-      const { data: existing } = await (confirmRow.variant_id
-        ? supabase.from("store_inventory").select("*")
-            .eq("store_id", storeId).eq("product_id", confirmRow.product_id)
-            .eq("variant_id", confirmRow.variant_id).maybeSingle()
-        : supabase.from("store_inventory").select("*")
-            .eq("store_id", storeId).eq("product_id", confirmRow.product_id)
-            .is("variant_id", null).maybeSingle());
-
-      // Carry the SENDING location's cost across. This used to look at a
-      // hardcoded warehouse id, so any other warehouse produced a zero cost.
-      const sourceStore = confirmRow.from_store_id || "";
-      const { data: sourceInv } = await (confirmRow.variant_id
-        ? supabase.from("store_inventory").select("avg_cost")
-            .eq("store_id", sourceStore).eq("product_id", confirmRow.product_id)
-            .eq("variant_id", confirmRow.variant_id).maybeSingle()
-        : supabase.from("store_inventory").select("avg_cost")
-            .eq("store_id", sourceStore).eq("product_id", confirmRow.product_id)
-            .is("variant_id", null).maybeSingle());
-
-      if (!needsApproval) {
-        // Weighted average, so receiving at a different cost doesn't overwrite
-        // what the store already holds
-        // The transfer carries its own cost. sourceInv is a fallback for rows
-        // created before that column existed, and is null anyway whenever RLS
-        // hides the sending warehouse from this account.
-        const stampedCost = Number((confirmRow as any).unit_cost || 0);
-        const incomingCost = stampedCost > 0
-          ? stampedCost
-          : Number(sourceInv?.avg_cost ?? existing?.avg_cost ?? 0);
-        const heldQty = Number(existing?.stock_qty || 0);
-        const heldCost = Number(existing?.avg_cost || 0);
-        const newQty = heldQty + actual;
-        const newAvg =
-          newQty > 0 ? (heldQty * heldCost + actual * incomingCost) / newQty : incomingCost;
-
-        await upsertStoreInventory(storeId, confirmRow.product_id, confirmRow.variant_id, {
-          stock_qty: newQty,
-          avg_cost: newAvg,
-          last_purchase_cost: incomingCost,
-        });
-
-        // Batches carry the expiry dates, so they have to move with the goods —
-        // otherwise the receiving store shows stock with no expiry at all.
-        let batchQuery = supabase
-          .from("stock_purchases")
-          .select("*")
-          .eq("store_id", sourceStore)
-          .eq("product_id", confirmRow.product_id)
-          .gt("remaining_qty", 0);
-        batchQuery = confirmRow.variant_id
-          ? batchQuery.eq("variant_id", confirmRow.variant_id)
-          : batchQuery.is("variant_id", null);
-        const { data: sourceBatches } = await batchQuery.order("expiry_date", {
-          ascending: true,
-          nullsFirst: false,
-        });
-
-        // First to expire leaves first
-        let toMove = actual;
-        for (const b of (sourceBatches as any[]) || []) {
-          if (toMove <= 0) break;
-          const take = Math.min(toMove, Number(b.remaining_qty));
-
-          await supabase
-            .from("stock_purchases")
-            .update({ remaining_qty: Number(b.remaining_qty) - take })
-            .eq("id", b.id);
-
-          await supabase.from("stock_purchases").insert({
-            product_id: confirmRow.product_id,
-            variant_id: confirmRow.variant_id,
-            store_id: storeId,
-            supplier: b.supplier,
-            qty: take,
-            unit_cost: b.unit_cost,
-            total_cost: take * Number(b.unit_cost),
-            new_avg_cost: newAvg,
-            remaining_qty: take,
-            expiry_date: b.expiry_date,
-            received_by: profile?.email || null,
-            received_at: new Date().toISOString(),
-          });
-
-          toMove -= take;
-        }
+      if (photoFile) {
+        photoPath = await uploadTransferPhoto(photoFile, confirmGroup.to_store_id, confirmGroup.ref);
       }
 
-      const { error } = await supabase
-        .from("stock_transfers")
-        .update({
-          received_qty: actual,
-          status: needsApproval ? "pending_approval" : mismatch ? "discrepancy" : "received",
-          received_by: profile?.email || null,
-          received_at: new Date().toISOString(),
-          discrepancy_note: mismatch ? note.trim() : null,
-          photo_url: photoPath,
-          discrepancy_approved_by: mismatch ? approvedBy : null,
-        })
-        .eq("id", confirmRow.id);
-      if (error) throw error;
+      for (const l of lines) {
+        const actual = Number(counts[l.id]);
+        const lineShort = actual !== l.qty;
+        const needsApproval = lineShort && !approvedBy;
+
+        if (!needsApproval) await applyLine(l, actual);
+
+        const { error } = await supabase
+          .from("stock_transfers")
+          .update({
+            received_qty: actual,
+            status: needsApproval ? "pending_approval" : lineShort ? "discrepancy" : "received",
+            received_by: profile?.email || null,
+            received_at: new Date().toISOString(),
+            discrepancy_note: lineShort ? note.trim() : null,
+            photo_url: lineShort ? photoPath : null,
+            discrepancy_approved_by: lineShort ? approvedBy : null,
+          })
+          .eq("id", l.id);
+        if (error) throw error;
+      }
 
       await logActivity({
         entityType: "stock_transfer",
-        entityId: confirmRow.id,
+        entityId: confirmGroup.ref,
         action: mismatch ? "received_with_discrepancy" : "received",
-        detail: `${confirmRow.display_name}: ${t("transferIn_sent")} ${confirmRow.qty} → ${t("transferIn_actual")} ${actual}${mismatch ? ` · ${note.trim()}` : ""}`,
+        detail: `${confirmGroup.ref}: ${lines.length} lines · ${t("transferIn_sent")} ${confirmGroup.sentQty} → ${t("transferIn_actual")} ${lines.reduce((s, l) => s + Number(counts[l.id] || 0), 0)}${mismatch ? ` · ${note.trim()}` : ""}`,
         actor: profile?.email,
       });
 
       showToast(
-        needsApproval
+        mismatch && !approvedBy
           ? t("transferIn_awaitingApproval")
           : mismatch
           ? t("transferIn_discrepancyLogged")
           : t("transferIn_confirmed")
       );
-      setConfirmRow(null);
+      setConfirmGroup(null);
       await load();
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + ((err as { message?: string })?.message ?? JSON.stringify(err)));
     } finally {
       setSaving(false);
     }
   }
 
-  async function approveDiscrepancy(r: TransferRow) {
+  async function approveGroup(g: Group) {
     if (!confirm(t("transferIn_approveConfirm"))) return;
     try {
-      const { data: existing } = await (r.variant_id
-        ? supabase.from("store_inventory").select("*").eq("store_id", r.to_store_id)
-            .eq("product_id", r.product_id).eq("variant_id", r.variant_id).maybeSingle()
-        : supabase.from("store_inventory").select("*").eq("store_id", r.to_store_id)
-            .eq("product_id", r.product_id).is("variant_id", null).maybeSingle());
-
-      await upsertStoreInventory(r.to_store_id, r.product_id, r.variant_id, {
-        stock_qty: Number(existing?.stock_qty || 0) + Number(r.received_qty ?? 0),
-      });
-
-      await supabase
-        .from("stock_transfers")
-        .update({ status: "discrepancy", discrepancy_approved_by: profile?.email || null })
-        .eq("id", r.id);
-
+      for (const r of g.lines.filter((l) => l.status === "pending_approval")) {
+        await applyLine(r, Number(r.received_qty ?? 0));
+        await supabase
+          .from("stock_transfers")
+          .update({ status: "discrepancy", discrepancy_approved_by: profile?.email || null })
+          .eq("id", r.id);
+      }
       await logActivity({
         entityType: "stock_transfer",
-        entityId: r.id,
+        entityId: g.ref,
         action: "discrepancy_approved",
-        detail: `${r.display_name}: ${t("transferIn_sent")} ${r.qty} → ${t("transferIn_actual")} ${r.received_qty}`,
+        detail: `${g.ref}: ${t("transferIn_sent")} ${g.sentQty} → ${t("transferIn_actual")} ${g.gotQty ?? 0}`,
         actor: profile?.email,
       });
-
       showToast(t("transferIn_discrepancyLogged"));
       await load();
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + ((err as { message?: string })?.message ?? JSON.stringify(err)));
     }
   }
 
-  const pending = rows.filter((r) => r.status === "in_transit");
-  const awaitingApproval = rows.filter((r) => r.status === "pending_approval");
+  // The goods note people file in a folder. Rendered hidden, then printed, so
+  // the browser's own "Save as PDF" produces the file.
+  function printReceipt(g: Group) {
+    setPrintGroup(g);
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => setPrintGroup(null), 500);
+    }, 300);
+  }
+
+  const pendingGroups = groups.filter((g) => g.lines.some((l) => l.status === "in_transit"));
+  const approvalGroups = groups.filter((g) => g.lines.some((l) => l.status === "pending_approval"));
   const storeName = stores.find((s) => s.id === storeId)?.name || storeId;
 
   return (
     <div className="pt-4">
-      <h2 className="font-semibold text-lg mb-1">{t("nav_incomingTransfers")}</h2>
-      <p className="text-sm text-slate-500 mb-4">
+      <h2 className="font-semibold text-lg mb-1 print:hidden">{t("nav_incomingTransfers")}</h2>
+      <p className="text-sm text-slate-500 mb-4 print:hidden">
         {storeName} · {t("transferIn_pendingCount")}:{" "}
-        <span className="font-semibold text-orange-600">{pending.length}</span>
-        {awaitingApproval.length > 0 && (
+        <span className="font-semibold text-orange-600">{pendingGroups.length}</span>
+        {approvalGroups.length > 0 && (
           <>
             {" · "}
             <span className="font-semibold text-red-600">
-              {t("transferIn_status_pending_approval")}: {awaitingApproval.length}
+              {t("transferIn_status_pending_approval")}: {approvalGroups.length}
             </span>
           </>
         )}
       </p>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[820px]">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto print:hidden">
+        <table className="w-full text-sm min-w-[860px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
+              <th className="text-left px-3 py-2 w-6"></th>
+              <th className="text-left px-3 py-2">No.</th>
               <th className="text-left px-3 py-2">{t("history_time")}</th>
-              {isManagerLevel && <th className="text-left px-3 py-2">{t("stockTransfer_toStore")}</th>}
-              <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
+              <th className="text-left px-3 py-2">{t("stockTransfer_toStore")}</th>
+              <th className="text-left px-3 py-2">{t("stockTransfer_lines")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_sent")}</th>
               <th className="text-left px-3 py-2">{t("transferIn_actual")}</th>
-              <th className="text-left px-3 py-2">{t("transferIn_diff")}</th>
               <th className="text-left px-3 py-2">{t("saleOrder_status")}</th>
               <th className="text-left px-3 py-2">{t("po_receivedBy")}</th>
               <th className="text-left px-3 py-2"></th>
@@ -333,88 +397,147 @@ export default function IncomingTransfersPage() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={10} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && rows.map((r) => {
-              const diff = r.received_qty === null ? null : r.received_qty - r.qty;
+            {!loading && groups.map((g) => {
+              const diff = g.gotQty === null ? null : g.gotQty - g.sentQty;
+              const canConfirm = g.lines.some((l) => l.status === "in_transit");
+              const canApprove = g.lines.some((l) => l.status === "pending_approval");
               return (
-                <tr key={r.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2">{new Date(r.created_at).toLocaleString()}</td>
-                  {isManagerLevel && <td className="px-3 py-2 font-medium">{r.to_store_id}</td>}
-                  <td className="px-3 py-2">{r.display_name}</td>
-                  <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
-                  <td className="px-3 py-2">{r.qty}</td>
-                  <td className="px-3 py-2 font-medium">{r.received_qty ?? "-"}</td>
-                  <td className={`px-3 py-2 font-medium ${diff ? "text-red-600" : "text-slate-400"}`}>
-                    {diff === null ? "-" : diff === 0 ? "0" : diff > 0 ? `+${diff}` : diff}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[r.status]}`}>
-                      {t(`transferIn_status_${r.status}` as any)}
-                    </span>
-                    {r.discrepancy_note && (
-                      <div className="text-[10px] text-red-600 mt-0.5">{r.discrepancy_note}</div>
-                    )}
-                    {(r as any).discrepancy_approved_by && (
-                      <div className="text-[10px] text-slate-400">
-                        {t("returns_approve")}: {(r as any).discrepancy_approved_by}
-                      </div>
-                    )}
-                    {(r as any).photo_url && (
+                <Fragment key={g.ref}>
+                  <tr className="border-t border-slate-100">
+                    <td className="px-3 py-2">
                       <button
-                        onClick={async () => setPhotoLink(await getTransferPhotoUrl((r as any).photo_url))}
-                        className="text-[10px] text-blue-600 font-medium"
-                      >
-                        📎 {t("transferIn_viewPhoto")}
+                        onClick={() => setOpen((p) => ({ ...p, [g.ref]: !p[g.ref] }))}
+                        className="text-slate-400 text-xs">
+                        {open[g.ref] ? "▾" : "▸"}
                       </button>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-slate-500 text-xs">{r.received_by || "-"}</td>
-                  <td className="px-3 py-2 text-right">
-                    {r.status === "in_transit" && (
-                      <button onClick={() => openConfirm(r)} className="text-blue-600 text-xs font-medium">
-                        {t("transferIn_confirm")}
-                      </button>
-                    )}
-                    {r.status === "pending_approval" && (
-                      isManagerLevel ? (
-                        <button onClick={() => approveDiscrepancy(r)} className="text-green-600 text-xs font-medium">
-                          {t("returns_approve")}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">{g.ref}</td>
+                    <td className="px-3 py-2">{new Date(g.created_at).toLocaleString()}</td>
+                    <td className="px-3 py-2">
+                      {g.from_store_id || "-"} → {g.to_store_id}
+                    </td>
+                    <td className="px-3 py-2">{g.lines.length}</td>
+                    <td className="px-3 py-2 font-medium">{g.sentQty}</td>
+                    <td className={`px-3 py-2 font-medium ${diff ? "text-red-600" : ""}`}>
+                      {g.gotQty === null ? "-" : g.gotQty}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColor[g.status] || statusColor.mixed}`}>
+                        {g.status === "mixed"
+                          ? t("stockTransfer_statusMixed")
+                          : t(`transferIn_status_${g.status}` as any)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-500 text-xs">{g.received_by || "-"}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {canConfirm && (
+                        <button onClick={() => openConfirm(g)}
+                          className="text-blue-600 text-xs font-medium mr-3">
+                          {t("transferIn_confirm")}
                         </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">{t("transferIn_awaitingManager")}</span>
-                      )
-                    )}
-                  </td>
-                </tr>
+                      )}
+                      {canApprove && (
+                        isManagerLevel ? (
+                          <button onClick={() => approveGroup(g)}
+                            className="text-green-600 text-xs font-medium mr-3">
+                            {t("returns_approve")}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 mr-3">{t("transferIn_awaitingManager")}</span>
+                        )
+                      )}
+                      <button onClick={() => printReceipt(g)}
+                        className="text-slate-600 text-xs font-medium">
+                        PDF
+                      </button>
+                    </td>
+                  </tr>
+
+                  {open[g.ref] && g.lines.map((l) => {
+                    const d = l.received_qty === null ? null : l.received_qty - l.qty;
+                    return (
+                      <tr key={l.id} className="bg-slate-50/60 border-t border-slate-100 text-xs">
+                        <td></td>
+                        <td className="px-3 py-1.5 text-slate-400">{l.sku || "-"}</td>
+                        <td className="px-3 py-1.5" colSpan={2}>{l.display_name}</td>
+                        <td></td>
+                        <td className="px-3 py-1.5">{l.qty}</td>
+                        <td className={`px-3 py-1.5 ${d ? "text-red-600 font-medium" : ""}`}>
+                          {l.received_qty ?? "-"}
+                          {d ? ` (${d > 0 ? "+" : ""}${d})` : ""}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${statusColor[l.status]}`}>
+                            {t(`transferIn_status_${l.status}` as any)}
+                          </span>
+                          {l.discrepancy_note && (
+                            <div className="text-[10px] text-red-600 mt-0.5">{l.discrepancy_note}</div>
+                          )}
+                        </td>
+                        <td colSpan={2} className="px-3 py-1.5 text-right">
+                          {(l as any).photo_url && (
+                            <button
+                              onClick={async () => setPhotoLink(await getTransferPhotoUrl((l as any).photo_url))}
+                              className="text-[10px] text-blue-600 font-medium">
+                              📎 {t("transferIn_viewPhoto")}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
               );
             })}
-            {!loading && rows.length === 0 && (
+            {!loading && groups.length === 0 && (
               <tr><td colSpan={10} className="text-center text-slate-400 py-8">-</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {confirmRow && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-lg">
+      {confirmGroup && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 print:hidden">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-lg max-h-[85vh] overflow-y-auto">
             <h3 className="font-semibold text-lg mb-1">{t("transferIn_confirm")}</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              {confirmRow.display_name} · {t("transferIn_sent")}: {confirmRow.qty}
-            </p>
+            <p className="text-sm text-slate-500 mb-4 font-mono">{confirmGroup.ref}</p>
 
-            <label className="text-sm text-slate-600">{t("transferIn_actual")}</label>
-            <input
-              type="number"
-              autoFocus
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-              value={actualQty}
-              onChange={(e) => setActualQty(e.target.value)}
-            />
+            <table className="w-full text-sm mb-4">
+              <thead className="text-slate-500 text-xs">
+                <tr>
+                  <th className="text-left py-1">{t("stockIn_product")}</th>
+                  <th className="text-right py-1 w-16">{t("transferIn_sent")}</th>
+                  <th className="text-right py-1 w-24">{t("transferIn_actual")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {confirmGroup.lines.map((l) => {
+                  const n = Number(counts[l.id]);
+                  const short = !isNaN(n) && n !== l.qty;
+                  return (
+                    <tr key={l.id} className="border-t border-slate-100">
+                      <td className="py-1.5">
+                        {l.display_name}
+                        <div className="text-[10px] text-slate-400">{l.sku || ""}</div>
+                      </td>
+                      <td className="py-1.5 text-right">{l.qty}</td>
+                      <td className="py-1.5 text-right">
+                        <input type="number" min={0}
+                          className={`w-20 border rounded-lg px-2 py-1 text-sm text-right ${
+                            short ? "border-red-300 bg-red-50" : "border-slate-200"}`}
+                          value={counts[l.id] ?? ""}
+                          onChange={(e) => setCounts((p) => ({ ...p, [l.id]: e.target.value }))} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
 
-            {Number(actualQty) !== confirmRow.qty && (
+            {confirmGroup.lines.some((l) => Number(counts[l.id]) !== l.qty) && (
               <>
                 <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 mb-3">
-                  ⚠️ {t("transferIn_mismatchWarning")} ({Number(actualQty) - confirmRow.qty})
+                  ⚠️ {t("transferIn_mismatchWarning")}
                 </div>
                 <label className="text-sm text-slate-600">
                   {t("transferIn_note")} <span className="text-red-600">*</span>
@@ -448,7 +571,7 @@ export default function IncomingTransfersPage() {
             )}
 
             <div className="flex gap-2">
-              <button onClick={() => setConfirmRow(null)}
+              <button onClick={() => setConfirmGroup(null)}
                 className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-medium">
                 {t("products_cancel")}
               </button>
@@ -461,15 +584,58 @@ export default function IncomingTransfersPage() {
         </div>
       )}
 
+      {printGroup && (
+        <div className="hidden print:block text-sm">
+          <h1 className="text-lg font-semibold mb-1">Goods received note</h1>
+          <div className="mb-3 text-xs">
+            <div>No: {printGroup.ref}</div>
+            <div>{printGroup.from_store_id || "-"} → {printGroup.to_store_id}</div>
+            <div>Sent: {new Date(printGroup.created_at).toLocaleString()}</div>
+            {printGroup.received_at && (
+              <div>Received: {new Date(printGroup.received_at).toLocaleString()} · {printGroup.received_by}</div>
+            )}
+          </div>
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left border-b py-1">Product</th>
+                <th className="text-left border-b py-1">Code</th>
+                <th className="text-right border-b py-1">Sent</th>
+                <th className="text-right border-b py-1">Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {printGroup.lines.map((l) => (
+                <tr key={l.id}>
+                  <td className="py-1">{l.display_name}</td>
+                  <td className="py-1">{l.sku || "-"}</td>
+                  <td className="py-1 text-right">{l.qty}</td>
+                  <td className="py-1 text-right">{l.received_qty ?? "-"}</td>
+                </tr>
+              ))}
+              <tr>
+                <td className="border-t py-1 font-semibold" colSpan={2}>Total</td>
+                <td className="border-t py-1 text-right font-semibold">{printGroup.sentQty}</td>
+                <td className="border-t py-1 text-right font-semibold">{printGroup.gotQty ?? "-"}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="mt-10 flex justify-between text-xs">
+            <div>Received by ______________________</div>
+            <div>Checked by ______________________</div>
+          </div>
+        </div>
+      )}
+
       {photoLink && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 print:hidden"
           onClick={() => setPhotoLink(null)}>
           <img src={photoLink} alt="" className="max-h-[80vh] max-w-full rounded-lg" />
         </div>
       )}
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50 max-w-md text-center">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm z-50 max-w-md text-center print:hidden">
           {toast}
         </div>
       )}
