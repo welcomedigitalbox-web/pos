@@ -28,6 +28,8 @@ type Item = {
   qty: number;
   unit_price: number;
   line_total: number;
+  line_discount: number | null;
+  promo_discount: number | null;
 };
 
 type Pending = {
@@ -85,7 +87,7 @@ export default function InvoiceFixPage() {
       const [{ data: its }, { data: hist }] = await Promise.all([
         supabase
           .from("sale_items")
-          .select("id,product_name,qty,unit_price,line_total")
+          .select("id,product_name,qty,unit_price,line_total,line_discount,promo_discount")
           .eq("sale_id", (s as Sale).id)
           .order("product_name"),
         supabase
@@ -116,11 +118,14 @@ export default function InvoiceFixPage() {
     return Number(e.qty) !== Number(i.qty) || Number(e.price) !== Number(i.unit_price);
   });
 
+  // Discounts already on the line stay where they are, so the figure shown
+  // here matches what the invoice would actually come to.
   const newTotal = items.reduce((sum, i) => {
     const e = edits[i.id];
     const q = e ? Number(e.qty) || 0 : i.qty;
     const p = e ? Number(e.price) || 0 : i.unit_price;
-    return sum + q * p;
+    const off = Number(i.line_discount || 0) + Number(i.promo_discount || 0);
+    return sum + Math.max(q * p - off, 0);
   }, 0);
 
   async function submit() {

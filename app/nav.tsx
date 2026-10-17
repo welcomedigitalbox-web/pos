@@ -67,7 +67,10 @@ export default function Nav() {
       ? PAGE_OPTIONS.filter((p) => p.group === activeDept && hasPermission(profile, p.key))
       : [];
 
-  const showStoreSelector = pathname === "/";
+  // Which branch you are working in decides what every page shows and where
+  // a sale lands, so it belongs on screen everywhere, not only on the home
+  // page. A cashier could not see which shop the till was ringing up.
+  const showStoreSelector = true;
 
   return (
     <>
