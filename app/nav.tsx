@@ -137,7 +137,7 @@ export default function Nav() {
                     onChange={(e) => setStoreId(e.target.value)}
                   >
                     {!storeId && <option value="">{t("store_choose")}</option>}
-                    {stores.filter((s) => !s.is_warehouse).map((s) => (
+                    {stores.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>

@@ -7,6 +7,8 @@ import { useAuth } from "./auth-context";
 // A till account sees its own shop and nothing else. Warehouse people move
 // goods between branches, so they open on their own warehouse but may look
 // anywhere; what they are allowed to release is still checked on the server.
+const STORE_KEY = "edu.storeId";
+
 const STORE_LOCKED_ROLES = ["cashier", "online_sale", "wholesale"];
 
 type StoreContextType = {
@@ -41,6 +43,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // arrived - long enough for a cashier to see another branch's screen.
     if (isStoreLocked) return;
 
+    // An office account picks a shop and then walks through ten pages.
+    // Losing the choice on every one of them is how the wrong shop gets
+    // counted, so the last pick is remembered on this browser.
+    if (!storeId) {
+      let saved: string | null = null;
+      try { saved = localStorage.getItem(STORE_KEY); } catch { saved = null; }
+      if (saved && (data || []).some((s) => s.id === saved)) {
+        setStoreIdState(saved);
+        return;
+      }
+    }
+
     // An account with a branch on its profile opens on that branch. An office
     // account has none, and guessing one for them is how stock gets counted
     // against the wrong shop - so it stays empty until a person picks.
@@ -65,6 +79,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   function setStoreId(id: string) {
     if (isStoreLocked) return; // ignore attempts to change store for locked accounts
     setStoreIdState(id);
+    try { localStorage.setItem(STORE_KEY, id); } catch { /* private window */ }
   }
 
   return (
