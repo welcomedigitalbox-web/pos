@@ -216,7 +216,7 @@ export default function PoDetailPage() {
     setLogs((logData as ActivityLog[]) || []);
 
     const { data: payData } = await supabase
-      .from("po_payments")
+      .from("po_payment_lines")
       .select("*")
       .eq("po_id", id)
       .order("paid_at", { ascending: false });
@@ -879,10 +879,7 @@ export default function PoDetailPage() {
       {/* Payments */}
       <div className="flex justify-between items-center mb-2">
         <h3 className="font-semibold">{t("po_payments")}</h3>
-        <button onClick={() => setShowPayment(true)}
-          className="bg-green-600 text-white text-sm px-3 py-1.5 rounded-lg font-medium">
-          {t("po_addPayment")}
-        </button>
+        <span className="text-xs text-slate-400">Recorded by finance</span>
       </div>
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[500px]">
