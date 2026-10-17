@@ -71,6 +71,14 @@ export default function ReturnsPage() {
   const [processing, setProcessing] = useState(false);
   const [sendingBack, setSendingBack] = useState<string | null>(null);
   const [approvalPin, setApprovalPin] = useState("");
+  // Shops do not hand cash back. They collect where the money has to go,
+  // and finance sends it.
+  const [payeeName, setPayeeName] = useState("");
+  const [payeePhone, setPayeePhone] = useState("");
+  const [payeeMethod, setPayeeMethod] = useState("kpay");
+  const [payeeAccount, setPayeeAccount] = useState("");
+  const [payeeBank, setPayeeBank] = useState("");
+  const [slipLink, setSlipLink] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [verifying, setVerifying] = useState(false);
 
@@ -1005,6 +1013,83 @@ export default function ReturnsPage() {
               </a>
             )}
 
+            {reviewRow.status === "approved" && (
+              <div className="border border-slate-200 rounded-lg p-3 mb-3">
+                <div className="text-sm font-medium mb-1">Refund</div>
+                {(reviewRow as any).refund_status === "paid" ? (
+                  <div className="text-sm text-green-700">
+                    Paid by {(reviewRow as any).refunded_by}
+                    {(reviewRow as any).refunded_at
+                      ? ` on ${new Date((reviewRow as any).refunded_at).toLocaleDateString()}`
+                      : ""}
+                    {(reviewRow as any).refund_slip_url && (
+                      <button className="ml-2 text-blue-600 text-xs font-medium"
+                        onClick={async () => {
+                          const { data } = await supabase.storage
+                            .from("transfer-photos")
+                            .createSignedUrl((reviewRow as any).refund_slip_url, 3600);
+                          if (data?.signedUrl) setSlipLink(data.signedUrl);
+                        }}>
+                        View slip
+                      </button>
+                    )}
+                  </div>
+                ) : (reviewRow as any).refund_status === "pending_finance" ? (
+                  <div className="text-sm text-orange-600">
+                    Waiting for finance to send the money to
+                    {" "}{(reviewRow as any).payee_name} ({(reviewRow as any).payee_account})
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-500 mb-2">
+                      Where should the money go? Finance sends it and attaches the slip.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <input className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Account name" value={payeeName}
+                        onChange={(e) => setPayeeName(e.target.value)} />
+                      <input className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Phone" value={payeePhone}
+                        onChange={(e) => setPayeePhone(e.target.value)} />
+                      <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        value={payeeMethod} onChange={(e) => setPayeeMethod(e.target.value)}>
+                        <option value="kpay">KBZPay</option>
+                        <option value="wave">Wave</option>
+                        <option value="bank">Bank</option>
+                        <option value="other">Other</option>
+                      </select>
+                      <input className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Number" value={payeeAccount}
+                        onChange={(e) => setPayeeAccount(e.target.value)} />
+                      {payeeMethod === "bank" && (
+                        <input className="border border-slate-200 rounded-lg px-3 py-2 text-sm col-span-2"
+                          placeholder="Bank" value={payeeBank}
+                          onChange={(e) => setPayeeBank(e.target.value)} />
+                      )}
+                    </div>
+                    <button
+                      className="w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold"
+                      onClick={async () => {
+                        const { error } = await supabase.rpc("request_refund", {
+                          p_return_id: reviewRow.id,
+                          p_payee_name: payeeName,
+                          p_payee_phone: payeePhone,
+                          p_method: payeeMethod,
+                          p_account: payeeAccount,
+                          p_bank: payeeBank,
+                        });
+                        if (error) return showToast("\u274c " + error.message);
+                        showToast("Sent to finance");
+                        setReviewRow(null);
+                        await load();
+                      }}>
+                      Send to finance
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
             {reviewRow.status === "pending" && !canApprove && (
               <>
                 <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-3">
@@ -1060,6 +1145,14 @@ export default function ReturnsPage() {
               </button>
             ) : null}
           </div>
+        </div>
+      )}
+
+      {slipLink && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setSlipLink(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={slipLink} alt="" className="max-h-[80vh] max-w-full rounded-lg" />
         </div>
       )}
 
