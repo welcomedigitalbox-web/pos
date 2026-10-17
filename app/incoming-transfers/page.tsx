@@ -349,16 +349,39 @@ export default function IncomingTransfersPage() {
     }
   }
 
-  // The goods note people file in a folder. Rendered hidden, then printed, so
-  // the browser's own "Save as PDF" produces the file.
+  // Printing through the page fought the app's own print styles, so the
+  // note is written into a window of its own instead.
   function printReceipt(g: Group) {
-    setPrintGroup(g);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => setPrintGroup(null), 500);
-    }, 300);
+    const esc = (s: unknown) =>
+      String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+    const lines = g.lines.map((l) => (
+      `<tr><td>${esc(l.display_name)}</td><td>${esc(l.sku || "-")}</td>` +
+      `<td class=r>${esc(l.qty)}</td><td class=r>${esc(l.received_qty ?? "-")}</td></tr>`
+    )).join("");
+    const html =
+      `<!doctype html><meta charset=utf-8><title>${esc(g.ref)}</title>` +
+      `<style>body{font:13px -apple-system,sans-serif;padding:24px}` +
+      `h1{font-size:16px;margin:0 0 8px}table{width:100%;border-collapse:collapse;font-size:12px}` +
+      `th,td{text-align:left;padding:4px 0;border-bottom:1px solid #eee}.r{text-align:right}` +
+      `.meta{font-size:11px;color:#555;margin-bottom:14px}.sig{margin-top:60px;display:flex;` +
+      `justify-content:space-between;font-size:11px}</style>` +
+      `<h1>Goods received note</h1><div class=meta>` +
+      `No: ${esc(g.ref)}<br>${esc(g.from_store_id || "-")} &rarr; ${esc(g.to_store_id)}<br>` +
+      `Sent: ${esc(new Date(g.created_at).toLocaleString())}` +
+      `${g.received_at ? `<br>Received: ${esc(new Date(g.received_at).toLocaleString())} \u00b7 ${esc(g.received_by)}` : ""}` +
+      `</div><table><thead><tr><th>Product</th><th>Code</th><th class=r>Sent</th>` +
+      `<th class=r>Received</th></tr></thead><tbody>${lines}` +
+      `<tr><td colspan=2><b>Total</b></td><td class=r><b>${g.sentQty}</b></td>` +
+      `<td class=r><b>${g.gotQty ?? "-"}</b></td></tr></tbody></table>` +
+      `<div class=sig><div>Received by ______________________</div>` +
+      `<div>Checked by ______________________</div></div>`;
+    const w = window.open("", "_blank", "width=800,height=900");
+    if (!w) return showToast("Allow pop-ups to print this note");
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
   }
-
   const pendingGroups = groups.filter((g) => g.lines.some((l) => l.status === "in_transit"));
   const approvalGroups = groups.filter((g) => g.lines.some((l) => l.status === "pending_approval"));
   const storeName = stores.find((s) => s.id === storeId)?.name || storeId;
@@ -446,10 +469,10 @@ export default function IncomingTransfersPage() {
                           <span className="text-xs text-slate-400 mr-3">{t("transferIn_awaitingManager")}</span>
                         )
                       )}
-                      <button onClick={() => printReceipt(g)}
+                      <a href={`/stock-transfer/${encodeURIComponent(g.ref)}`}
                         className="text-slate-600 text-xs font-medium">
                         PDF
-                      </button>
+                      </a>
                     </td>
                   </tr>
 
@@ -584,48 +607,6 @@ export default function IncomingTransfersPage() {
         </div>
       )}
 
-      {printGroup && (
-        <div className="hidden print:block text-sm">
-          <h1 className="text-lg font-semibold mb-1">Goods received note</h1>
-          <div className="mb-3 text-xs">
-            <div>No: {printGroup.ref}</div>
-            <div>{printGroup.from_store_id || "-"} → {printGroup.to_store_id}</div>
-            <div>Sent: {new Date(printGroup.created_at).toLocaleString()}</div>
-            {printGroup.received_at && (
-              <div>Received: {new Date(printGroup.received_at).toLocaleString()} · {printGroup.received_by}</div>
-            )}
-          </div>
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr>
-                <th className="text-left border-b py-1">Product</th>
-                <th className="text-left border-b py-1">Code</th>
-                <th className="text-right border-b py-1">Sent</th>
-                <th className="text-right border-b py-1">Received</th>
-              </tr>
-            </thead>
-            <tbody>
-              {printGroup.lines.map((l) => (
-                <tr key={l.id}>
-                  <td className="py-1">{l.display_name}</td>
-                  <td className="py-1">{l.sku || "-"}</td>
-                  <td className="py-1 text-right">{l.qty}</td>
-                  <td className="py-1 text-right">{l.received_qty ?? "-"}</td>
-                </tr>
-              ))}
-              <tr>
-                <td className="border-t py-1 font-semibold" colSpan={2}>Total</td>
-                <td className="border-t py-1 text-right font-semibold">{printGroup.sentQty}</td>
-                <td className="border-t py-1 text-right font-semibold">{printGroup.gotQty ?? "-"}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="mt-10 flex justify-between text-xs">
-            <div>Received by ______________________</div>
-            <div>Checked by ______________________</div>
-          </div>
-        </div>
-      )}
 
       {photoLink && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 print:hidden"
