@@ -96,7 +96,10 @@ export default function IncomingTransfersPage() {
       .select("*, products(name, sku), product_variants(variant_name, sku)")
       .order("created_at", { ascending: false })
       .limit(500);
-    if (!isManagerLevel) query = query.eq("to_store_id", storeId);
+    // This page is about what is arriving at the shop on screen, whoever is
+    // looking. With no shop picked, a manager sees every arrival.
+    if (storeId) query = query.eq("to_store_id", storeId);
+    else if (!isManagerLevel) query = query.eq("to_store_id", "__none__");
     const { data } = await query;
 
     setRows(
