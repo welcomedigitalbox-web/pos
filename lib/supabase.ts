@@ -112,6 +112,7 @@ export type StoreSettings = {
   address: string | null;
   receipt_footer: string | null;
   logo_text: string | null;
+  require_discount_approval: boolean | null;
 };
 
 export type StoreRow = {
@@ -122,6 +123,7 @@ export type StoreRow = {
   region: string | null;
   supply_warehouse_id: string | null;
   allow_credit_sale: boolean | null;
+  allow_cod: boolean | null;
   created_at: string;
 };
 

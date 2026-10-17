@@ -45,7 +45,7 @@ function fmt(n: number) {
 }
 
 export default function POSPage() {
-  const { storeId } = useStore();
+  const { storeId, stores } = useStore();
   const { t } = useLanguage();
   const { profile } = useAuth();
   const router = useRouter();
@@ -648,6 +648,15 @@ export default function POSPage() {
   const grandTotal = afterDiscount + vatAmount;
 
 
+  const thisStore = stores.find((x) => x.id === storeId);
+  const storeAllowsCredit = !!thisStore?.allow_credit_sale;
+  // Cash on delivery belongs to the online branches. A showroom hands the
+  // goods over at the counter, so there is nothing to collect later.
+  const storeAllowsCod = !!thisStore?.allow_cod;
+  const visibleMethods = storeAllowsCod
+    ? paymentMethods
+    : paymentMethods.filter((m) => !m.is_cod);
+
   // The saved choice may not be on offer at this branch; fall back rather than
   // checking out with a method the shop cannot take.
   const methodCode = visibleMethods.some((m) => m.code === paymentMethod)
@@ -660,14 +669,6 @@ export default function POSPage() {
   const amountReceivedNum = Number(amountReceived) || 0;
   const change = isCashMethod ? Math.max(amountReceivedNum - grandTotal, 0) : 0;
 
-  const thisStore = stores.find((x) => x.id === storeId);
-  const storeAllowsCredit = !!thisStore?.allow_credit_sale;
-  // Cash on delivery belongs to the online branches. A showroom hands the
-  // goods over at the counter, so there is nothing to collect later.
-  const storeAllowsCod = !!thisStore?.allow_cod;
-  const visibleMethods = storeAllowsCod
-    ? paymentMethods
-    : paymentMethods.filter((m) => !m.is_cod);
   const paidNowNum = Number(paidNow) || 0;
   const creditBalance = creditSale ? Math.max(grandTotal - paidNowNum, 0) : 0;
 
