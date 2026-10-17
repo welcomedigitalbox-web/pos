@@ -33,6 +33,7 @@ export type PageKey =
   | "sales-report"
   | "receivables"
   | "invoice-fix"
+  | "packages"
   | "settlements"
   | "my-pin"
   | "product-category"
@@ -101,6 +102,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "loyalty-tiers", href: "/loyalty-tiers", labelKey: "nav_loyaltyTiers", group: "customer" },
   { key: "sales-performance", href: "/ledger", labelKey: "nav_salesPerformance", group: "reports" },
   { key: "products", href: "/products", labelKey: "nav_products", group: "merchandising" },
+  { key: "packages", href: "/packages", labelKey: "nav_packages", group: "merchandising" },
   { key: "product-grid", href: "/product-grid", labelKey: "nav_productGrid", group: "merchandising" },
   { key: "price-schedule", href: "/price-schedule", labelKey: "nav_priceSchedule", group: "merchandising" },
   { key: "product-import", href: "/product-import", labelKey: "nav_productImport", group: "setup" },

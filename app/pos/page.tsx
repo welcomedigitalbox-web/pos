@@ -160,7 +160,50 @@ export default function POSPage() {
 
   async function loadProducts() {
     const data = await fetchSellableItems(storeId);
-    setItems(data);
+
+    // A package holds no stock of its own, so it never comes back from the
+    // sellable list. How many can be sold is however many the parts on the
+    // shelf can make up, which the database works out for us.
+    const [{ data: pkgs }, { data: avail }] = await Promise.all([
+      supabase
+        .from("products")
+        .select("id,name,sku,price,category_id")
+        .eq("is_package", true)
+        .eq("is_active", true),
+      supabase
+        .from("package_availability")
+        .select("package_product_id,can_make")
+        .eq("store_id", storeId),
+    ]);
+    const canMake = new Map(
+      ((avail as { package_product_id: string; can_make: number }[]) || []).map(
+        (a) => [a.package_product_id, Number(a.can_make) || 0]
+      )
+    );
+    const packageItems = ((pkgs as {
+      id: string; name: string; sku: string | null;
+      price: number | null; category_id: string | null;
+    }[]) || []).map((p) => ({
+      key: `${p.id}:pkg`,
+      product_id: p.id,
+      variant_id: null,
+      product_name: p.name,
+      variant_name: null,
+      display_name: `\u{1f381} ${p.name}`,
+      sku: p.sku,
+      price: Number(p.price) || 0,
+      category_id: p.category_id,
+      is_active: true,
+      requires_expiry: false,
+      stock_qty: canMake.get(p.id) ?? 0,
+      avg_cost: 0,
+      previous_avg_cost: 0,
+      last_purchase_cost: 0,
+      consigned_qty: 0,
+      owned_qty: canMake.get(p.id) ?? 0,
+    })) as unknown as SellableItem[];
+
+    setItems([...packageItems, ...data]);
   }
 
   // The till does not need every customer in the business on screen before
