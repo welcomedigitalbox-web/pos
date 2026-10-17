@@ -139,7 +139,7 @@ export default function Nav() {
                     {!storeId && <option value="">{t("store_choose")}</option>}
                     {stores.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name}
+                        {s.is_warehouse ? "\u{1F3ED} " : ""}{s.name}
                       </option>
                     ))}
                   </select>
