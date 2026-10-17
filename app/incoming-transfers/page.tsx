@@ -83,7 +83,7 @@ export default function IncomingTransfersPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
+  }, [storeId, profile?.id]);
 
   if (!profile || !hasPermission(profile, "incoming-transfers")) return null;
 
