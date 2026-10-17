@@ -309,13 +309,18 @@ export default function ProductForm({ productId }: { productId?: string }) {
             <label className={label}>{t("products_sku")} *</label>
             <div className="flex gap-2">
               <input className={field} value={sku} onChange={(e) => setSku(e.target.value)} required />
-            <label className={label} style={{ marginTop: 12 }}>{t("products_supplierCode")}</label>
-            <input className={field} value={supplierCode}
-              placeholder="8851234567890"
-              onChange={(e) => setSupplierCode(e.target.value)} />
               <button type="button" onClick={() => setSku(generateSku())}
                 className="shrink-0 text-xs border border-slate-200 rounded-lg px-3">↻</button>
             </div>
+          </div>
+
+          {/* The code printed on the supplier's own carton. The warehouse scans
+              that, not our SKU, so it has to be findable on its own. */}
+          <div>
+            <label className={label}>{t("products_supplierCode")}</label>
+            <input className={field} value={supplierCode}
+              placeholder="8851234567890"
+              onChange={(e) => setSupplierCode(e.target.value)} />
           </div>
 
           <div>

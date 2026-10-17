@@ -16,6 +16,7 @@ type StoreSettings = {
   address: string | null;
   receipt_footer: string | null;
   logo_text: string | null;
+  require_discount_approval: boolean | null;
 };
 
 export default function AdminSettingsPage() {
@@ -32,6 +33,7 @@ export default function AdminSettingsPage() {
     address: "",
     receipt_footer: "",
     logo_text: "",
+    require_discount_approval: false,
   });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
@@ -65,6 +67,7 @@ export default function AdminSettingsPage() {
         address: "",
         receipt_footer: "",
         logo_text: "",
+        require_discount_approval: false,
       });
     }
   }
@@ -152,6 +155,25 @@ export default function AdminSettingsPage() {
             placeholder="Thank you!"
           />
         </div>
+        {/* Manual discounts can need a manager's PIN, or not. Shops that
+            haggle all day want it off; turn it back on here when they don't. */}
+        <label className="flex items-start gap-2 pt-1">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={!!settings.require_discount_approval}
+            onChange={(e) =>
+              setSettings({ ...settings, require_discount_approval: e.target.checked })
+            }
+          />
+          <span className="text-sm text-slate-600">
+            Manager approval for manual discount
+            <span className="block text-xs text-slate-400">
+              Off: cashiers can give a discount without a PIN. Floor price still applies.
+            </span>
+          </span>
+        </label>
+
         <button
           type="submit"
           disabled={saving}

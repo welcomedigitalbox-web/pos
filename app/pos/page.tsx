@@ -23,6 +23,7 @@ type CartItem = {
   uom_code?: string;
   uom_name?: string;
   factor?: number;       // base units in one selling unit
+  line_discount?: number; // money off this line, before any invoice discount
 };
 
 type Uom = { id: string; product_id: string; code: string; name: string; factor: number; price: number | null; is_base: boolean };
@@ -85,6 +86,9 @@ export default function POSPage() {
   const [amountReceived, setAmountReceived] = useState("");
   // A customer paying half in cash and half by wallet is one sale, not two.
   const [splitting, setSplitting] = useState(false);
+  // Wholesale takes part of the money now and the rest on a later visit.
+  const [creditSale, setCreditSale] = useState(false);
+  const [paidNow, setPaidNow] = useState("");
   const [splitLines, setSplitLines] = useState<{ method: string; amount: string }[]>([]);
   const [advancePayment, setAdvancePayment] = useState("");
   const [note, setNote] = useState("");
@@ -228,6 +232,10 @@ export default function POSPage() {
     setVatEnabled(false);
     setAmountReceived("");
     setAdvancePayment("");
+    setCreditSale(false);
+    setPaidNow("");
+    setSplitting(false);
+    setSplitLines([]);
     setNote("");
     setSelectedCustomer(null);
     setCustomerSearch("");
@@ -544,9 +552,21 @@ export default function POSPage() {
   }
 
 
+  // A discount on one line, for the haggling that happens item by item. The
+  // invoice-level discount still applies on top, and the server checks both.
+  function setLineDiscount(key: string, raw: string) {
+    const n = Number(raw);
+    setCart((old) => old.map((c) => {
+      if (c.key !== key) return c;
+      const cap = c.price * c.qty - (promoLines[c.key]?.amount ?? 0);
+      return { ...c, line_discount: raw === "" || !(n > 0) ? 0 : Math.min(n, Math.max(cap, 0)) };
+    }));
+  }
+
   // ---- Calculations ----
   const grossTotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
-  const subtotal = Math.max(grossTotal - promoTotal, 0);
+  const lineDiscountTotal = cart.reduce((sum, c) => sum + (c.line_discount ?? 0), 0);
+  const subtotal = Math.max(grossTotal - promoTotal - lineDiscountTotal, 0);
   const discountValueNum = Number(discountValue) || 0;
   const discountAmount =
     discountType === "percent" ? (subtotal * discountValueNum) / 100 : discountValueNum;
@@ -560,7 +580,11 @@ export default function POSPage() {
   // A single no-discount item locks the whole invoice's discount field.
   const lockedNames = cart.map((c) => noDiscount[c.product_id]).filter(Boolean);
   const discountLocked = lockedNames.length > 0;
-  const requiresDiscountApproval = !isLoyaltyLocked && discountAmount > 0 && !canApproveDiscount;
+  // Whether a manual discount needs a manager's PIN is the shop's own choice,
+  // kept in store_settings so admin can switch it back on without a deploy.
+  const requiresDiscountApproval =
+    !!storeSettings?.require_discount_approval &&
+    !isLoyaltyLocked && discountAmount + lineDiscountTotal > 0 && !canApproveDiscount;
 
   const effectiveDiscount = discountLocked
     ? 0
@@ -571,7 +595,9 @@ export default function POSPage() {
   const ratio = subtotal > 0 ? effectiveDiscount / subtotal : 0;
   const underFloor = cart.filter((c) => {
     const floor = minPrice[c.product_id];
-    return floor != null && c.price * (1 - ratio) < floor;
+    if (floor == null) return false;
+    const net = (c.price * c.qty - (promoLines[c.key]?.amount ?? 0) - (c.line_discount ?? 0)) / c.qty;
+    return net * (1 - ratio) < floor;
   });
   const afterDiscount = Math.max(subtotal - effectiveDiscount, 0);
   const vatPercentNum = vatEnabled ? STANDARD_VAT_PERCENT : 0;
@@ -579,12 +605,28 @@ export default function POSPage() {
   const grandTotal = afterDiscount + vatAmount;
 
 
-  const selectedMethod = paymentMethods.find((m) => m.code === paymentMethod);
+  // The saved choice may not be on offer at this branch; fall back rather than
+  // checking out with a method the shop cannot take.
+  const methodCode = visibleMethods.some((m) => m.code === paymentMethod)
+    ? paymentMethod
+    : visibleMethods[0]?.code || "cash";
+  const selectedMethod = visibleMethods.find((m) => m.code === methodCode);
   const isCashMethod = selectedMethod?.is_cash ?? false;
   const isCodMethod = selectedMethod?.is_cod ?? false;
 
   const amountReceivedNum = Number(amountReceived) || 0;
   const change = isCashMethod ? Math.max(amountReceivedNum - grandTotal, 0) : 0;
+
+  const thisStore = stores.find((x) => x.id === storeId);
+  const storeAllowsCredit = !!thisStore?.allow_credit_sale;
+  // Cash on delivery belongs to the online branches. A showroom hands the
+  // goods over at the counter, so there is nothing to collect later.
+  const storeAllowsCod = !!thisStore?.allow_cod;
+  const visibleMethods = storeAllowsCod
+    ? paymentMethods
+    : paymentMethods.filter((m) => !m.is_cod);
+  const paidNowNum = Number(paidNow) || 0;
+  const creditBalance = creditSale ? Math.max(grandTotal - paidNowNum, 0) : 0;
 
   const advancePaymentNum = Number(advancePayment) || 0;
   const codOverpaid = isCodMethod && advancePaymentNum > grandTotal;
@@ -596,7 +638,8 @@ export default function POSPage() {
 
   const canCheckout =
     cart.length > 0 &&
-    (splitting || !isCashMethod || amountReceivedNum >= grandTotal) &&
+    (!creditSale || (!!selectedCustomer && paidNowNum <= grandTotal)) &&
+    (splitting || creditSale || !isCashMethod || amountReceivedNum >= grandTotal) &&
     (!splitting || Math.abs(splitLeft) < 0.01) &&
     (!requiresDiscountApproval || discountApproved);
 
@@ -605,17 +648,21 @@ export default function POSPage() {
   const blockedReason =
     cart.length === 0
       ? ""
-      : isCashMethod && amountReceivedNum < grandTotal
+      : !splitting && !creditSale && isCashMethod && amountReceivedNum < grandTotal
       ? t("pos_amountInsufficient")
       : splitting && Math.abs(splitLeft) > 0.01
       ? `${t("pos_grandTotal")}: ${fmt(grandTotal)}`
+      : creditSale && !selectedCustomer
+      ? "A sale with a balance owing needs a customer"
+      : creditSale && paidNowNum > grandTotal
+      ? "Paid now is more than the bill"
       : requiresDiscountApproval && !discountApproved
       ? t("pos_discountApprovalRequired")
       : "";
 
   async function checkout() {
     if (cart.length === 0) return;
-    if (!splitting && isCashMethod && amountReceivedNum < grandTotal) {
+    if (!splitting && !creditSale && isCashMethod && amountReceivedNum < grandTotal) {
       return showToast(t("pos_amountInsufficient"));
     }
     const short = cart.filter((c) => c.qty * (c.factor ?? 1) > c.stock_qty);
@@ -648,20 +695,22 @@ export default function POSPage() {
           uom_name: c.uom_name ?? null,
           uom_qty: c.qty,
           uom_factor: c.factor ?? 1,
+          line_discount: c.line_discount ?? 0,
           promo_discount: promoLines[c.key]?.amount ?? 0,
           promotion_id: promoLines[c.key]?.promotion_id ?? null,
           is_free_gift: promoLines[c.key]?.free ?? false,
         })),
         p_payment: {
-          payment_method: splitting ? (splitLines[0]?.method || paymentMethod) : paymentMethod,
+          payment_method: splitting ? (splitLines[0]?.method || methodCode) : methodCode,
           is_cod: isCodMethod,
+          credit_sale: creditSale,
           discount_type: discountType,
           discount_value: discountValueNum,
           discount_amount: effectiveDiscount,
           discount_approved_by: discountApprovedBy,
           vat_percent: vatPercentNum,
           amount_received: splitting ? grandTotal : (isCashMethod ? amountReceivedNum : grandTotal),
-          advance_payment: isCodMethod ? advancePaymentNum : 0,
+          advance_payment: creditSale ? paidNowNum : (isCodMethod ? advancePaymentNum : 0),
           note: note.trim() || null,
           customer_id: selectedCustomer?.id || null,
           customer_name: selectedCustomer?.name || customerSearch.trim() || null,
@@ -683,8 +732,9 @@ export default function POSPage() {
         ? splitLines
             .filter((l) => Number(l.amount) > 0)
             .map((l) => ({ method: l.method, amount: Number(l.amount) }))
-        : [{ method: paymentMethod,
-             amount: isCodMethod ? advancePaymentNum : grandTotal }];
+        : [{ method: methodCode,
+             amount: creditSale ? paidNowNum
+                   : isCodMethod ? advancePaymentNum : grandTotal }];
       if (payLines.length > 0 && payLines[0].amount > 0) {
         const { error: payErr } = await supabase.rpc("record_sale_payments", {
           p_sale_id: sale.sale_id,
@@ -710,7 +760,7 @@ export default function POSPage() {
           name: c.name,
           qty: c.qty,
           price: c.price,
-          lineTotal: c.price * c.qty,
+          lineTotal: c.price * c.qty - (c.line_discount ?? 0),
         })),
         subtotal,
         discountLabel: isLoyaltyLocked
@@ -879,6 +929,18 @@ export default function POSPage() {
                         </option>
                       ))}
                     </select>
+                  )}
+                  {!noDiscount[c.product_id] && (
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="text-[10px] text-slate-400">-</span>
+                      <input
+                        type="number"
+                        className="w-20 border border-slate-200 rounded px-1 py-0.5 text-xs text-right"
+                        placeholder="0"
+                        value={c.line_discount ? String(c.line_discount) : ""}
+                        onChange={(e) => setLineDiscount(c.key, e.target.value)}
+                      />
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -1076,6 +1138,12 @@ export default function POSPage() {
 
             {/* Totals */}
             <div className="text-xs space-y-1 border-t border-slate-100 pt-2 mt-2">
+              {lineDiscountTotal > 0 && (
+                <div className="flex justify-between text-slate-500">
+                  <span>Item discounts</span>
+                  <span>-{fmt(lineDiscountTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-slate-500">
                 <span>{t("pos_subtotal")}</span>
                 <span>{fmt(subtotal)}</span>
@@ -1104,10 +1172,10 @@ export default function POSPage() {
               <label className="text-xs text-slate-500">{t("pos_paymentMethod")}</label>
               <select
                 className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-1"
-                value={paymentMethod}
+                value={methodCode}
                 onChange={(e) => setPaymentMethod(e.target.value)}
               >
-                {paymentMethods.map((m) => (
+                {visibleMethods.map((m) => (
                   <option key={m.id} value={m.code}>
                     {m.name}
                   </option>
@@ -1123,7 +1191,7 @@ export default function POSPage() {
                   setSplitting(true);
                   setSplitLines([{ method: paymentMethod, amount: String(grandTotal) }]);
                 }}>
-                {splitting ? "\u2715 One payment" : "+ Split payment"}
+                {splitting ? "✕ One payment" : "+ Split payment"}
               </button>
             </div>
 
@@ -1136,7 +1204,7 @@ export default function POSPage() {
                       value={l.method}
                       onChange={(ev) => setSplitLines((p) =>
                         p.map((x, k) => (k === idx ? { ...x, method: ev.target.value } : x)))}>
-                      {paymentMethods.map((m) => (
+                      {visibleMethods.map((m) => (
                         <option key={m.id} value={m.code}>{m.name}</option>
                       ))}
                     </select>
@@ -1149,7 +1217,7 @@ export default function POSPage() {
                     {splitLines.length > 1 && (
                       <button className="text-slate-400 text-xs px-1"
                         onClick={() => setSplitLines((p) => p.filter((_, k) => k !== idx))}>
-                        \u2715
+                        ✕
                       </button>
                     )}
                   </div>
@@ -1159,7 +1227,7 @@ export default function POSPage() {
                   onClick={() => setSplitLines((p) => [
                     ...p,
                     { method: paymentMethods.find((m) => m.code !== p[0]?.method)?.code
-                        || paymentMethod,
+                        || methodCode,
                       amount: String(Math.max(grandTotal - p.reduce(
                         (s, x) => s + (Number(x.amount) || 0), 0), 0)) },
                   ])}>
@@ -1173,7 +1241,7 @@ export default function POSPage() {
               </div>
             )}
 
-            {isCashMethod && (
+            {isCashMethod && !splitting && !creditSale && (
               <div className="mt-2">
                 <label className="text-xs text-slate-500">{t("pos_amountReceived")}</label>
                 <input
@@ -1188,6 +1256,36 @@ export default function POSPage() {
                     <span>{t("pos_change")}</span>
                     <span>{fmt(change)}</span>
                   </div>
+                )}
+              </div>
+            )}
+
+            {storeAllowsCredit && !isCodMethod && (
+              <div className="mt-2 border-t border-slate-100 pt-2">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={creditSale}
+                    onChange={(e) => { setCreditSale(e.target.checked); setPaidNow(""); }} />
+                  <span className="text-xs font-medium">Partial payment (balance later)</span>
+                </label>
+                {creditSale && (
+                  <>
+                    <input
+                      type="number"
+                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm mt-2"
+                      value={paidNow}
+                      onChange={(e) => setPaidNow(e.target.value)}
+                      placeholder="Paid now"
+                    />
+                    <div className="flex justify-between text-xs mt-1 text-orange-600 font-medium">
+                      <span>{t("pos_balanceDue")}</span>
+                      <span>{fmt(creditBalance)}</span>
+                    </div>
+                    {!selectedCustomer && (
+                      <div className="text-[11px] text-red-600 mt-1">
+                        Pick the customer who owes this.
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

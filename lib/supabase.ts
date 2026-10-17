@@ -121,6 +121,7 @@ export type StoreRow = {
   is_active: boolean;
   region: string | null;
   supply_warehouse_id: string | null;
+  allow_credit_sale: boolean | null;
   created_at: string;
 };
 

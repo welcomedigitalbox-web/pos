@@ -31,6 +31,8 @@ export type PageKey =
   | "warehouse-history"
   | "dashboard"
   | "sales-report"
+  | "receivables"
+  | "invoice-fix"
   | "settlements"
   | "my-pin"
   | "product-category"
@@ -136,6 +138,8 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "gp-report", href: "/gp-report", labelKey: "nav_gpReport", group: "reports" },
   { key: "dashboard", href: "/dashboard", labelKey: "nav_dashboard", group: "reports" },
   { key: "sales-report", href: "/sales-report", labelKey: "nav_salesReport", group: "reports" },
+  { key: "receivables", href: "/receivables", labelKey: "nav_receivables", group: "reports" },
+  { key: "invoice-fix", href: "/invoice-fix", labelKey: "nav_invoiceFix", group: "reports" },
   { key: "settlements", href: "/settlements", labelKey: "nav_settlements", group: "reports" },
   { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "profile" },
   { key: "ai-agent", href: "/ai-agent", labelKey: "nav_aiAgent", group: "ai-agent" },
@@ -201,7 +205,7 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     ...COMMON_ALL_ROLES,
   ],
   accountant: [
-    "dashboard", "sales-report", "settlements",
+    "dashboard", "sales-report", "settlements", "receivables", "invoice-fix",
     "history", "order-lookup", "cash-drawer", "sales-performance", "suppliers",
     ...COMMON_ALL_ROLES,
   ],
