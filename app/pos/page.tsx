@@ -83,6 +83,9 @@ export default function POSPage() {
   const [discountValue, setDiscountValue] = useState("");
   const [vatEnabled, setVatEnabled] = useState(false);
   const [amountReceived, setAmountReceived] = useState("");
+  // A customer paying half in cash and half by wallet is one sale, not two.
+  const [splitting, setSplitting] = useState(false);
+  const [splitLines, setSplitLines] = useState<{ method: string; amount: string }[]>([]);
   const [advancePayment, setAdvancePayment] = useState("");
   const [note, setNote] = useState("");
 
@@ -588,9 +591,13 @@ export default function POSPage() {
   const balanceDue = isCodMethod ? Math.max(grandTotal - advancePaymentNum, 0) : 0;
   const codChange = codOverpaid ? advancePaymentNum - grandTotal : 0;
 
+  const splitSum = splitLines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const splitLeft = grandTotal - splitSum;
+
   const canCheckout =
     cart.length > 0 &&
-    (!isCashMethod || amountReceivedNum >= grandTotal) &&
+    (splitting || !isCashMethod || amountReceivedNum >= grandTotal) &&
+    (!splitting || Math.abs(splitLeft) < 0.01) &&
     (!requiresDiscountApproval || discountApproved);
 
   // A greyed-out button explains nothing, and a cashier with a queue in front
@@ -600,13 +607,15 @@ export default function POSPage() {
       ? ""
       : isCashMethod && amountReceivedNum < grandTotal
       ? t("pos_amountInsufficient")
+      : splitting && Math.abs(splitLeft) > 0.01
+      ? `${t("pos_grandTotal")}: ${fmt(grandTotal)}`
       : requiresDiscountApproval && !discountApproved
       ? t("pos_discountApprovalRequired")
       : "";
 
   async function checkout() {
     if (cart.length === 0) return;
-    if (isCashMethod && amountReceivedNum < grandTotal) {
+    if (!splitting && isCashMethod && amountReceivedNum < grandTotal) {
       return showToast(t("pos_amountInsufficient"));
     }
     const short = cart.filter((c) => c.qty * (c.factor ?? 1) > c.stock_qty);
@@ -644,14 +653,14 @@ export default function POSPage() {
           is_free_gift: promoLines[c.key]?.free ?? false,
         })),
         p_payment: {
-          payment_method: paymentMethod,
+          payment_method: splitting ? (splitLines[0]?.method || paymentMethod) : paymentMethod,
           is_cod: isCodMethod,
           discount_type: discountType,
           discount_value: discountValueNum,
           discount_amount: effectiveDiscount,
           discount_approved_by: discountApprovedBy,
           vat_percent: vatPercentNum,
-          amount_received: isCashMethod ? amountReceivedNum : grandTotal,
+          amount_received: splitting ? grandTotal : (isCashMethod ? amountReceivedNum : grandTotal),
           advance_payment: isCodMethod ? advancePaymentNum : 0,
           note: note.trim() || null,
           customer_id: selectedCustomer?.id || null,
@@ -667,6 +676,22 @@ export default function POSPage() {
 
       // Committed - this cart is done with its key.
       idempotencyKeyRef.current = null;
+
+      // Tell the server how the money actually came in. It refuses the
+      // lines unless they add up to what was due.
+      const payLines = splitting
+        ? splitLines
+            .filter((l) => Number(l.amount) > 0)
+            .map((l) => ({ method: l.method, amount: Number(l.amount) }))
+        : [{ method: paymentMethod,
+             amount: isCodMethod ? advancePaymentNum : grandTotal }];
+      if (payLines.length > 0 && payLines[0].amount > 0) {
+        const { error: payErr } = await supabase.rpc("record_sale_payments", {
+          p_sale_id: sale.sale_id,
+          p_lines: payLines,
+        });
+        if (payErr) showToast("\u26a0\ufe0f " + payErr.message);
+      }
 
       // The server deducted stock; the cached list is now stale.
       await loadProducts();
@@ -1089,6 +1114,64 @@ export default function POSPage() {
                 ))}
               </select>
             </div>
+
+            <div className="mt-2">
+              <button
+                className="text-xs text-blue-600 font-medium"
+                onClick={() => {
+                  if (splitting) { setSplitting(false); setSplitLines([]); return; }
+                  setSplitting(true);
+                  setSplitLines([{ method: paymentMethod, amount: String(grandTotal) }]);
+                }}>
+                {splitting ? "\u2715 One payment" : "+ Split payment"}
+              </button>
+            </div>
+
+            {splitting && (
+              <div className="mt-2 border border-slate-200 rounded-lg p-2">
+                {splitLines.map((l, idx) => (
+                  <div key={idx} className="flex gap-1 mb-1">
+                    <select
+                      className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                      value={l.method}
+                      onChange={(ev) => setSplitLines((p) =>
+                        p.map((x, k) => (k === idx ? { ...x, method: ev.target.value } : x)))}>
+                      {paymentMethods.map((m) => (
+                        <option key={m.id} value={m.code}>{m.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      className="w-28 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-right"
+                      value={l.amount}
+                      onChange={(ev) => setSplitLines((p) =>
+                        p.map((x, k) => (k === idx ? { ...x, amount: ev.target.value } : x)))} />
+                    {splitLines.length > 1 && (
+                      <button className="text-slate-400 text-xs px-1"
+                        onClick={() => setSplitLines((p) => p.filter((_, k) => k !== idx))}>
+                        \u2715
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  className="text-xs text-blue-600 font-medium"
+                  onClick={() => setSplitLines((p) => [
+                    ...p,
+                    { method: paymentMethods.find((m) => m.code !== p[0]?.method)?.code
+                        || paymentMethod,
+                      amount: String(Math.max(grandTotal - p.reduce(
+                        (s, x) => s + (Number(x.amount) || 0), 0), 0)) },
+                  ])}>
+                  + Add
+                </button>
+                <div className={`flex justify-between text-xs mt-1 font-medium ${
+                  Math.abs(splitLeft) < 0.01 ? "text-green-700" : "text-red-600"}`}>
+                  <span>{Math.abs(splitLeft) < 0.01 ? "Balanced" : "Left"}</span>
+                  <span>{fmt(splitLeft)}</span>
+                </div>
+              </div>
+            )}
 
             {isCashMethod && (
               <div className="mt-2">

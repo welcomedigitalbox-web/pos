@@ -102,25 +102,37 @@ export default function CashDrawerPage() {
 
       // Only cash counts toward the till — card and wallet payments never
       // touch the drawer
+      // A sale can be settled two ways at once, so the split lines are what
+      // gets counted, not the one word written on the sale.
+      // A sale can be settled two ways at once, so the split lines are what
+      // gets counted, not the one word written on the sale.
       const { data: sales } = await supabase
         .from("sales")
-        .select("total, payment_method")
+        .select("id, total, payment_method")
         .eq("store_id", storeId)
         .gte("created_at", current.opened_at);
       const saleRows = (sales as any[]) || [];
+      const saleIds = saleRows.map((s) => s.id);
+
+      const { data: payLines } = await supabase
+        .from("sale_payment_lines")
+        .select("sale_id, method_code, amount")
+        .in("sale_id", saleIds.length ? saleIds : ["00000000-0000-0000-0000-000000000000"]);
+      const lines = (payLines as any[]) || [];
+
       setCashSales(
-        saleRows
-          .filter((s) => (s.payment_method || "").toLowerCase() === "cash")
-          .reduce((sum, s) => sum + Number(s.total), 0)
+        lines
+          .filter((l) => (l.method_code || "").toLowerCase() === "cash")
+          .reduce((sum, l) => sum + Number(l.amount), 0)
       );
 
       // Every tender, not just cash — the till only holds cash, but the shift
       // total has to reconcile against KPay, Wave and card slips too
       const methodMap = new Map<string, { sales: number; refunds: number; orders: number }>();
-      for (const s of saleRows) {
-        const m = (s.payment_method || "unknown").toLowerCase();
+      for (const l of lines) {
+        const m = (l.method_code || "unknown").toLowerCase();
         const cur = methodMap.get(m) || { sales: 0, refunds: 0, orders: 0 };
-        cur.sales += Number(s.total);
+        cur.sales += Number(l.amount);
         cur.orders += 1;
         methodMap.set(m, cur);
       }
