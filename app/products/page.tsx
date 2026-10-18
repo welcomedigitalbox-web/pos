@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import Link from "next/link";
 import { supabase, Product, SellableItem, ProductCategory, ProductVariant, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
@@ -49,6 +50,9 @@ export default function ProductsPage() {
   const [availOff, setAvailOff] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  // Two thousand eight hundred products do not fit on a screen, and scrolling
+  // to find one was the whole job for anyone who knew its name.
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "products")) {
@@ -273,6 +277,12 @@ export default function ProductsPage() {
     await load();
   }
 
+  // Matched word by word, so the words may be typed in any order and the
+  // brackets and double spaces in a name do not hide it.
+  const shownItems = items.filter((row) =>
+    matchesSearch(search, row.product_name, row.variant_name, row.sku, (row as { codes?: string }).codes)
+  );
+
   return (
     <div className="pt-4">
       <div className="flex justify-between items-center mb-3">
@@ -283,6 +293,18 @@ export default function ProductsPage() {
         >
           {t("products_addNew")}
         </Link>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3">
+        <input
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex-1"
+          placeholder={t("products_searchPlaceholder")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <span className="text-sm text-slate-400 whitespace-nowrap">
+          {shownItems.length}
+        </span>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
@@ -299,7 +321,7 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((row) => (
+            {shownItems.map((row) => (
               <tr key={row.key} className={`border-t border-slate-100 ${!row.is_active ? "opacity-50 bg-slate-50" : ""}`}>
                 <td className="px-4 py-2">
                   {row.product_name}
