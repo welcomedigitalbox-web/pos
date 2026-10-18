@@ -23,6 +23,7 @@ export type ReceiptData = {
   discountAmount: number;
   vatPercent: number;
   vatAmount: number;
+  roundingAdjustment?: number;
   grandTotal: number;
   paymentMethod: string;
   // When the customer pays with more than one method, the slip has to show
@@ -115,6 +116,16 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
         <div style={ROW}>
           <span>VAT ({data.vatPercent}%)</span>
           <span>{mmk(data.vatAmount)}</span>
+        </div>
+      )}
+
+      {!!data.roundingAdjustment && data.roundingAdjustment !== 0 && (
+        <div style={ROW}>
+          <span>Rounding</span>
+          <span>
+            {data.roundingAdjustment > 0 ? "+" : ""}
+            {mmk(data.roundingAdjustment)}
+          </span>
         </div>
       )}
 

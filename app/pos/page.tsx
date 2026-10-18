@@ -137,6 +137,8 @@ export default function POSPage() {
   const [splitLines, setSplitLines] = useState<{ method: string; amount: string }[]>([]);
   const [advancePayment, setAdvancePayment] = useState("");
   const [note, setNote] = useState("");
+  // Shops settle in notes; the cashier says what to round to.
+  const [roundTo, setRoundTo] = useState("");
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
@@ -390,6 +392,7 @@ export default function POSPage() {
     setAdvancePayment("");
     setCreditSale(false);
     setPaidNow("");
+    setRoundTo("");
     setSplitting(false);
     setSplitLines([]);
     setNote("");
@@ -761,7 +764,11 @@ export default function POSPage() {
   const afterDiscount = Math.max(subtotal - effectiveDiscount, 0);
   const vatPercentNum = vatEnabled ? STANDARD_VAT_PERCENT : 0;
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
-  const grandTotal = afterDiscount + vatAmount;
+  const beforeRounding = afterDiscount + vatAmount;
+  const roundToNum = Math.min(Math.max(Number(roundTo) || 0, 0), 500);
+  const grandTotal =
+    roundToNum > 0 ? Math.round(beforeRounding / roundToNum) * roundToNum : beforeRounding;
+  const roundingAdj = grandTotal - beforeRounding;
 
 
   const thisStore = stores.find((x) => x.id === storeId);
@@ -869,6 +876,7 @@ export default function POSPage() {
           discount_amount: effectiveDiscount,
           discount_approved_by: discountApprovedBy,
           vat_percent: vatPercentNum,
+          round_to: roundToNum,
           amount_received: splitting ? grandTotal : (isCashMethod ? amountReceivedNum : grandTotal),
           advance_payment: creditSale ? paidNowNum : (isCodMethod ? advancePaymentNum : 0),
           note: note.trim() || null,
@@ -931,6 +939,7 @@ export default function POSPage() {
         discountAmount: effectiveDiscount,
         vatPercent: vatPercentNum,
         vatAmount,
+        roundingAdjustment: roundingAdj,
         grandTotal,
         paymentMethod: splitting
           ? "Split"
@@ -1346,6 +1355,34 @@ export default function POSPage() {
               </button>
             </div>
 
+            {/* Rounding */}
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className="text-xs text-slate-500">Round to</label>
+              <div className="flex items-center gap-1">
+                {[50, 100, 500].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setRoundTo(roundToNum === v ? "" : String(v))}
+                    className={`text-[11px] px-2 py-1 rounded border ${
+                      roundToNum === v
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "border-slate-200"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  className="w-16 border border-slate-200 rounded px-2 py-1 text-xs text-right"
+                  placeholder="0"
+                  value={roundTo}
+                  onChange={(e) => setRoundTo(e.target.value)}
+                />
+              </div>
+            </div>
+
             {/* Totals */}
             <div className="text-xs space-y-1 border-t border-slate-100 pt-2 mt-2">
               {lineDiscountTotal > 0 && (
@@ -1368,6 +1405,15 @@ export default function POSPage() {
                 <div className="flex justify-between text-slate-500">
                   <span>VAT</span>
                   <span>{fmt(vatAmount)}</span>
+                </div>
+              )}
+              {roundingAdj !== 0 && (
+                <div className="flex justify-between text-slate-500">
+                  <span>Rounding</span>
+                  <span>
+                    {roundingAdj > 0 ? "+" : ""}
+                    {fmt(roundingAdj)}
+                  </span>
                 </div>
               )}
             </div>

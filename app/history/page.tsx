@@ -195,6 +195,7 @@ export default function HistoryPage() {
         discountAmount: Number(full.discount_amount || 0),
         vatPercent: Number(full.vat_percent || 0),
         vatAmount: Number(full.vat_amount || 0),
+        roundingAdjustment: Number(full.rounding_adjustment || 0),
         grandTotal: Number(full.total || 0),
         paymentMethod: full.payment_method || "",
         paymentLines: ((payLines as { method_code: string; amount: number }[]) || []).map(
