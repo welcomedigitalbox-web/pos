@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
@@ -76,7 +77,7 @@ const STATUS_CLASS: Record<string, string> = {
   rejected: "bg-red-100 text-red-700",
 };
 
-export default function PurchaseInvoicesPage() {
+function PurchaseInvoicesInner() {
   const { profile } = useAuth();
   const { stores } = useStore();
   const router = useRouter();
@@ -631,5 +632,15 @@ export default function PurchaseInvoicesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams reads something that only exists in the browser, so the
+// page cannot be rendered ahead of time without a boundary to wait at.
+export default function PurchaseInvoicesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-slate-400">…</div>}>
+      <PurchaseInvoicesInner />
+    </Suspense>
   );
 }
