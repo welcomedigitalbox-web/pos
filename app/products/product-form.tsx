@@ -79,6 +79,14 @@ export default function ProductForm({ productId }: { productId?: string }) {
     return `${prefix}-${stamp}${tail}`;
   }
 
+  // The catalogue is read in pages now, so it arrives after the package rows
+  // do. Naming the parts is done again once it is here, otherwise the list
+  // shows the raw ids of the very items it is meant to describe.
+  useEffect(() => {
+    if (allProducts.length) loadParts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allProducts.length, productId]);
+
   useEffect(() => {
     fetchAllProducts("id,name,sku,price,is_package", true)
       .then((rows) => setAllProducts(rows as never));
