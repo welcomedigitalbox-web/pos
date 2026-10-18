@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { matchesSearch } from "@/lib/search";
 import { useRouter } from "next/navigation";
 import { supabase, fetchAllProducts } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
 
@@ -38,6 +39,16 @@ export default function PriceSchedulePage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, Product>>({});
   const [busy, setBusy] = useState(false);
+
+  // Thousands of prices change at once when a supplier reprices a range, and
+  // nobody is typing those one at a time. The sheet is the list of prices as
+  // it already arrives from the supplier.
+  const [impRows, setImpRows] = useState<
+    { sku: string; name: string; product_id: string | null; now: number | null;
+      new_price: number; on: string; note: string; ok: boolean; why: string }[]
+  >([]);
+  const [impBusy, setImpBusy] = useState(false);
+  const [impMsg, setImpMsg] = useState("");
   const [msg, setMsg] = useState("");
 
   async function load() {
@@ -104,6 +115,112 @@ export default function PriceSchedulePage() {
     setBusy(false);
     setMsg(error ? error.message : `${data ?? 0} applied`);
     load();
+  }
+
+  // A sheet already filled with what each product costs today, so the only
+  // column anyone has to touch is the new price.
+  async function downloadTemplate() {
+    setImpBusy(true);
+    const all = await fetchAllProducts<Product>("id, sku, name, price", true);
+    const head = ["SKU", "Product", "Price now", "New price", "Starts on (YYYY-MM-DD)", "Note"];
+    const body = all
+      .filter((p) => p.sku)
+      .map((p) => [p.sku, p.name, Number(p.price) || 0, "", "", ""]);
+    const ws = XLSX.utils.aoa_to_sheet([head, ...body]);
+    ws["!cols"] = [{ wch: 16 }, { wch: 46 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 28 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Price schedule");
+    XLSX.writeFile(wb, `price-schedule-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setImpBusy(false);
+  }
+
+  // Excel hands dates back as a serial number as often as a string, so both
+  // are accepted and anything else is refused rather than guessed at.
+  function readDate(v: unknown): string {
+    if (v == null || v === "") return "";
+    if (typeof v === "number") {
+      const d = XLSX.SSF.parse_date_code(v);
+      if (!d) return "";
+      return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+    }
+    const t = String(v).trim();
+    const m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    const d2 = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (d2) return `${d2[3]}-${d2[2].padStart(2, "0")}-${d2[1].padStart(2, "0")}`;
+    return "";
+  }
+
+  async function readSheet(file: File) {
+    setImpBusy(true);
+    setImpMsg("");
+    const wb = XLSX.read(await file.arrayBuffer());
+    const sheet = wb.Sheets["Price schedule"] || wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+
+    const all = await fetchAllProducts<Product>("id, sku, name, price", true);
+    const bySku = new Map(all.filter((p) => p.sku).map((p) => [String(p.sku).trim().toLowerCase(), p]));
+    const today = new Date().toISOString().slice(0, 10);
+
+    const out = raw.map((r) => {
+      const sku = String(r["SKU"] ?? r["sku"] ?? "").trim();
+      const hit = bySku.get(sku.toLowerCase());
+      const np = Number(String(r["New price"] ?? r["new_price"] ?? "").toString().replace(/[, ]/g, ""));
+      const on = readDate(r["Starts on (YYYY-MM-DD)"] ?? r["Starts on"] ?? r["starts_on"]);
+      const row = {
+        sku,
+        name: hit?.name || String(r["Product"] ?? ""),
+        product_id: hit?.id ?? null,
+        now: hit?.price ?? null,
+        new_price: np,
+        on,
+        note: String(r["Note"] ?? r["note"] ?? "").trim(),
+        ok: true,
+        why: "",
+      };
+      if (!sku) { row.ok = false; row.why = "no SKU"; }
+      else if (!hit) { row.ok = false; row.why = "SKU not found"; }
+      else if (!np || np <= 0) { row.ok = false; row.why = "no new price"; }
+      else if (!on) { row.ok = false; row.why = "no start date"; }
+      else if (on < today) { row.ok = false; row.why = "start date is in the past"; }
+      else if (Number(hit.price) === np) { row.ok = false; row.why = "same as the price now"; }
+      return row;
+    }).filter((r) => r.sku || r.new_price);
+
+    setImpRows(out);
+    setImpMsg(`${out.length} rows · ${out.filter((r) => r.ok).length} ready · ${out.filter((r) => !r.ok).length} to fix`);
+    setImpBusy(false);
+  }
+
+  async function commitSheet() {
+    const good = impRows.filter((r) => r.ok && r.product_id);
+    if (!good.length) return;
+    setImpBusy(true);
+    // In batches, because a single insert of thousands of rows is one request
+    // the browser can lose halfway and nobody knows what landed.
+    let done = 0;
+    for (let i = 0; i < good.length; i += 400) {
+      const chunk = good.slice(i, i + 400).map((r) => ({
+        product_id: r.product_id,
+        new_price: r.new_price,
+        effective_on: r.on,
+        note: r.note || "bulk import",
+        created_by: profile?.email || null,
+      }));
+      const { error } = await supabase.from("price_schedule").insert(chunk);
+      if (error) {
+        setImpMsg(`${done} scheduled, then: ${error.message}`);
+        setImpBusy(false);
+        await load();
+        return;
+      }
+      done += chunk.length;
+      setImpMsg(`${done} / ${good.length} scheduled...`);
+    }
+    setImpRows([]);
+    setImpMsg(`${done} price change(s) scheduled`);
+    setImpBusy(false);
+    await load();
   }
 
   if (blocked) return null;
@@ -175,6 +292,82 @@ export default function PriceSchedulePage() {
           </>
         )}
         {msg && <p className="text-xs text-slate-500 mt-2">{msg}</p>}
+      </div>
+
+      {/* The bulk route. One sheet, thousands of prices, one start date each. */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
+        <h2 className="text-sm font-semibold">Many at once (Excel)</h2>
+        <p className="text-xs text-slate-500 mt-0.5 mb-3">
+          Download the sheet, fill in <b>New price</b> and <b>Starts on</b>, upload it
+          back. Rows you leave blank are ignored.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={downloadTemplate}
+            disabled={impBusy}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium bg-white disabled:opacity-50"
+          >
+            ⬇ Download sheet
+          </button>
+          <label className="text-sm">
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="text-sm"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) readSheet(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {impRows.some((r) => r.ok) && (
+            <button
+              onClick={commitSheet}
+              disabled={impBusy}
+              className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              Schedule {impRows.filter((r) => r.ok).length} price change(s)
+            </button>
+          )}
+        </div>
+
+        {impMsg && <p className="text-xs text-slate-600 mt-2">{impMsg}</p>}
+
+        {impRows.length > 0 && (
+          <div className="mt-3 border border-slate-200 rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-500 sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-2">SKU</th>
+                  <th className="text-left px-3 py-2">Product</th>
+                  <th className="text-right px-3 py-2">Now</th>
+                  <th className="text-right px-3 py-2">New</th>
+                  <th className="text-left px-3 py-2">Starts</th>
+                  <th className="text-left px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {impRows.slice(0, 400).map((r, i) => (
+                  <tr key={`${r.sku}-${i}`} className={`border-t border-slate-100 ${r.ok ? "" : "bg-red-50"}`}>
+                    <td className="px-3 py-1.5 font-mono">{r.sku || "-"}</td>
+                    <td className="px-3 py-1.5">{r.name || "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-500">{money(r.now)}</td>
+                    <td className="px-3 py-1.5 text-right font-medium">{money(r.new_price)}</td>
+                    <td className="px-3 py-1.5">{r.on || "-"}</td>
+                    <td className="px-3 py-1.5 text-red-600">{r.why}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {impRows.length > 400 && (
+              <p className="text-xs text-slate-400 px-3 py-2">
+                Showing the first 400 of {impRows.length}; all of them are scheduled.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between mb-2">
