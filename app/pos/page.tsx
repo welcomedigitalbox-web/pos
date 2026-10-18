@@ -834,7 +834,15 @@ export default function POSPage() {
         vatPercent: vatPercentNum,
         vatAmount,
         grandTotal,
-        paymentMethod: selectedMethod?.name || paymentMethod,
+        paymentMethod: splitting
+          ? "Split"
+          : selectedMethod?.name || methodCode,
+        paymentLines: splitting
+          ? payLines.map((l) => ({
+              method: visibleMethods.find((m) => m.code === l.method)?.name || l.method,
+              amount: l.amount,
+            }))
+          : undefined,
         amountReceived: amountReceivedNum,
         change: paymentMethod === "cod" ? codChange : change,
         advancePayment: advancePaymentNum,

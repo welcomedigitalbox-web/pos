@@ -884,9 +884,18 @@ export default function ReturnsPage() {
                       <option value="cash">{t("returns_method_cash")}</option>
                       <option value="exchange">{t("returns_method_exchange")}</option>
                     </select>
+                    {refundMethod === "cash" && (
+                      <p className="text-[11px] text-orange-600 mt-1">
+                        Do not hand cash over. Take the goods and the
+                        customer&rsquo;s payment details; finance transfers the money
+                        and the slip appears here.
+                      </p>
+                    )}
                   </div>
                   {refundMethod === "cash" && (
                     <div>
+                      {/* The shop takes the goods and the customer's details.
+                          The money leaves from finance, never from the till. */}
                       <label className="text-sm text-slate-600">{t("returns_refundVia")}</label>
                       <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1"
                         value={refundPaymentMethod} onChange={(e) => setRefundPaymentMethod(e.target.value)}>

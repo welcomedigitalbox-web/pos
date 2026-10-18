@@ -157,10 +157,21 @@ export default function HistoryPage() {
   async function reprint(sale: SaleRow) {
     setPrinting(sale.id);
     try {
-      const [{ data: items }, { data: settings }] = await Promise.all([
-        supabase.from("sale_items").select("*").eq("sale_id", sale.id).order("created_at"),
-        supabase.from("store_settings").select("*").eq("store_id", sale.store_id).maybeSingle(),
-      ]);
+      const [{ data: items }, { data: settings }, { data: payLines }, { data: methods }] =
+        await Promise.all([
+          supabase.from("sale_items").select("*").eq("sale_id", sale.id).order("created_at"),
+          supabase.from("store_settings").select("*").eq("store_id", sale.store_id).maybeSingle(),
+          // A reprint has to show the same split the customer was given.
+          supabase
+            .from("sale_payment_lines")
+            .select("method_code, amount")
+            .eq("sale_id", sale.id)
+            .order("sort_order"),
+          supabase.from("pay_methods_v").select("code,name"),
+        ]);
+      const methodName = new Map(
+        ((methods as { code: string; name: string }[]) || []).map((m) => [m.code, m.name])
+      );
 
       const full = sale as any;
       setReceipt({
@@ -186,6 +197,12 @@ export default function HistoryPage() {
         vatAmount: Number(full.vat_amount || 0),
         grandTotal: Number(full.total || 0),
         paymentMethod: full.payment_method || "",
+        paymentLines: ((payLines as { method_code: string; amount: number }[]) || []).map(
+          (p) => ({
+            method: methodName.get(p.method_code) || p.method_code,
+            amount: Number(p.amount),
+          })
+        ),
         amountReceived: Number(full.amount_received || 0),
         change: Number(full.change_amount || 0),
         advancePayment: Number(full.advance_payment || 0),

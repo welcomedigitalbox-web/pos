@@ -25,6 +25,9 @@ export type ReceiptData = {
   vatAmount: number;
   grandTotal: number;
   paymentMethod: string;
+  // When the customer pays with more than one method, the slip has to show
+  // which, or neither the customer nor the till can be checked later.
+  paymentLines?: { method: string; amount: number }[];
   amountReceived: number;
   change: number;
   advancePayment: number;
@@ -126,6 +129,13 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
         <span style={MUTED}>Payment</span>
         <span>{data.paymentMethod}</span>
       </div>
+      {(data.paymentLines?.length ?? 0) > 1 &&
+        data.paymentLines!.map((p, i) => (
+          <div key={i} style={{ ...ROW, fontSize: 11 }}>
+            <span style={MUTED}>&nbsp;&nbsp;{p.method}</span>
+            <span>{mmk(p.amount)}</span>
+          </div>
+        ))}
       {data.paymentMethod === "Cash" && (
         <>
           <div style={ROW}>
