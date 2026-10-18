@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { matchesSearch } from "@/lib/search";
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchAllProducts, describeError } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -21,6 +21,9 @@ type Row = {
   variant_id: string | null;
   display_name: string;
   sku: string | null;
+  // The code printed on the supplier's own box. The warehouse reads it off
+  // the carton, so it is typed here rather than back at a desk.
+  supplierCode: string | null;
   price: number;
   stock_qty: number;
   avg_cost: number;
@@ -49,6 +52,9 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Which supplier code is being typed, and what went wrong if it was refused.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [codeMsg, setCodeMsg] = useState("");
   const [detail, setDetail] = useState<Row | null>(null);
 
   useEffect(() => {
@@ -79,6 +85,7 @@ export default function InventoryPage() {
       variant_id: r.variant_id,
       display_name: r.display_name,
       sku: r.sku,
+      supplierCode: null,
       price: Number(r.price || 0),
       stock_qty: Number(r.stock_qty || 0),
       avg_cost: Number(r.avg_cost || 0),
@@ -90,6 +97,31 @@ export default function InventoryPage() {
       salesValue: Number(r.sold_value || 0),
     })));
     setLoading(false);
+
+    // Supplier codes come from the product, not the stock row, so they are
+    // fetched alongside and filled in once they arrive.
+    const sup = await fetchAllProducts<{ id: string; supplier_code: string | null }>(
+      "id,supplier_code", true);
+    const byId: Record<string, string | null> = {};
+    for (const pr of sup) byId[pr.id] = pr.supplier_code;
+    setRows((rs) => rs.map((r) => ({ ...r, supplierCode: byId[r.product_id] ?? null })));
+  }
+
+  // Typed in the warehouse, saved through the one function that also teaches
+  // the tills the code. Nobody here may write to products directly.
+  async function saveSupplierCode(row: Row, raw: string) {
+    const code = raw.trim();
+    if (!code || code === (row.supplierCode || "")) { setEditing(null); return; }
+    const { error } = await supabase.rpc("set_supplier_code", {
+      p_product: row.product_id,
+      p_code: code,
+      p_variant: row.variant_id,
+    });
+    if (error) { setCodeMsg(describeError(error)); return; }
+    setRows((rs) => rs.map((r) =>
+      r.product_id === row.product_id ? { ...r, supplierCode: code } : r));
+    setEditing(null);
+    setCodeMsg("");
   }
 
   async function loadBatches(row: Row) {
@@ -154,7 +186,7 @@ export default function InventoryPage() {
         const e = r.nearestExpiry ? new Date(r.nearestExpiry).getTime() : null;
         if (!(e !== null && e < now)) return false;
       }
-      if (!matchesSearch(q, r.display_name, r.sku))
+      if (!matchesSearch(q, r.display_name, r.sku, r.supplierCode))
         return false;
       return true;
     });
@@ -253,11 +285,15 @@ export default function InventoryPage() {
       )}
 
       {locId && <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+        {codeMsg && (
+          <div className="px-3 py-2 text-sm text-red-600">❌ {codeMsg}</div>
+        )}
         <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
+              <th className="text-left px-3 py-2">Supplier code</th>
               <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
               <th className="text-left px-3 py-2">{t("ledger_unitsSold")}</th>
               <th className="text-left px-3 py-2">{t("products_price")}</th>
@@ -282,6 +318,27 @@ export default function InventoryPage() {
                       </button>
                     </td>
                     <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
+                    <td className="px-3 py-2 text-xs">
+                      {editing === r.key ? (
+                        <input
+                          autoFocus
+                          defaultValue={r.supplierCode || ""}
+                          onBlur={(e) => saveSupplierCode(r, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            if (e.key === "Escape") setEditing(null);
+                          }}
+                          className="w-32 border border-slate-300 rounded px-2 py-1 text-xs"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => { setCodeMsg(""); setEditing(r.key); }}
+                          className={r.supplierCode ? "text-slate-600" : "text-slate-300 hover:text-blue-600"}
+                        >
+                          {r.supplierCode || "+ add"}
+                        </button>
+                      )}
+                    </td>
                     <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : r.stock_qty <= 5 ? "text-orange-600" : ""}`}>
                       {r.stock_qty.toLocaleString()}
                     </td>

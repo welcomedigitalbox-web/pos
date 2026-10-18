@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase, fetchSellableItems, SellableItem, describeError } from "@/lib/supabase";
+import { supabase, fetchSellableItems, fetchAllProducts, SellableItem, describeError } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useStore } from "../store-context";
 import { useLanguage } from "../language-context";
@@ -90,13 +90,17 @@ export default function LabelsPage() {
   useEffect(() => {
     if (!storeId) return;
     (async () => {
-      const [list, bc, po] = await Promise.all([
+      const [list, bc, po, sup] = await Promise.all([
         fetchSellableItems(storeId, true),
         supabase.from("product_barcodes")
           .select("product_id,variant_id,barcode,kind")
           .eq("is_active", true)
           .neq("kind", "carton")
           .limit(5000),
+        // A code typed on the product itself counts as one of its codes:
+        // whoever stuck it on the box did not also come to this screen.
+        fetchAllProducts<{ id: string; supplier_code: string | null }>(
+          "id,supplier_code", true),
         supabase.from("purchase_orders")
           .select("id,po_number,status,order_date")
           .in("status", ["received", "partial"])
@@ -108,6 +112,13 @@ export default function LabelsPage() {
       for (const b of (bc.data as any[]) || []) {
         const k = `${b.product_id}:${b.variant_id || "base"}`;
         (map[k] ||= []).push({ barcode: b.barcode, kind: b.kind });
+      }
+      for (const pr of (sup as { id: string; supplier_code: string | null }[]) || []) {
+        const code = (pr.supplier_code || "").trim();
+        if (!code) continue;
+        const k = `${pr.id}:base`;
+        if ((map[k] ||= []).some((c) => c.barcode === code)) continue;
+        map[k].push({ barcode: code, kind: "supplier" });
       }
       setBarcodes(map);
       setPos(((po.data as any[]) || []).map((p) => ({ id: p.id, po_number: p.po_number })));
@@ -147,18 +158,18 @@ export default function LabelsPage() {
     if (!code) return;
     setBusy(true);
     try {
-      const { error } = await supabase.from("product_barcodes").insert({
-        product_id: line.product_id,
-        variant_id: line.variant_id,
-        barcode: code,
-        // Ours starts with EDU; anything else came off a box.
-        kind: /^EDU\d/i.test(code) ? "internal" : "supplier",
-        created_by: profile?.email || null,
+      // One function does the whole job: the tills learn the code, and the
+      // product carries it as its supplier code if it had none. The
+      // warehouse cannot write either table directly, and should not have to.
+      const { data: savedKind, error } = await supabase.rpc("set_supplier_code", {
+        p_product: line.product_id,
+        p_code: code,
+        p_variant: line.variant_id,
       });
       if (error) throw error;
 
       const k = `${line.product_id}:${line.variant_id || "base"}`;
-      const kind = /^EDU\d/i.test(code) ? "internal" : "supplier";
+      const kind = (savedKind as string) || (/^EDU\d/i.test(code) ? "internal" : "supplier");
       setBarcodes((m) => ({ ...m, [k]: [...(m[k] || []), { barcode: code, kind }] }));
       setLines((rows) => rows.map((r) =>
         r.key === line.key ? { ...r, code, codeKind: kind } : r));
