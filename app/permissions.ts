@@ -35,6 +35,7 @@ export type PageKey =
   | "invoice-fix"
   | "packages"
   | "purchase-invoices"
+  | "stock-on-hand"
   | "settlements"
   | "my-pin"
   | "product-category"
@@ -108,6 +109,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "product-import", href: "/product-import", labelKey: "nav_productImport", group: "setup" },
   { key: "stock-import", href: "/stock-import", labelKey: "nav_stockImport", group: "setup" },
   { key: "inventory", href: "/inventory", labelKey: "nav_inventory", group: "inventory" },
+  { key: "stock-on-hand", href: "/stock-on-hand", labelKey: "nav_stockOnHand", group: "inventory" },
   { key: "stock-in", href: "/stock-in", labelKey: "nav_stockIn", group: "inventory" },
   { key: "stock-request", href: "/stock-request", labelKey: "nav_stockRequest", group: "inventory" },
   { key: "damage", href: "/damage", labelKey: "nav_damage", group: "inventory" },

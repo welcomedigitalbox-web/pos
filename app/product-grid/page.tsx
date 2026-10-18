@@ -57,6 +57,23 @@ export default function ProductGridPage() {
     return out;
   }
 
+  // The 1,000-row ceiling applies to a function's rows as much as a table's,
+  // and this is one row per product per shop. Read it in pages or most of the
+  // grid shows a dash where the stock actually is.
+  async function fetchStockMatrix() {
+    const page = 1000;
+    const out: { product_id: string; store_id: string; stock_qty: number }[] = [];
+    for (let from = 0; ; from += page) {
+      const { data, error } = await supabase
+        .rpc("product_stock_matrix")
+        .range(from, from + page - 1);
+      if (error || !data || (data as unknown[]).length === 0) break;
+      out.push(...(data as typeof out));
+      if ((data as unknown[]).length < page) break;
+    }
+    return out;
+  }
+
   async function load() {
     const [p, c, inv, ref] = await Promise.all([
       supabase.from("products")
@@ -89,12 +106,12 @@ export default function ProductGridPage() {
 
     const [st, mx, oo] = await Promise.all([
       supabase.from("stores").select("id,name").order("id"),
-      supabase.rpc("product_stock_matrix"),
+      fetchStockMatrix(),
       supabase.rpc("product_on_order"),
     ]);
     setStores((st.data as { id: string; name: string }[]) || []);
     const grid: Record<string, Record<string, number>> = {};
-    for (const r of ((mx.data as { product_id: string; store_id: string; stock_qty: number }[]) || [])) {
+    for (const r of mx) {
       (grid[r.product_id] ||= {})[r.store_id] = Number(r.stock_qty || 0);
     }
     setByStore(grid);
