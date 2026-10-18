@@ -9,8 +9,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   supabase, Product, ProductCategory, ProductVariant,
-  upsertStoreInventory, describeError,
-} from "@/lib/supabase";
+  upsertStoreInventory, describeError, fetchAllProducts } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useLanguage } from "../language-context";
 
@@ -81,10 +80,8 @@ export default function ProductForm({ productId }: { productId?: string }) {
   }
 
   useEffect(() => {
-    supabase.from("products")
-      .select("id,name,sku,price,is_package")
-      .eq("is_active", true).order("name").limit(3000)
-      .then(({ data }) => setAllProducts((data as never) || []));
+    fetchAllProducts("id,name,sku,price,is_package", true)
+      .then((rows) => setAllProducts(rows as never));
     supabase.from("product_categories").select("*").order("sort_order").limit(500)
       .then(({ data }) => setCategories((data as ProductCategory[]) || []));
   }, []);

@@ -209,6 +209,28 @@ async function allRows<T>(
   }
 }
 
+// The whole catalogue, however big it gets.
+//
+// A REST reply stops at 1,000 rows whatever range or limit is asked for, so a
+// plain select of 2,800 products quietly returns the first thousand and the
+// rest look as if they do not exist - which is why a search for a product
+// whose name starts late in the alphabet found nothing.
+export async function fetchAllProducts<T = Record<string, unknown>>(
+  columns = "*",
+  activeOnly = false
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    let q = supabase.from("products").select(columns).order("name").order("id");
+    if (activeOnly) q = q.eq("is_active", true);
+    const { data, error } = await q.range(from, from + 999);
+    const page = ((data as unknown) as T[]) || [];
+    out.push(...page);
+    if (error || page.length < 1000) break;
+  }
+  return out;
+}
+
 export async function fetchSellableItems(storeId: string, includeInactive = false): Promise<SellableItem[]> {
   // One answer, one pass. Paging an RPC made the database redo the whole
   // join for every page.

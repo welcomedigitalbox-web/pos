@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { matchesSearch } from "@/lib/search";
-import { supabase, yangonToday } from "@/lib/supabase";
+import { supabase, yangonToday, fetchAllProducts } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -74,13 +74,13 @@ export default function PromotionsPage() {
     const [p, i, pr, c, st] = await Promise.all([
       supabase.from("promotions").select("*").order("priority").order("starts_on", { ascending: false }),
       supabase.from("promotion_items").select("*"),
-      supabase.from("products").select("id,name").eq("is_active", true).order("name"),
+      fetchAllProducts<Named>("id,name", true),
       supabase.from("product_categories").select("id,name").order("sort_order"),
       supabase.from("stores").select("id,name").order("id"),
     ]);
     setPromos((p.data as Promo[]) || []);
     setItems((i.data as Item[]) || []);
-    setProducts((pr.data as Named[]) || []);
+    setProducts(pr || []);
     setCats((c.data as Named[]) || []);
     setStores(((st.data as { id: string; name: string }[]) || []).map((x) => ({ id: x.id, name: x.name })));
   }

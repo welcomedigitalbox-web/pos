@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchAllProducts } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
 
@@ -62,10 +63,12 @@ export default function PriceSchedulePage() {
     const q = search.trim();
     if (q.length < 2) { setFound([]); return; }
     let live = true;
-    supabase.from("products").select("id, sku, name, price")
-      .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
-      .eq("is_active", true).order("name").limit(20)
-      .then(({ data }) => { if (live) setFound((data as Product[]) || []); });
+    // Matched here rather than by the database, so a name holding two spaces
+    // or a bracket is still found, and the words may be typed in any order.
+    fetchAllProducts<Product>("id, sku, name, price", true).then((rows) => {
+      if (!live) return;
+      setFound(rows.filter((r) => matchesSearch(q, r.name, r.sku)).slice(0, 20));
+    });
     return () => { live = false; };
   }, [search]);
 

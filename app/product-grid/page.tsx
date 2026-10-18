@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { matchesSearch } from "@/lib/search";
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchAllProducts } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -80,9 +80,7 @@ export default function ProductGridPage() {
 
   async function load() {
     const [p, c, inv, ref] = await Promise.all([
-      supabase.from("products")
-        .select("id, sku, name, category_id, price, is_active, allow_discount, allow_promotion, min_price")
-        .order("sku", { nullsFirst: false }).order("name").range(0, 4999),
+      fetchAllProducts("id, sku, name, category_id, price, is_active, allow_discount, allow_promotion, min_price"),
       supabase.from("product_categories").select("id,name").order("sort_order"),
       supabase.rpc("product_cost_rollup"),
       supabase.from("product_cost_reference").select("sku, cost").range(0, 4999),
@@ -100,7 +98,7 @@ export default function ProductGridPage() {
         last: Number(r.last_cost || 0),
       };
     }
-    setRows(((p.data as Omit<Row, "avg_cost">[]) || []).map((r) => {
+    setRows((((p as unknown) as Omit<Row, "avg_cost">[]) || []).map((r) => {
       const e = cost[r.id];
       // Never received anywhere, so fall back to the cost merchandising quoted.
       const fromStock = e && e.qty > 0 ? e.value / e.qty : e?.last || 0;

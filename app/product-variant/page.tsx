@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, Product, ProductVariant } from "@/lib/supabase";
+import { supabase, Product, ProductVariant, fetchAllProducts } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
@@ -45,8 +45,8 @@ export default function ProductVariantPage() {
   if (!profile || !hasPermission(profile, "product-variant")) return null;
 
   async function load() {
-    const { data: prods } = await supabase.from("products").select("*").order("name");
-    setProducts(prods || []);
+    const prods = await fetchAllProducts("*");
+    setProducts((prods as never) || []);
 
     const { data: vars } = await supabase
       .from("product_variants")
