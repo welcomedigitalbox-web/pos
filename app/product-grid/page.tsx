@@ -34,6 +34,9 @@ export default function ProductGridPage() {
   const [onOrder, setOnOrder] = useState<Record<string, number>>({});
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
+  // Eight shop columns squeeze the names and codes down to nothing. Most of
+  // the time this screen is for prices, so the stock columns fold away.
+  const [showStock, setShowStock] = useState(false);
   const [dirty, setDirty] = useState<Record<string, Partial<Row>>>({});
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
@@ -221,16 +224,21 @@ export default function ProductGridPage() {
           <option value="">All categories</option>
           {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        <label className="flex items-center gap-1.5 text-sm text-slate-600">
+          <input type="checkbox" checked={showStock}
+            onChange={(e) => setShowStock(e.target.checked)} />
+          Stock by shop
+        </label>
         <span className="text-xs text-slate-400">{shown.length} </span>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-auto max-h-[70vh]">
-        <table className="text-xs min-w-[1100px] w-full border-collapse">
+        <table className="text-xs w-max min-w-full border-collapse">
           <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
             <tr>
               {["Code", "Description", "Category", "Cost", "Sale Price", "GP %",
                 "Min Price", "Disc", "Promo", "Active",
-                ...stores.map((s2) => s2.name), "Total", "On Order"].map((h) => (
+                ...(showStock ? stores.map((s2) => s2.name) : []), "Total", "On Order"].map((h) => (
                 <th key={h} className="border border-slate-200 px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -241,15 +249,15 @@ export default function ProductGridPage() {
               const touched = !!dirty[r.id];
               return (
                 <tr key={r.id} className={"border-b border-slate-100 " + (touched ? "bg-amber-50" : "hover:bg-slate-50")}>
-                  <td className={cell + " w-28"}>
+                  <td className={cell + " w-40"}>
                     <input className={input} value={r.sku || ""}
                       onChange={(e) => edit(r.id, "sku", e.target.value)} />
                   </td>
-                  <td className={cell + " min-w-[260px]"}>
+                  <td className={cell + " min-w-[360px]"}>
                     <input className={input} value={r.name}
                       onChange={(e) => edit(r.id, "name", e.target.value)} />
                   </td>
-                  <td className={cell + " w-36"}>
+                  <td className={cell + " w-44"}>
                     <select className={input} value={r.category_id || ""}
                       onChange={(e) => edit(r.id, "category_id", e.target.value || null)}>
                       <option value="">-</option>
@@ -280,11 +288,12 @@ export default function ProductGridPage() {
                     <input type="checkbox" checked={r.is_active}
                       onChange={(e) => edit(r.id, "is_active", e.target.checked)} />
                   </td>
-                  {stores.map((s2) => (
-                    <td key={s2.id} className={cell + " w-16 text-right text-slate-500"}>
-                      {byStore[r.id]?.[s2.id] ? n(byStore[r.id][s2.id]) : "-"}
-                    </td>
-                  ))}
+                  {showStock &&
+                    stores.map((s2) => (
+                      <td key={s2.id} className={cell + " w-16 text-right text-slate-500"}>
+                        {byStore[r.id]?.[s2.id] ? n(byStore[r.id][s2.id]) : "-"}
+                      </td>
+                    ))}
                   <td className={cell + " w-16 text-right font-medium"}>
                     {n(stores.reduce((t, s2) => t + (byStore[r.id]?.[s2.id] ?? 0), 0))}
                   </td>
