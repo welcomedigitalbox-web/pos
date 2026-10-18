@@ -8,7 +8,7 @@ import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
 import { supabase } from "@/lib/supabase";
-import { PAGE_OPTIONS, PageGroup, hasPermission } from "./permissions";
+import { PAGE_OPTIONS, GROUP_LABELS, PageGroup, hasPermission } from "./permissions";
 import { APP_URL, canAccess, type AppKey } from "@/lib/apps";
 
 type DeptKey = PageGroup | "admin";
@@ -121,7 +121,14 @@ export default function Nav() {
   if (pathname === "/login" || !profile) return null;
 
   const activePage = PAGE_OPTIONS.find((p) => p.href === pathname);
-  let activeDept: DeptKey | null = (activePage?.group as DeptKey) || null;
+  // A detail screen such as /products/<id>/edit is not in the list, so the
+  // trail falls back to the longest page whose address it starts with.
+  const trailPage =
+    activePage ||
+    PAGE_OPTIONS.filter((p) => p.href !== "/" && pathname.startsWith(p.href + "/")).sort(
+      (a2, b2) => b2.href.length - a2.href.length
+    )[0];
+  let activeDept: DeptKey | null = (trailPage?.group as DeptKey) || null;
   if (pathname.startsWith("/admin")) activeDept = "admin";
 
   const visibleDepartments = DEPARTMENTS.filter((d) => {
@@ -251,6 +258,46 @@ export default function Nav() {
               </button>
             </div>
           </div>
+
+          {/* Where you are. Staff were landing on a sub-page from a link and
+              had no idea which part of the system they were in. */}
+          {pathname !== "/" && (trailPage || activeDept) && (
+            <div className="px-3 sm:px-4 pb-1.5 flex items-center gap-1 text-[11px] text-slate-400">
+              <Link href="/" className="hover:text-slate-600">
+                {t("nav_home")}
+              </Link>
+              {activeDept && activeDept !== "admin" && (
+                <>
+                  <span>/</span>
+                  <Link href={deptHref(activeDept)} className="hover:text-slate-600">
+                    {t(GROUP_LABELS[activeDept as PageGroup] as never)}
+                  </Link>
+                </>
+              )}
+              {activeDept === "admin" && (
+                <>
+                  <span>/</span>
+                  <span>{t("nav_admin")}</span>
+                </>
+              )}
+              {trailPage && (
+                <>
+                  <span>/</span>
+                  <span className="text-slate-600 font-medium">
+                    {t(trailPage.labelKey as never)}
+                  </span>
+                </>
+              )}
+              {!activePage && trailPage && (
+                <>
+                  <span>/</span>
+                  <span className="text-slate-600 font-medium">
+                    {pathname.endsWith("/edit") ? "Edit" : pathname.endsWith("/new") ? "New" : "Detail"}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
 
           {subPages.length > 0 && (
             <div className="px-3 sm:px-4 flex gap-1 overflow-x-auto scrollbar-none">
