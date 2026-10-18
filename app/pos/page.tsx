@@ -36,6 +36,16 @@ type Promo = {
   priority: number; stackable: boolean; items: PromoItem[];
 };
 
+// The same Myanmar number gets written 09..., +959... and 959..., and a
+// cashier types whichever one the customer says. Comparing the digits that
+// are common to all three finds the person either way.
+function phoneCore(raw: string) {
+  let d = raw.replace(/\D/g, "");
+  if (d.startsWith("95")) d = d.slice(2);
+  d = d.replace(/^0+/, "");
+  return d.length >= 4 ? d : "";
+}
+
 type DiscountType = "percent" | "flat";
 
 const STANDARD_VAT_PERCENT = 5;
@@ -226,10 +236,15 @@ export default function POSPage() {
     const term = q.trim();
     if (term.length < 2) return;
     const like = `%${term}%`;
+    const core = phoneCore(term);
     const { data } = await supabase
       .from("customers")
       .select("*")
-      .or(`name.ilike.${like},phone.ilike.${like}`)
+      .or(
+        core
+          ? `name.ilike.${like},phone.ilike.%${core}%`
+          : `name.ilike.${like},phone.ilike.${like}`
+      )
       .order("name")
       .limit(25);
     if (!data?.length) return;
@@ -476,10 +491,13 @@ export default function POSPage() {
     : filteredGroups.slice(atPage * POS_GRID_LIMIT, (atPage + 1) * POS_GRID_LIMIT);
   const hiddenCount = filteredGroups.length - visibleGroups.length;
 
+  const searchCore = phoneCore(customerSearch);
   const filteredCustomers = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      (c.phone || "").includes(customerSearch)
+      (searchCore
+        ? phoneCore(c.phone || "").includes(searchCore)
+        : (c.phone || "").includes(customerSearch))
   );
   const exactCustomerMatch = customers.some(
     (c) => c.name.toLowerCase() === customerSearch.trim().toLowerCase()
