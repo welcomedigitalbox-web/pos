@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { matchesSearch } from "@/lib/search";
-import { supabase, yangonToday, fetchAllProducts } from "@/lib/supabase";
+import { supabase, yangonToday, fetchAllProducts, fetchSupplierCodeMap } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -46,6 +46,7 @@ export default function PromotionsPage() {
   const [promos, setPromos] = useState<Promo[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [products, setProducts] = useState<Named[]>([]);
+  const [codes, setCodes] = useState<Record<string, string>>({});
   const [cats, setCats] = useState<Named[]>([]);
   const [stores, setStores] = useState<Named[]>([]);
   const [msg, setMsg] = useState("");
@@ -71,6 +72,7 @@ export default function PromotionsPage() {
   useEffect(() => { load(); }, []);
 
   async function load() {
+    fetchSupplierCodeMap().then(setCodes);
     const [p, i, pr, c, st] = await Promise.all([
       supabase.from("promotions").select("*").order("priority").order("starts_on", { ascending: false }),
       supabase.from("promotion_items").select("*"),
@@ -182,7 +184,7 @@ export default function PromotionsPage() {
   }
 
   const shown = useMemo(
-    () => products.filter((p) => matchesSearch(search, p.name)).slice(0, 40),
+    () => products.filter((p) => matchesSearch(search, p.name, codes[p.id])).slice(0, 40),
     [products, search]
   );
 

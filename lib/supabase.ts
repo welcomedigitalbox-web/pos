@@ -185,6 +185,29 @@ export type SellableItem = {
   codes?: string | null;
 };
 
+// Every code a product answers to, by product. A supplier's code is kept as
+// a barcode of kind 'supplier', so the screens that work off the plain
+// product list - price schedules, promotions - can still be searched by the
+// number printed on the carton.
+export async function fetchSupplierCodeMap(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("product_barcodes")
+      .select("product_id,barcode")
+      .eq("is_active", true)
+      .range(from, from + 999);
+    const page = (data as { product_id: string; barcode: string }[]) || [];
+    for (const b of page) {
+      out[b.product_id] = out[b.product_id]
+        ? `${out[b.product_id]} ${b.barcode}`
+        : b.barcode;
+    }
+    if (error || page.length < 1000) break;
+  }
+  return out;
+}
+
 export function inventoryKey(productId: string, variantId: string | null) {
   return `${productId}:${variantId || "base"}`;
 }

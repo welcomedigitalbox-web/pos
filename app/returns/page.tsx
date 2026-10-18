@@ -822,7 +822,7 @@ export default function ReturnsPage() {
                           .filter((it) => {
                             const q = exchangeSearch.trim().toLowerCase();
                             return (
-                              matchesSearch(q, it.display_name, it.sku)
+                              matchesSearch(q, it.display_name, it.sku, (it as any).codes)
                             );
                           })
                           .slice(0, 20)

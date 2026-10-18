@@ -151,7 +151,7 @@ export default function WarehousePage() {
       if (statusFilter === "in_transit" && r.inTransitQty <= 0) return false;
       if (statusFilter === "expiring" && !r.isExpiringSoon) return false;
       if (statusFilter === "expired" && !r.isExpired) return false;
-      if (!matchesSearch(q, r.display_name, r.sku))
+      if (!matchesSearch(q, r.display_name, r.sku, (r as any).codes))
         return false;
       return true;
     });

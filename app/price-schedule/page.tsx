@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { matchesSearch } from "@/lib/search";
 import { useRouter } from "next/navigation";
-import { supabase, fetchAllProducts } from "@/lib/supabase";
+import { supabase, fetchAllProducts, fetchSupplierCodeMap } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
@@ -30,6 +30,7 @@ export default function PriceSchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
+  const [codes, setCodes] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [found, setFound] = useState<Product[]>([]);
   const [pick, setPick] = useState<Product | null>(null);
@@ -79,9 +80,10 @@ export default function PriceSchedulePage() {
     let live = true;
     // Matched here rather than by the database, so a name holding two spaces
     // or a bracket is still found, and the words may be typed in any order.
+    fetchSupplierCodeMap().then(setCodes);
     fetchAllProducts<Product>("id, sku, name, price", true).then((rows) => {
       if (!live) return;
-      setFound(rows.filter((r) => matchesSearch(q, r.name, r.sku)).slice(0, 20));
+      setFound(rows.filter((r) => matchesSearch(q, r.name, r.sku, codes[r.id])).slice(0, 20));
     });
     return () => { live = false; };
   }, [search]);
