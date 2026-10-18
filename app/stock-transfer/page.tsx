@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
+import { matchesSearch } from "@/lib/search";
 import {
   supabase, SellableItem,
   fetchSellableItems, upsertStoreInventory, logActivity, getTransferPhotoUrl,
@@ -408,7 +409,7 @@ export default function StockTransferPage() {
     const q = search.trim().toLowerCase();
     if (!q) return items;
     return items.filter(
-      (i) => i.display_name.toLowerCase().includes(q) || (i.sku || "").toLowerCase().includes(q)
+      (i) => matchesSearch(q, i.display_name, i.sku, (i as any).codes)
     );
   }, [items, search]);
 

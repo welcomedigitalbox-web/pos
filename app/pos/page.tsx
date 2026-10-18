@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase, Customer, PaymentMethodRow, StoreSettings, LoyaltyTier, SalesRep, ProductCategory, SellableItem, fetchSellableItems, upsertStoreInventory, yangonToday } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useLanguage } from "../language-context";
@@ -570,10 +571,8 @@ export default function POSPage() {
       if (categoryFilter !== "all" && g.categoryId !== categoryFilter) return false;
       if (!q) return true;
       return (
-        g.productName.toLowerCase().includes(q) ||
-        g.items.some((i) => (i.sku || "").toLowerCase().includes(q)
-          || i.display_name.toLowerCase().includes(q)
-          || (i.codes || "").toLowerCase().includes(q))
+        matchesSearch(q, g.productName) ||
+        g.items.some((i) => matchesSearch(q, i.display_name, i.sku, i.codes))
       );
     });
   }, [productGroups, categoryFilter, search]);

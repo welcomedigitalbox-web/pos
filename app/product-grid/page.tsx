@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
@@ -126,8 +127,7 @@ export default function ProductGridPage() {
     let out = rows;
     if (cat) out = out.filter((r) => (r.category_id || "") === cat);
     if (q) {
-      const s = q.toLowerCase();
-      out = out.filter((r) => (r.sku || "").toLowerCase().includes(s) || r.name.toLowerCase().includes(s));
+      out = out.filter((r) => matchesSearch(q, r.name, r.sku, (r as any).codes, (r as any).supplier_code));
     }
     return out;
   }, [rows, q, cat]);

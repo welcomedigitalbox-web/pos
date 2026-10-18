@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -153,7 +154,7 @@ export default function InventoryPage() {
         const e = r.nearestExpiry ? new Date(r.nearestExpiry).getTime() : null;
         if (!(e !== null && e < now)) return false;
       }
-      if (q && !r.display_name.toLowerCase().includes(q) && !(r.sku || "").toLowerCase().includes(q))
+      if (!matchesSearch(q, r.display_name, r.sku))
         return false;
       return true;
     });

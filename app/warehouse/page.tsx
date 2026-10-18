@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase, SellableItem, fetchSellableItems } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -150,7 +151,7 @@ export default function WarehousePage() {
       if (statusFilter === "in_transit" && r.inTransitQty <= 0) return false;
       if (statusFilter === "expiring" && !r.isExpiringSoon) return false;
       if (statusFilter === "expired" && !r.isExpired) return false;
-      if (q && !r.display_name.toLowerCase().includes(q) && !(r.sku || "").toLowerCase().includes(q))
+      if (!matchesSearch(q, r.display_name, r.sku))
         return false;
       return true;
     });
