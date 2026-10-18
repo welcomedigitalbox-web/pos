@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { matchesSearch } from "@/lib/search";
-import { supabase, fetchAllProducts, describeError } from "@/lib/supabase";
+import { supabase, describeError } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
@@ -55,6 +55,7 @@ export default function InventoryPage() {
   // Which supplier code is being typed, and what went wrong if it was refused.
   const [editing, setEditing] = useState<string | null>(null);
   const [codeMsg, setCodeMsg] = useState("");
+  const [codeDraft, setCodeDraft] = useState("");
   const [detail, setDetail] = useState<Row | null>(null);
 
   useEffect(() => {
@@ -100,10 +101,20 @@ export default function InventoryPage() {
 
     // Supplier codes come from the product, not the stock row, so they are
     // fetched alongside and filled in once they arrive.
-    const sup = await fetchAllProducts<{ id: string; supplier_code: string | null }>(
-      "id,supplier_code", true);
-    const byId: Record<string, string | null> = {};
-    for (const pr of sup) byId[pr.id] = pr.supplier_code;
+    // A supplier code is a barcode of kind 'supplier' - one product may
+    // answer to several - so it is read from there, not from the product row.
+    const byId: Record<string, string> = {};
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .from("product_barcodes")
+        .select("product_id,barcode")
+        .eq("kind", "supplier")
+        .eq("is_active", true)
+        .range(from, from + 999);
+      const page = (data as { product_id: string; barcode: string }[]) || [];
+      for (const b of page) if (!byId[b.product_id]) byId[b.product_id] = b.barcode;
+      if (error || page.length < 1000) break;
+    }
     setRows((rs) => rs.map((r) => ({ ...r, supplierCode: byId[r.product_id] ?? null })));
   }
 
@@ -320,19 +331,29 @@ export default function InventoryPage() {
                     <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                     <td className="px-3 py-2 text-xs">
                       {editing === r.key ? (
-                        <input
-                          autoFocus
-                          defaultValue={r.supplierCode || ""}
-                          onBlur={(e) => saveSupplierCode(r, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                            if (e.key === "Escape") setEditing(null);
-                          }}
-                          className="w-32 border border-slate-300 rounded px-2 py-1 text-xs"
-                        />
+                        <span className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            defaultValue={r.supplierCode || ""}
+                            onChange={(e) => setCodeDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveSupplierCode(r, codeDraft);
+                              if (e.key === "Escape") setEditing(null);
+                            }}
+                            className="w-32 border border-slate-300 rounded px-2 py-1 text-xs"
+                          />
+                          <button
+                            onClick={() => saveSupplierCode(r, codeDraft)}
+                            className="px-2 py-1 bg-slate-900 text-white rounded text-xs"
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditing(null)}
+                            className="px-1 text-slate-400 text-xs">✕</button>
+                        </span>
                       ) : (
                         <button
-                          onClick={() => { setCodeMsg(""); setEditing(r.key); }}
+                          onClick={() => { setCodeMsg(""); setCodeDraft(r.supplierCode || ""); setEditing(r.key); }}
                           className={r.supplierCode ? "text-slate-600" : "text-slate-300 hover:text-blue-600"}
                         >
                           {r.supplierCode || "+ add"}
