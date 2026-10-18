@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
 import { useLanguage } from "./language-context";
+import { supabase } from "@/lib/supabase";
 import { PAGE_OPTIONS, PageGroup, hasPermission } from "./permissions";
 import { APP_URL, canAccess, type AppKey } from "@/lib/apps";
 
@@ -33,6 +34,76 @@ const SIBLING_APPS: { key: AppKey; icon: string; labelKey: string }[] = [
   { key: "report", icon: "\u{1F4DD}", labelKey: "dept_dailyReport" },
   { key: "finance", icon: "\u{1F4B0}", labelKey: "dept_finance" },
 ];
+
+// How many things are sitting there waiting for this person to sign them off.
+// Managers were opening five screens to find out; now the number follows them
+// around and a click goes straight to the list.
+function ApprovalBell() {
+  const [count, setCount] = useState(0);
+  const { profile } = useAuth();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (!profile) return;
+    let live = true;
+
+    async function tally() {
+      const may = await Promise.all(
+        (["merchandising", "sale", "warehouse"] as const).map((d) =>
+          supabase.rpc("can_approve_dept", { p_department: d }).then(({ data }) => !!data)
+        )
+      );
+      const [merch, sale, wh] = may;
+      const { data: dmg } = await supabase.rpc("can_approve_damage");
+
+      // Counting only: head:true asks the database for the number and sends
+      // no rows back, so this can run on every page without costing anything.
+      const head = { count: "exact" as const, head: true };
+      const parts = await Promise.all([
+        merch
+          ? supabase.from("purchase_orders").select("id", head).eq("status", "draft")
+          : null,
+        sale
+          ? supabase.from("sale_returns").select("id", head).eq("status", "pending")
+          : null,
+        wh
+          ? supabase.from("stock_requests").select("id", head).eq("status", "pending")
+          : null,
+        dmg
+          ? supabase.from("stock_damages").select("id", head).eq("status", "pending")
+          : null,
+        wh
+          ? supabase
+              .from("stock_transfers")
+              .select("id", head)
+              .in("status", ["pending_approval", "discrepancy"])
+          : null,
+      ]);
+
+      if (live) setCount(parts.reduce((t2, r) => t2 + (r?.count || 0), 0));
+    }
+
+    tally();
+    const t = setInterval(tally, 60000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [profile?.id, pathname]);
+
+  if (count === 0) return null;
+
+  return (
+    <Link
+      href="/approvals"
+      title="Waiting for your approval"
+      className="relative inline-flex items-center gap-1 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
+    >
+      <span>🔔</span>
+      <span>{count}</span>
+    </Link>
+  );
+}
 
 export default function Nav() {
   const pathname = usePathname();
@@ -147,6 +218,8 @@ export default function Nav() {
                     ))}
                   </select>
                 ))}
+
+              <ApprovalBell />
 
               <div className="hidden sm:flex border border-slate-200 rounded-lg overflow-hidden text-xs">
                 <button
