@@ -90,7 +90,7 @@ export default function LabelsPage() {
   useEffect(() => {
     if (!storeId) return;
     (async () => {
-      const [list, bc, po, sup] = await Promise.all([
+      const [list, bc, sup, po] = await Promise.all([
         fetchSellableItems(storeId, true),
         supabase.from("product_barcodes")
           .select("product_id,variant_id,barcode,kind")
