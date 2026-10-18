@@ -50,6 +50,7 @@ export default function StockOnHandPage() {
   const [summary, setSummary] = useState<Summary[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [onlyStock, setOnlyStock] = useState(true);
@@ -77,14 +78,23 @@ export default function StockOnHandPage() {
 
   async function load() {
     setLoading(true);
-    const [{ data }, { data: sum }, { data: c }] = await Promise.all([
+    setErr("");
+    const [main, sum, c] = await Promise.all([
       supabase.rpc("stock_on_hand_json"),
       supabase.from("stock_on_hand_by_store").select("*"),
       supabase.from("product_categories").select("id,name").order("sort_order"),
     ]);
-    setRows((data as Row[]) || []);
-    setSummary((sum as Summary[]) || []);
-    setCats((c as Cat[]) || []);
+    // Say what went wrong rather than spinning on "Counting..." for ever.
+    const firstErr = main.error || sum.error || c.error;
+    if (firstErr) {
+      setErr(
+        [firstErr.message, (firstErr as { details?: string }).details,
+         (firstErr as { hint?: string }).hint].filter(Boolean).join(" · ")
+      );
+    }
+    setRows((main.data as Row[]) || []);
+    setSummary((sum.data as Summary[]) || []);
+    setCats((c.data as Cat[]) || []);
     setLoading(false);
   }
 
@@ -191,6 +201,12 @@ export default function StockOnHandPage() {
               as nothing.
             </div>
           )}
+        </div>
+      )}
+
+      {err && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl px-3 py-2 mb-4 text-xs">
+          {err}
         </div>
       )}
 
