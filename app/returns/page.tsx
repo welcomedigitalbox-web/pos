@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import {
   supabase, SaleReturn, RefundMethod, ItemCondition, SellableItem, fetchSellableItems,
   netLineTotal, uploadReturnVoucher, getVoucherUrl, upsertStoreInventory, logActivity,
@@ -821,8 +822,7 @@ export default function ReturnsPage() {
                           .filter((it) => {
                             const q = exchangeSearch.trim().toLowerCase();
                             return (
-                              it.display_name.toLowerCase().includes(q) ||
-                              (it.sku || "").toLowerCase().includes(q)
+                              matchesSearch(q, it.display_name, it.sku)
                             );
                           })
                           .slice(0, 20)

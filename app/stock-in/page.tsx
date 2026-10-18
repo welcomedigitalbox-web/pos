@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase, SellableItem, fetchSellableItems, upsertStoreInventory } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
@@ -109,8 +110,7 @@ export default function StockInPage() {
 
   const filteredProducts = items.filter(
     (i) =>
-      i.display_name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (i.sku || "").toLowerCase().includes(productSearch.toLowerCase())
+      matchesSearch(productSearch, i.display_name, i.sku, (i as any).codes)
   );
 
   let previewAvgCost: number | null = null;

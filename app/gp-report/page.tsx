@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
@@ -59,9 +60,7 @@ export default function GpReportPage() {
     if (q) {
       const s = q.toLowerCase();
       out = out.filter((r) =>
-        (r.code || "").toLowerCase().includes(s) ||
-        r.description.toLowerCase().includes(s) ||
-        (r.category || "").toLowerCase().includes(s));
+        matchesSearch(s, r.code, r.description, r.category));
     }
     return out;
   }, [rows, q, soldOnly]);

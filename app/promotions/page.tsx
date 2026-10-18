@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase, yangonToday } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../auth-context";
@@ -178,7 +179,7 @@ export default function PromotionsPage() {
   }
 
   const shown = useMemo(
-    () => products.filter((p) => !search || p.name.toLowerCase().includes(search.toLowerCase())).slice(0, 40),
+    () => products.filter((p) => matchesSearch(search, p.name)).slice(0, 40),
     [products, search]
   );
 
