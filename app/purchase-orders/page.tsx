@@ -82,6 +82,14 @@ export default function PurchaseOrdersPage() {
 
     // What was actually paid lives in finance, not in this app's own
     // po_payments table - reading that one is why a paid bill still looked due.
+    // Freight and an order discount belong in the figure the supplier is
+    // owed, so the list shows the grand total rather than the goods alone.
+    const { data: totalRows } = await supabase
+      .from("po_totals")
+      .select("po_id, grand_total");
+    const totalByPo = new Map<string, number>();
+    for (const r of (totalRows as any[]) || []) totalByPo.set(r.po_id, Number(r.grand_total || 0));
+
     const { data: payRows } = await supabase
       .from("po_payment_status")
       .select("po_id, paid_amount, pay_status, voucher_no, last_paid_on");
@@ -96,8 +104,10 @@ export default function PurchaseOrdersPage() {
         payment_term: po.payment_term,
         order_date: po.order_date,
         supplierName: po.suppliers?.name || "-",
-        total: (po.purchase_order_items || []).reduce(
-          (s: number, i: any) => s + Number(i.qty) * Number(i.unit_cost), 0),
+        total:
+          totalByPo.get(po.id) ??
+          (po.purchase_order_items || []).reduce(
+            (s: number, i: any) => s + Number(i.qty) * Number(i.unit_cost), 0),
         paid: Number(payByPo.get(po.id)?.paid_amount || 0),
         payStatus: payByPo.get(po.id)?.pay_status || "no_bill",
         voucherNo: payByPo.get(po.id)?.voucher_no || null,

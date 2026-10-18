@@ -73,6 +73,17 @@ export default function PoDetailPage() {
   const [receiveExpiry, setReceiveExpiry] = useState("");
   const [receiving, setReceiving] = useState(false);
 
+  // Freight, delivery, customs. Paid on the shipment rather than on one
+  // line, so they are kept here and spread over the lines by value.
+  const [charges, setCharges] = useState<
+    { id: string; kind: string; note: string | null; amount: number }[]
+  >([]);
+  const [chKind, setChKind] = useState("freight");
+  const [chNote, setChNote] = useState("");
+  const [chAmount, setChAmount] = useState("");
+  const [chBusy, setChBusy] = useState(false);
+  const [discInput, setDiscInput] = useState("");
+
   // payment modal
   const [showPayment, setShowPayment] = useState(false);
   const [payAmount, setPayAmount] = useState("");
@@ -215,6 +226,14 @@ export default function PoDetailPage() {
       .order("created_at", { ascending: false });
     setLogs((logData as ActivityLog[]) || []);
 
+    const { data: chData } = await supabase
+      .from("purchase_order_charges")
+      .select("*")
+      .eq("po_id", id)
+      .order("created_at");
+    setCharges((chData as any[]) || []);
+    setDiscInput(String((poData as any).discount_amount || ""));
+
     const { data: payData } = await supabase
       .from("po_payment_lines")
       .select("*")
@@ -332,7 +351,9 @@ export default function PoDetailPage() {
       // One call, one transaction. The receipt, the stock, the line and the
       // order's status move together or not at all — and the line is locked
       // while it happens, so a double-click receives once.
-      const { error } = await supabase.rpc("receive_po_item", {
+      // The freight share is added by the server, so the goods land in stock
+      // at what they actually cost.
+      const { error } = await supabase.rpc("receive_po_item_landed", {
         p_item: receiveRow.id,
         p_store: receiveWhId || defaultWarehouseId,
         p_qty: q,
@@ -505,12 +526,56 @@ export default function PoDetailPage() {
     await load();
   }
 
+  async function addCharge() {
+    const amt = Number(chAmount);
+    if (!amt || amt <= 0) return showToast(t("stockIn_costInvalid"));
+    setChBusy(true);
+    try {
+      const { error } = await supabase.from("purchase_order_charges").insert({
+        po_id: id,
+        kind: chKind,
+        note: chNote.trim() || null,
+        amount: amt,
+      });
+      if (error) throw error;
+      setChAmount("");
+      setChNote("");
+      await load();
+    } catch (err) {
+      showToast("\u274c " + describeError(err));
+    } finally {
+      setChBusy(false);
+    }
+  }
+
+  async function removeCharge(cid: string) {
+    const { error } = await supabase.from("purchase_order_charges").delete().eq("id", cid);
+    if (error) return showToast("\u274c " + describeError(error));
+    await load();
+  }
+
+  async function saveDiscount() {
+    const amt = Number(discInput) || 0;
+    if (amt < 0) return showToast(t("stockIn_costInvalid"));
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({ discount_amount: amt })
+      .eq("id", id);
+    if (error) return showToast("\u274c " + describeError(error));
+    await load();
+  }
+
   if (notFound) return <div className="pt-8 text-center text-slate-400">{t("products_notFound")}</div>;
   if (!po) return <div className="pt-8 text-center text-slate-400">...</div>;
 
   const total = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
+  const chargesTotal = charges.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const discountAmt = Number((po as any).discount_amount || 0);
+  // What the supplier is owed in the end, which is the figure the paperwork
+  // is checked against - not the goods on their own.
+  const grandTotal = total + chargesTotal - discountAmt;
   const paid = payments.reduce((s, p) => s + Number(p.amount), 0);
-  const balance = total - paid;
+  const balance = grandTotal - paid;
   const editable = po.status !== "received" && po.status !== "cancelled";
   // Goods can only be booked in once someone has signed the order off
   const canReceive = po.status !== "draft" && po.status !== "cancelled";
@@ -589,10 +654,21 @@ export default function PoDetailPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500 uppercase">{t("pos_total")}</div>
+          <div className="text-xs text-slate-500 uppercase">{t("po_subtotal")}</div>
           <div className="text-lg font-bold mt-1">{fmt(total)}</div>
+          {(chargesTotal > 0 || discountAmt > 0) && (
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              {chargesTotal > 0 && <>+ {fmt(chargesTotal)} {t("po_charges")}</>}
+              {chargesTotal > 0 && discountAmt > 0 && " · "}
+              {discountAmt > 0 && <>&minus; {fmt(discountAmt)}</>}
+            </div>
+          )}
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-3">
+          <div className="text-xs text-slate-500 uppercase">{t("po_grandTotal")}</div>
+          <div className="text-lg font-bold mt-1">{fmt(grandTotal)}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-3">
           <div className="text-xs text-slate-500 uppercase">{t("suppliers_paid")}</div>
@@ -604,6 +680,86 @@ export default function PoDetailPage() {
             {fmt(balance)}
           </div>
         </div>
+      </div>
+
+      {/* Freight and the like. Spread over the lines by value when the goods
+          are booked in, so the shelf cost is the landed cost. */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 mb-4 print:hidden">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold">{t("po_charges")}</h3>
+          <span className="text-sm font-semibold">{fmt(chargesTotal)}</span>
+        </div>
+        <p className="text-xs text-slate-400 mb-2">{t("po_chargesNote")}</p>
+
+        {charges.length > 0 && (
+          <div className="divide-y divide-slate-100 mb-2">
+            {charges.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 py-1.5 text-sm">
+                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px]">
+                  {t(`po_charge_${c.kind}` as any)}
+                </span>
+                <span className="text-slate-500 text-xs truncate">{c.note || ""}</span>
+                <span className="ml-auto font-medium">{fmt(Number(c.amount))}</span>
+                {editable && (
+                  <button
+                    onClick={() => removeCharge(c.id)}
+                    className="text-red-500 text-xs px-1"
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {editable && (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+              value={chKind}
+              onChange={(e) => setChKind(e.target.value)}
+            >
+              {["freight", "delivery", "customs", "handling", "other"].map((k) => (
+                <option key={k} value={k}>
+                  {t(`po_charge_${k}` as any)}
+                </option>
+              ))}
+            </select>
+            <input
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-28"
+              placeholder="0"
+              inputMode="numeric"
+              value={chAmount}
+              onChange={(e) => setChAmount(e.target.value)}
+            />
+            <input
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-[140px]"
+              placeholder={t("pos_note")}
+              value={chNote}
+              onChange={(e) => setChNote(e.target.value)}
+            />
+            <button
+              onClick={addCharge}
+              disabled={chBusy}
+              className="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              {t("po_chargeAdd")}
+            </button>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+              <span className="text-xs text-slate-500">{t("po_orderDiscount")}</span>
+              <input
+                className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-28"
+                placeholder="0"
+                inputMode="numeric"
+                value={discInput}
+                onChange={(e) => setDiscInput(e.target.value)}
+                onBlur={saveDiscount}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Items */}
@@ -981,6 +1137,26 @@ export default function PoDetailPage() {
               required={receiveRow.requires_expiry}
             />
 
+            {/* The server adds the freight share; show what that will be so
+                the warehouse is not surprised by the cost on the shelf. */}
+            {chargesTotal > 0 && total > 0 && receiveRow.qty > 0 && (
+              <p className="text-xs text-blue-800 bg-blue-50 rounded-lg px-3 py-2 mb-3">
+                {t("po_landedCost")}:{" "}
+                <span className="font-semibold">
+                  {fmt(
+                    Math.round(
+                      (Number(receiveCost) || 0) +
+                        (chargesTotal * (receiveRow.qty * receiveRow.unit_cost)) /
+                          total /
+                          receiveRow.qty
+                    )
+                  )}
+                </span>
+                <br />
+                {t("po_landedHint")}
+              </p>
+            )}
+
             <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 mb-4">
               {receiveRow.is_consignment
                 ? t("po_costRuleConsignment")
@@ -1078,9 +1254,28 @@ export default function PoDetailPage() {
                 <td className="py-1.5 text-right">{fmt(i.qty * i.unit_cost)}</td>
               </tr>
             ))}
-            <tr className="border-t border-slate-400 font-bold">
-              <td className="py-2" colSpan={3}>{t("pos_total")}</td>
+            <tr className="border-t border-slate-400">
+              <td className="py-2" colSpan={3}>{t("po_subtotal")}</td>
               <td className="py-2 text-right">{fmt(total)}</td>
+            </tr>
+            {charges.map((c) => (
+              <tr key={c.id}>
+                <td className="py-1" colSpan={3}>
+                  {t(`po_charge_${c.kind}` as any)}
+                  {c.note ? ` (${c.note})` : ""}
+                </td>
+                <td className="py-1 text-right">{fmt(Number(c.amount))}</td>
+              </tr>
+            ))}
+            {discountAmt > 0 && (
+              <tr>
+                <td className="py-1" colSpan={3}>{t("po_orderDiscount")}</td>
+                <td className="py-1 text-right">&minus; {fmt(discountAmt)}</td>
+              </tr>
+            )}
+            <tr className="border-t border-slate-400 font-bold">
+              <td className="py-2" colSpan={3}>{t("po_grandTotal")}</td>
+              <td className="py-2 text-right">{fmt(grandTotal)}</td>
             </tr>
           </tbody>
         </table>
