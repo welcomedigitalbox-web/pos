@@ -676,7 +676,23 @@ export default function POSPage() {
       const res = data as {
         lines: { line: number; promo_discount: number; promotion_id: string | null; is_free_gift: boolean }[];
         names: string[];
+        gifts?: { product_id: string; qty: number; promotion_id: string; name: string }[];
       } | null;
+
+      // A gift the basket has earned but does not hold yet. Put it in, so the
+      // customer leaves with what the poster promised rather than with what
+      // the queue remembered to ask for.
+      for (const g of res?.gifts || []) {
+        const sellable = items.find(
+          (i) => i.product_id === g.product_id && !i.variant_id
+        );
+        if (!sellable) continue;
+        if (cart.some((c) => c.key === sellable.key)) continue;
+        if (sellable.stock_qty <= 0) continue;
+        addToCart(sellable);
+        showToast(`\u{1f381} ${sellable.display_name} \u2014 ${g.name}`);
+        return;
+      }
       const out: Record<string, { amount: number; promotion_id: string; name: string; free?: boolean }> = {};
       for (const l of res?.lines || []) {
         const c = cart[l.line];

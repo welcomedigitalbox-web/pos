@@ -159,7 +159,10 @@ export default function PromotionsPage() {
       if (error) return setMsg(error.message);
     }
     setOpen(null); reset(); setMsg("Saved");
-    load();
+    // Waited for, so the list on screen is the list in the database. Firing
+    // it off and forgetting left the page saying "No promotions yet" right
+    // after saving one.
+    await load();
     setTimeout(() => setMsg(""), 3000);
   }
 
