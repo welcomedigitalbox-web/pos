@@ -34,6 +34,7 @@ export type PageKey =
   | "receivables"
   | "invoice-fix"
   | "packages"
+  | "purchase-invoices"
   | "settlements"
   | "my-pin"
   | "product-category"
@@ -91,7 +92,6 @@ export type PageGroup =
 export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group: PageGroup }[] = [
   { key: "pos", href: "/pos", labelKey: "nav_pos", group: "sale" },
   { key: "cash-close", href: "/cash-close", labelKey: "nav_cashClose", group: "sale" },
-  { key: "sale-order", href: "/sale-order", labelKey: "nav_saleOrder", group: "sale" },
   { key: "history", href: "/history", labelKey: "nav_history", group: "sale" },
   { key: "order-lookup", href: "/order-lookup", labelKey: "nav_orderLookup", group: "sale" },
   { key: "returns", href: "/returns", labelKey: "nav_returns", group: "sale" },
@@ -130,6 +130,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "merchandising" },
   { key: "uom-import", href: "/uom-import", labelKey: "nav_uomImport", group: "merchandising" },
   { key: "purchase-orders", href: "/purchase-orders", labelKey: "nav_purchaseOrders", group: "merchandising" },
+  { key: "purchase-invoices", href: "/purchase-invoices", labelKey: "nav_purchaseInvoices", group: "merchandising" },
   { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
   { key: "promotions", href: "/promotions", labelKey: "nav_promotions", group: "merchandising" },
   { key: "consignment", href: "/consignment", labelKey: "nav_consignment", group: "merchandising" },
@@ -181,12 +182,12 @@ export const DEFAULT_PERMISSIONS: Record<Exclude<UserRole, "admin">, PageKey[]> 
     ...COMMON_ALL_ROLES,
   ],
   online_sale: [
-    "sale-order", "history", "order-lookup", "customers",
+    "history", "order-lookup", "customers",
     "inventory", "warehouse", "sales-performance",
     ...COMMON_ALL_ROLES,
   ],
   wholesale: [
-    "sale-order", "history", "customers", "inventory", "sales-performance",
+    "history", "customers", "inventory", "sales-performance",
     ...COMMON_ALL_ROLES,
   ],
 
