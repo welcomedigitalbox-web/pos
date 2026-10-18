@@ -17,7 +17,7 @@ import { useLanguage } from "../language-context";
 type Draft = { name: string; sku: string; price: string };
 
 export default function ProductForm({ productId }: { productId?: string }) {
-  const { storeId } = useStore();
+  const { storeId, stores } = useStore();
   const { t } = useLanguage();
   const router = useRouter();
 
@@ -424,19 +424,44 @@ export default function ProductForm({ productId }: { productId?: string }) {
         </div>
       </div>
 
+      {/* Stock and cost belong to a branch, and this shows the one picked at
+          the top of the screen. On an existing product they are read only:
+          what is on the shelf is settled by goods received, transfers, sales
+          and stock adjustments, and the average cost is worked out from what
+          was actually paid. Typing over either here would quietly rewrite the
+          profit on every past sale. A brand new product is the exception,
+          because its first count has to come from somewhere. */}
       {stockOnThisRow && (
         <div className={card}>
-          <h3 className="text-sm font-medium mb-3">{storeId}</h3>
+          <h3 className="text-sm font-medium">
+            Stock at {stores.find((x) => x.id === storeId)?.name || storeId}
+          </h3>
+          <p className="text-xs text-slate-500 mb-3">
+            {productId
+              ? "Set by goods received, transfers and sales. Change the shelf count on Stock Adjust, and the cost by receiving the goods."
+              : "The opening count for this branch. Switch branch at the top of the screen for another."}
+          </p>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className={label}>{t("products_stockQty")}</label>
-              <input type="number" className={field} value={stockQty} onChange={(e) => setStockQty(e.target.value)} />
+              <input type="number" className={field} value={stockQty} readOnly={!!productId}
+                onChange={(e) => setStockQty(e.target.value)}
+                style={productId ? { background: "#f8fafc", color: "#64748b" } : undefined} />
             </div>
             <div>
               <label className={label}>{t("products_avgCost")}</label>
-              <input type="number" className={field} value={avgCost} onChange={(e) => setAvgCost(e.target.value)} />
+              <input type="number" className={field} value={avgCost} readOnly={!!productId}
+                onChange={(e) => setAvgCost(e.target.value)}
+                style={productId ? { background: "#f8fafc", color: "#64748b" } : undefined} />
             </div>
           </div>
+          {productId && (
+            <div className="mt-3 flex gap-3 text-xs">
+              <a href="/stock-adjust" className="text-blue-600">Stock Adjust →</a>
+              <a href="/goods-received" className="text-blue-600">Goods Received →</a>
+              <a href="/stock-on-hand" className="text-blue-600">Every branch →</a>
+            </div>
+          )}
         </div>
       )}
 

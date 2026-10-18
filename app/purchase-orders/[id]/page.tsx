@@ -557,10 +557,12 @@ export default function PoDetailPage() {
   async function saveDiscount() {
     const amt = Number(discInput) || 0;
     if (amt < 0) return showToast(t("stockIn_costInvalid"));
-    const { error } = await supabase
-      .from("purchase_orders")
-      .update({ discount_amount: amt })
-      .eq("id", id);
+    // Written by a function rather than straight into the table, so finance
+    // can record a discount without being able to move the order's status.
+    const { error } = await supabase.rpc("set_po_discount", {
+      p_po: id,
+      p_amount: amt,
+    });
     if (error) return showToast("\u274c " + describeError(error));
     await load();
   }
