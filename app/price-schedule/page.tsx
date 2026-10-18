@@ -48,14 +48,17 @@ export default function PriceSchedulePage() {
       .limit(500);
     const list = (data as Row[]) || [];
     setRows(list);
+    // The names are looked up in batches: "in" with hundreds of ids makes a
+    // request too long to send, and a missing name shows the raw id, which
+    // means nothing to the person reading the list.
     const ids = Array.from(new Set(list.map((r) => r.product_id)));
-    if (ids.length) {
+    const by: Record<string, Product> = {};
+    for (let i = 0; i < ids.length; i += 100) {
       const { data: ps } = await supabase
-        .from("products").select("id, sku, name, price").in("id", ids);
-      const by: Record<string, Product> = {};
+        .from("products").select("id, sku, name, price").in("id", ids.slice(i, i + 100));
       for (const p of ((ps as Product[]) || [])) by[p.id] = p;
-      setNames(by);
     }
+    setNames(by);
   }
   useEffect(() => { if (profile && !blocked) load(); /* eslint-disable-next-line */ }, [profile]);
 
@@ -86,7 +89,7 @@ export default function PriceSchedulePage() {
     if (error) return setMsg(error.message);
     setPick(null); setPrice(""); setNote(""); setSearch(""); setFound([]);
     setMsg("Scheduled");
-    load();
+    await load();
   }
 
   async function drop(id: string) {
