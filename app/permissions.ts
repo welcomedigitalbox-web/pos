@@ -43,6 +43,7 @@ export type PageKey =
   | "suppliers"
   | "purchase-orders"
   | "promotions"
+  | "promo-reclaim"
   | "consignment"
   | "approvals"
   | "gp-report"
@@ -134,6 +135,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "purchase-invoices", href: "/purchase-invoices", labelKey: "nav_purchaseInvoices", group: "merchandising" },
   { key: "suppliers", href: "/suppliers", labelKey: "nav_suppliers", group: "merchandising" },
   { key: "promotions", href: "/promotions", labelKey: "nav_promotions", group: "merchandising" },
+  { key: "promo-reclaim", href: "/promo-reclaim", labelKey: "nav_promoReclaim", group: "merchandising" },
   { key: "consignment", href: "/consignment", labelKey: "nav_consignment", group: "merchandising" },
   // Approvals sits in the reports group because that is the one group every
   // department head already has, so a new manager finds it without anyone

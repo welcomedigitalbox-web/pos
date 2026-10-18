@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Bell } from "lucide-react";
+import { Bell, Gift } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
@@ -103,6 +103,47 @@ function ApprovalBell() {
     >
       <Bell size={17} strokeWidth={1.75} />
       <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+        {count > 99 ? "99+" : count}
+      </span>
+    </Link>
+  );
+}
+
+// Free goods from a finished promotion are still out in the shops until
+// somebody brings them back, so the reminder sits next to the approvals.
+function FocBell() {
+  const [count, setCount] = useState(0);
+  const { profile } = useAuth();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (!profile) return;
+    let live = true;
+
+    async function tally() {
+      const { data } = await supabase.rpc("promo_foc_pending_count");
+      if (live) setCount(Number(data || 0));
+    }
+
+    tally();
+    const t = setInterval(tally, 300000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [profile?.id, pathname]);
+
+  if (count === 0) return null;
+
+  return (
+    <Link
+      href="/promo-reclaim"
+      title="Promotion ended - free stock still in the shops"
+      aria-label={`${count} promotion(s) with free stock to collect`}
+      className="relative inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 text-slate-600 hover:border-purple-300 hover:text-purple-700 transition"
+    >
+      <Gift size={17} strokeWidth={1.75} />
+      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-purple-500 text-white text-[10px] font-bold leading-none">
         {count > 99 ? "99+" : count}
       </span>
     </Link>
@@ -231,6 +272,7 @@ export default function Nav() {
                 ))}
 
               <ApprovalBell />
+              <FocBell />
 
               <div className="hidden sm:flex border border-slate-200 rounded-lg overflow-hidden text-xs">
                 <button
