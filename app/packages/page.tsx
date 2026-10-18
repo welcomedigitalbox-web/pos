@@ -6,6 +6,17 @@ import { useAuth } from "../auth-context";
 import { hasPermission } from "../permissions";
 import { useRouter } from "next/navigation";
 
+// Supabase hands back a plain object, so String() on it prints "[object Object]"
+// and the cashier learns nothing. Pull the real message out.
+function errText(err: unknown) {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const e = err as { message?: string; details?: string; hint?: string };
+    return e.message || e.details || e.hint || JSON.stringify(err);
+  }
+  return String(err);
+}
+
 function fmt(n: number) {
   return Math.round(Number(n) || 0).toLocaleString() + " MMK";
 }
@@ -114,7 +125,7 @@ export default function PackagesPage() {
       await loadProducts();
       await loadComps(pkgId);
     } catch (err) {
-      showToast("❌ " + (err instanceof Error ? err.message : String(err)));
+      showToast("❌ " + errText(err));
     } finally {
       setBusy(false);
     }
