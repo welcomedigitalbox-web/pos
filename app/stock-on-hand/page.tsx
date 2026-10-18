@@ -70,7 +70,10 @@ export default function StockOnHandPage() {
     load();
   }, []);
 
-  if (!profile || !hasPermission(profile, "inventory")) return null;
+  // Hooks must run on every render, so the guard waits until just before the
+  // JSX. Returning early above useMemo changes the hook count and React stops
+  // the whole page.
+  const pageBlocked = !profile || !hasPermission(profile, "inventory");
 
   async function load() {
     setLoading(true);
@@ -130,6 +133,8 @@ export default function StockOnHandPage() {
 
   const totalNegative = summary.reduce((s, r) => s + Number(r.negative_rows || 0), 0);
   const totalNoCost = summary.reduce((s, r) => s + Number(r.no_cost_rows || 0), 0);
+
+  if (pageBlocked) return null;
 
   return (
     <div className="pt-4">
