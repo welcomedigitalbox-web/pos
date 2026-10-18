@@ -212,6 +212,11 @@ export default function POSPage() {
   }
 
   async function loadProducts() {
+    // A price merchandising scheduled for this morning should already be in
+    // force. The nightly job does that; this is the second belt, and it costs
+    // one cheap call that does nothing on the days nothing is due.
+    await supabase.rpc("apply_due_price_changes_if_any");
+
     const data = await fetchSellableItems(storeId);
 
     // A package holds no stock of its own, so it never comes back from the
