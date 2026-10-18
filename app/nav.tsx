@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { Bell } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useStore } from "./store-context";
 import { useAuth } from "./auth-context";
@@ -97,10 +98,13 @@ function ApprovalBell() {
     <Link
       href="/approvals"
       title="Waiting for your approval"
-      className="relative inline-flex items-center gap-1 border border-amber-300 bg-amber-50 text-amber-800 rounded-lg px-2 py-1.5 text-xs font-semibold"
+      aria-label={`${count} waiting for your approval`}
+      className="relative inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 text-slate-600 hover:border-amber-300 hover:text-amber-700 transition"
     >
-      <span>🔔</span>
-      <span>{count}</span>
+      <Bell size={17} strokeWidth={1.75} />
+      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+        {count > 99 ? "99+" : count}
+      </span>
     </Link>
   );
 }
