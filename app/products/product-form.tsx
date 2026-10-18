@@ -16,11 +16,15 @@ import { useLanguage } from "../language-context";
 type Draft = { name: string; sku: string; price: string };
 
 export default function ProductForm({ productId }: { productId?: string }) {
-  const { storeId, stores } = useStore();
+  const { storeId, stores, warehouses, defaultWarehouseId } = useStore();
   const { t } = useLanguage();
   const router = useRouter();
 
   const [loading, setLoading] = useState(!!productId);
+  // Goods reach a warehouse first and are shared out to the shops from
+  // there, so the opening count belongs to a warehouse - not to whichever
+  // shop happens to be selected at the top of the screen.
+  const [openingStore, setOpeningStore] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -147,6 +151,11 @@ export default function ProductForm({ productId }: { productId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId, storeId]);
 
+  useEffect(() => {
+    if (!openingStore) setOpeningStore(defaultWarehouseId || storeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultWarehouseId, storeId]);
+
   async function loadParts() {
     if (!productId) return;
     const { data } = await supabase
@@ -251,7 +260,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq("id", productId);
         if (error) throw error;
-        if (!hasVariants) await upsertStoreInventory(storeId, productId, null, { stock_qty: qty, avg_cost: cost });
+        if (!hasVariants) await upsertStoreInventory(openingStore || storeId, productId, null, { stock_qty: qty, avg_cost: cost });
       } else {
         const { data: created, error } = await supabase
           .from("products").insert({ ...payload, store_id: storeId })
@@ -276,13 +285,13 @@ export default function ProductForm({ productId }: { productId?: string }) {
           // Without a stock row the till refuses the first sale with
           // "No stock record", which reads like a broken product.
           for (const v of made || []) {
-            await upsertStoreInventory(storeId, created.id, v.id, { stock_qty: 0, avg_cost: cost });
+            await upsertStoreInventory(openingStore || storeId, created.id, v.id, { stock_qty: 0, avg_cost: cost });
           }
           const { error: tErr } = await supabase
             .from("products").update({ variation_theme: variationTheme }).eq("id", created.id);
           if (tErr) throw tErr;
         } else {
-          await upsertStoreInventory(storeId, created.id, null, { stock_qty: qty, avg_cost: cost });
+          await upsertStoreInventory(openingStore || storeId, created.id, null, { stock_qty: qty, avg_cost: cost });
         }
       }
       const codeOwner = productId || savedId;
@@ -439,13 +448,29 @@ export default function ProductForm({ productId }: { productId?: string }) {
       {stockOnThisRow && (
         <div className={card}>
           <h3 className="text-sm font-medium">
-            Stock at {stores.find((x) => x.id === storeId)?.name || storeId}
+            {productId
+              ? `Stock at ${stores.find((x) => x.id === storeId)?.name || storeId}`
+              : "Opening stock"}
           </h3>
           <p className="text-xs text-slate-500 mb-3">
             {productId
               ? "Set by goods received, transfers and sales. Change the shelf count on Stock Adjust, and the cost by receiving the goods."
-              : "The opening count for this branch. Switch branch at the top of the screen for another."}
+              : "Goods arrive at a warehouse and are shared out to the shops from there, so the first count goes to a warehouse. Move it to a shop with a transfer."}
           </p>
+          {!productId && (
+            <div className="mb-3">
+              <label className={label}>Warehouse</label>
+              <select
+                className={field}
+                value={openingStore}
+                onChange={(e) => setOpeningStore(e.target.value)}
+              >
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className={label}>{t("products_stockQty")}</label>
