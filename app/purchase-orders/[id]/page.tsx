@@ -177,9 +177,6 @@ export default function PoDetailPage() {
     setPo(poData as PurchaseOrder);
     setSupplierName((poData as any).suppliers?.name || "-");
 
-    const all = await fetchSellableItems(receiveWhId || defaultWarehouseId, true);
-    setSellables(all);
-
     const { data: itemData } = await supabase
       .from("purchase_order_items")
       .select("*, products(name, is_consignment, requires_expiry), product_variants(variant_name)")
@@ -210,6 +207,14 @@ export default function PoDetailPage() {
           : r.products?.name || "-",
       }))
     );
+
+    // The product picker is a convenience, not part of the order. It used to
+    // be fetched first, so a bad store or a slow warehouse read left the whole
+    // page blank - no lines, no freight, no receipts. It goes last now, and on
+    // its own, so the order is always shown even when the picker cannot load.
+    fetchSellableItems(receiveWhId || defaultWarehouseId, true)
+      .then(setSellables)
+      .catch(() => setSellables([]));
 
     const { data: docData } = await supabase
       .from("po_documents")
