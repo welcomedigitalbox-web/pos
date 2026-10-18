@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useStore } from "../store-context";
@@ -124,6 +125,19 @@ export default function PurchaseInvoicesPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  // Arriving from a purchase order: open a fresh bill with that order already
+  // chosen, so the lines are there before anyone starts typing.
+  const params = useSearchParams();
+  const fromPo = params.get("po");
+  const [cameFromPo, setCameFromPo] = useState(false);
+  useEffect(() => {
+    if (!fromPo || cameFromPo || pos.length === 0) return;
+    setCameFromPo(true);
+    newBill();
+    pickPo(fromPo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromPo, pos.length]);
 
   if (!profile || !hasPermission(profile, "purchase-orders")) return null;
 
@@ -504,10 +518,15 @@ export default function PurchaseInvoicesPage() {
                         />
                       </td>
                       <td className="px-3 py-2">
+                        {/* Against an order the cost is the order's cost.
+                            The database enforces it too; this only saves
+                            somebody typing a figure that will be refused. */}
                         <input
                           type="number"
                           className="w-full border border-slate-200 rounded px-2 py-1 text-right"
                           value={l.unit_cost}
+                          readOnly={!!poId && !!l.po_item_id}
+                          style={poId && l.po_item_id ? { background: "#f8fafc", color: "#64748b" } : undefined}
                           onChange={(e) => setLine(i, { unit_cost: e.target.value })}
                         />
                       </td>

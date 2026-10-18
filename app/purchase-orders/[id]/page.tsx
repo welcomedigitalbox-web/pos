@@ -652,6 +652,17 @@ export default function PoDetailPage() {
         >
           {t("po_printPdf")}
         </button>
+        {/* Straight to the bill with this order already picked: the lines are
+            filled in, and only what the supplier charged differently needs
+            touching. */}
+        {items.some((i) => i.received_qty > 0) && (
+          <Link
+            href={`/purchase-invoices?po=${id}`}
+            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium print:hidden"
+          >
+            🧾 {t("po_makeBill")}
+          </Link>
+        )}
         <span className="text-xs text-slate-400 self-center ml-1">{t("po_autoSaveNote")}</span>
       </div>
 
