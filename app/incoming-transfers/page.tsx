@@ -62,6 +62,9 @@ export default function IncomingTransfersPage() {
   const router = useRouter();
 
   const [rows, setRows] = useState<TransferRow[]>([]);
+  // The expiry travels with the batch, but it was only visible by opening the
+  // inventory page. A shop checking in a delivery needs it here.
+  const [expiry, setExpiry] = useState<Map<string, { date: string; soon: number }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -111,7 +114,32 @@ export default function IncomingTransfersPage() {
         sku: r.product_variants?.sku || r.products?.sku || null,
       }))
     );
+    // What goes off first, for every product on this list - at the shop that
+    // sent it while it is still on the way, and at this shop once it is in.
+    const prodIds = Array.from(new Set(((data as any[]) || []).map((r) => r.product_id)));
+    if (prodIds.length) {
+      const { data: exp } = await supabase
+        .from("store_expiry")
+        .select("store_id, product_id, variant_id, nearest_expiry, qty_soon")
+        .in("product_id", prodIds.slice(0, 300));
+      const m = new Map<string, { date: string; soon: number }>();
+      for (const e of (exp as any[]) || []) {
+        m.set(`${e.store_id}|${e.product_id}|${e.variant_id || ""}`, {
+          date: e.nearest_expiry,
+          soon: Number(e.qty_soon || 0),
+        });
+      }
+      setExpiry(m);
+    }
+
     setLoading(false);
+  }
+
+  // Red once it is inside sixty days, because that is when a shop has to
+  // start pushing it rather than shelving it.
+  function expiryFor(storeIdKey: string | null, productId: string, variantId: string | null) {
+    if (!storeIdKey) return null;
+    return expiry.get(`${storeIdKey}|${productId}|${variantId || ""}`) || null;
   }
 
   function showToast(msg: string) {
@@ -485,7 +513,30 @@ export default function IncomingTransfersPage() {
                       <tr key={l.id} className="bg-slate-50/60 border-t border-slate-100 text-xs">
                         <td></td>
                         <td className="px-3 py-1.5 text-slate-400">{l.sku || "-"}</td>
-                        <td className="px-3 py-1.5" colSpan={2}>{l.display_name}</td>
+                        <td className="px-3 py-1.5" colSpan={2}>
+                          {l.display_name}
+                          {(() => {
+                            // Before it arrives, the expiry of what the sending
+                            // shop is holding; after, what this shop now holds.
+                            const e =
+                              l.status === "received"
+                                ? expiryFor(g.to_store_id || storeId, l.product_id, l.variant_id)
+                                : expiryFor(g.from_store_id, l.product_id, l.variant_id);
+                            if (!e?.date) return null;
+                            const soon =
+                              new Date(e.date).getTime() - Date.now() < 60 * 86400000;
+                            return (
+                              <span
+                                className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  soon ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-500"
+                                }`}
+                                title={t("expiry_nearest")}
+                              >
+                                {t("stockIn_expiryDate")}: {e.date}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td></td>
                         <td className="px-3 py-1.5">{l.qty}</td>
                         <td className={`px-3 py-1.5 ${d ? "text-red-600 font-medium" : ""}`}>

@@ -60,6 +60,9 @@ export default function StockTransferPage() {
   const [storeFilter, setStoreFilter] = useState("all");
 
   const [transferItem, setTransferItem] = useState<SellableItem | null>(null);
+  // First-to-expire leaves first, so the sender should see what date is about
+  // to go out of the door.
+  const [expiry, setExpiry] = useState<Map<string, string>>(new Map());
   const [transferQty, setTransferQty] = useState("");
   const [transferToStore, setTransferToStore] = useState("");
   // One dispatch can carry many products, the way a purchase order does.
@@ -118,6 +121,16 @@ export default function StockTransferPage() {
     // Only stock physically available in the central warehouse can be sent
     const all = await fetchSellableItems(whId, true);
     setItems(all.filter((i) => i.stock_qty > 0));
+
+    const { data: exp } = await supabase
+      .from("store_expiry")
+      .select("product_id, variant_id, nearest_expiry")
+      .eq("store_id", whId);
+    const m = new Map<string, string>();
+    for (const e of (exp as any[]) || []) {
+      m.set(`${e.product_id}|${e.variant_id || ""}`, e.nearest_expiry);
+    }
+    setExpiry(m);
 
     const { data } = await supabase
       .from("stock_transfers")
@@ -811,6 +824,18 @@ export default function StockTransferPage() {
             <h3 className="font-semibold text-lg mb-1">{t("warehouseTransfer_title")}</h3>
             <p className="text-sm text-slate-500 mb-4">
               {transferItem.display_name} · {t("warehouseTransfer_available")}: {transferItem.stock_qty}
+              {(() => {
+                const d = expiry.get(
+                  `${transferItem.product_id}|${(transferItem as any).variant_id || ""}`
+                );
+                if (!d) return null;
+                const soon = new Date(d).getTime() - Date.now() < 60 * 86400000;
+                return (
+                  <span className={soon ? "text-red-600 font-medium" : "text-slate-500"}>
+                    {" · "}{t("stockIn_expiryDate")}: {d}
+                  </span>
+                );
+              })()}
             </p>
 
             <label className="text-sm text-slate-600">{t("warehouseTransfer_toStore")}</label>
