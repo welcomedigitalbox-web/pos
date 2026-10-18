@@ -46,6 +46,38 @@ function phoneCore(raw: string) {
   return d.length >= 4 ? d : "";
 }
 
+type HeldOrder = {
+  id: string;
+  label: string;
+  at: string;
+  cart: CartItem[];
+  customerId: string | null;
+  customerName: string;
+  note: string;
+};
+
+// Parked baskets live in this till's own browser: they are a few minutes of
+// counter work, not business records, and they must survive a stray refresh
+// without a round trip to the database.
+const HELD_KEY = "edu.held.";
+
+function readHeld(storeId: string): HeldOrder[] {
+  try {
+    const raw = localStorage.getItem(HELD_KEY + storeId);
+    return raw ? (JSON.parse(raw) as HeldOrder[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeHeld(storeId: string, rows: HeldOrder[]) {
+  try {
+    localStorage.setItem(HELD_KEY + storeId, JSON.stringify(rows));
+  } catch {
+    /* a full or blocked store just means no parking today */
+  }
+}
+
 type DiscountType = "percent" | "flat";
 
 const STANDARD_VAT_PERCENT = 5;
@@ -68,6 +100,9 @@ export default function POSPage() {
   const [items, setItems] = useState<SellableItem[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
+  // A customer who wanders off to look at one more thing should not hold up
+  // the queue. Their basket waits here until they come back.
+  const [held, setHeld] = useState<HeldOrder[]>([]);
   const [noDiscount, setNoDiscount] = useState<Record<string, string>>({});
   const [minPrice, setMinPrice] = useState<Record<string, number>>({});
   const [noPromo, setNoPromo] = useState<Record<string, boolean>>({});
@@ -116,6 +151,11 @@ export default function POSPage() {
   const [customerPhone, setCustomerPhone] = useState("");
 
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+
+  // Parked baskets belong to the branch the till is set to.
+  useEffect(() => {
+    if (storeId) setHeld(readHeld(storeId));
+  }, [storeId]);
 
   // Auto-apply loyalty tier discount whenever a loyalty customer is selected
   useEffect(() => {
@@ -280,6 +320,64 @@ export default function POSPage() {
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 2500);
+  }
+
+  function holdOrder() {
+    if (cart.length === 0) return;
+    const label =
+      selectedCustomer?.name ||
+      customerSearch.trim() ||
+      cart[0]?.name ||
+      "Basket";
+    const row: HeldOrder = {
+      id: crypto.randomUUID(),
+      label,
+      at: new Date().toISOString(),
+      cart,
+      customerId: selectedCustomer?.id ?? null,
+      customerName: selectedCustomer?.name || customerSearch.trim(),
+      note,
+    };
+    const next = [...held, row];
+    setHeld(next);
+    writeHeld(storeId, next);
+    resetOrder();
+    showToast(`${label} parked`);
+  }
+
+  // Bringing one back puts whatever is on screen now into its place, so the
+  // cashier can flip between two customers without losing either basket.
+  function resumeOrder(row: HeldOrder) {
+    let next = held.filter((h) => h.id !== row.id);
+    if (cart.length > 0) {
+      next = [
+        ...next,
+        {
+          id: crypto.randomUUID(),
+          label: selectedCustomer?.name || customerSearch.trim() || cart[0]?.name || "Basket",
+          at: new Date().toISOString(),
+          cart,
+          customerId: selectedCustomer?.id ?? null,
+          customerName: selectedCustomer?.name || customerSearch.trim(),
+          note,
+        },
+      ];
+    }
+    setHeld(next);
+    writeHeld(storeId, next);
+
+    resetOrder();
+    setCart(row.cart);
+    setNote(row.note);
+    setCustomerSearch(row.customerName);
+    const c = customers.find((x) => x.id === row.customerId);
+    if (c) setSelectedCustomer(c);
+  }
+
+  function dropHeld(id: string) {
+    const next = held.filter((h) => h.id !== id);
+    setHeld(next);
+    writeHeld(storeId, next);
   }
 
   function resetOrder() {
@@ -974,7 +1072,49 @@ export default function POSPage() {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 h-fit sticky top-24">
-        <h3 className="font-semibold mb-3">{t("pos_cart")}</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">{t("pos_cart")}</h3>
+          {cart.length > 0 && (
+            <button
+              onClick={holdOrder}
+              className="text-xs font-semibold border border-slate-200 rounded-lg px-2 py-1"
+            >
+              Park this
+            </button>
+          )}
+        </div>
+
+        {held.length > 0 && (
+          <div className="mb-3 border border-amber-200 bg-amber-50 rounded-lg p-2">
+            <div className="text-[11px] text-amber-800 font-medium mb-1">
+              Parked ({held.length})
+            </div>
+            <div className="space-y-1">
+              {held.map((h) => (
+                <div key={h.id} className="flex items-center gap-2">
+                  <button
+                    onClick={() => resumeOrder(h)}
+                    className="flex-1 text-left text-xs bg-white border border-amber-200 rounded px-2 py-1"
+                  >
+                    <span className="font-medium">{h.label}</span>
+                    <span className="text-slate-500">
+                      {" "}
+                      &middot; {h.cart.length} item(s) &middot;{" "}
+                      {fmt(h.cart.reduce((n, c) => n + c.price * c.qty, 0))}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => dropHeld(h.id)}
+                    className="text-[11px] text-red-600 px-1"
+                    title="Throw this basket away"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {cart.length === 0 ? (
           <div className="text-center text-slate-400 text-sm py-6">{t("pos_emptyCart")}</div>
         ) : (
