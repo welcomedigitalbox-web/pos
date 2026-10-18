@@ -48,6 +48,18 @@ export default function ProductForm({ productId }: { productId?: string }) {
   const [drafts, setDrafts] = useState<Draft[]>([{ name: "", sku: "", price: "" }]);
   const [existingVariants, setExistingVariants] = useState<ProductVariant[]>([]);
 
+  // A package is this product sold as one scan while its parts come out of
+  // stock. It lives here rather than on a page of its own, because what goes
+  // in a package is part of what the product IS.
+  const [parts, setParts] = useState<
+    { id: string; component_product_id: string; qty: number; name: string; price: number }[]
+  >([]);
+  const [allProducts, setAllProducts] = useState<
+    { id: string; name: string; sku: string | null; price: number | null; is_package: boolean | null }[]
+  >([]);
+  const [partPick, setPartPick] = useState("");
+  const [partQty, setPartQty] = useState("1");
+
   // Units of measure. Stock is always counted in the base unit — a carton of
   // twelve takes twelve pieces off the shelf — so the extra units are only
   // ever a way of saying "twelve of those" when buying or selling.
@@ -69,6 +81,10 @@ export default function ProductForm({ productId }: { productId?: string }) {
   }
 
   useEffect(() => {
+    supabase.from("products")
+      .select("id,name,sku,price,is_package")
+      .eq("is_active", true).order("name").limit(3000)
+      .then(({ data }) => setAllProducts((data as never) || []));
     supabase.from("product_categories").select("*").order("sort_order").limit(500)
       .then(({ data }) => setCategories((data as ProductCategory[]) || []));
   }, []);
@@ -116,6 +132,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
             barcode: u.barcode || "", price: u.price == null ? "" : String(u.price),
           }))
       );
+      loadParts();
       const row = inv as { stock_qty: number; avg_cost: number } | null;
       setStockQty(row ? String(row.stock_qty) : "0");
       setAvgCost(row ? String(row.avg_cost) : "0");
@@ -124,6 +141,47 @@ export default function ProductForm({ productId }: { productId?: string }) {
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId, storeId]);
+
+  async function loadParts() {
+    if (!productId) return;
+    const { data } = await supabase
+      .from("product_packages")
+      .select("id, component_product_id, qty")
+      .eq("package_product_id", productId);
+    const rows = (data as { id: string; component_product_id: string; qty: number }[]) || [];
+    setParts(
+      rows.map((r) => {
+        const pr = allProducts.find((x) => x.id === r.component_product_id);
+        return {
+          ...r,
+          name: pr?.name || r.component_product_id,
+          price: Number(pr?.price) || 0,
+        };
+      })
+    );
+  }
+
+  async function addPart() {
+    if (!productId) return showToast("Save the product first");
+    if (!partPick) return showToast("Pick what goes in it");
+    const q = Number(partQty);
+    if (!(q > 0)) return showToast("Quantity has to be above zero");
+    const { error } = await supabase.from("product_packages").insert({
+      package_product_id: productId,
+      component_product_id: partPick,
+      qty: q,
+    });
+    if (error) return showToast("\u274c " + error.message);
+    setPartPick("");
+    setPartQty("1");
+    await loadParts();
+  }
+
+  async function removePart(id: string) {
+    const { error } = await supabase.from("product_packages").delete().eq("id", id);
+    if (error) return showToast("\u274c " + error.message);
+    await loadParts();
+  }
 
   const hasVariants = existingVariants.length > 0;
   const buildingVariants = withVariants && drafts.some((d) => d.name.trim());
@@ -503,6 +561,82 @@ export default function ProductForm({ productId }: { productId?: string }) {
           </a>
         </div>
       ) : null}
+
+      {/* Package contents. A package is sold as one scan and its parts come
+          out of stock, so what is in it belongs with the product itself. */}
+      {productId && (
+        <div className={card}>
+          <h3 className="text-sm font-medium mb-1">Package contents</h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Leave this empty for an ordinary product. Put items in it and this
+            becomes a package: one barcode, one price, and selling it takes the
+            items below out of stock.
+          </p>
+
+          {parts.length > 0 && (
+            <table className="w-full text-sm mb-3">
+              <thead className="text-xs text-slate-500">
+                <tr>
+                  <th className="text-left py-1">Item</th>
+                  <th className="text-right py-1 w-20">Qty</th>
+                  <th className="text-right py-1 w-32">On its own</th>
+                  <th className="w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {parts.map((pt) => (
+                  <tr key={pt.id} className="border-t border-slate-100">
+                    <td className="py-1.5">{pt.name}</td>
+                    <td className="py-1.5 text-right">{pt.qty}</td>
+                    <td className="py-1.5 text-right text-slate-500">
+                      {(pt.qty * pt.price).toLocaleString()} MMK
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <button type="button" onClick={() => removePart(pt.id)}
+                        className="text-red-600 text-xs">
+                        {t("products_delete")}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <div className="flex gap-2">
+            <select className={field} value={partPick}
+              onChange={(e) => setPartPick(e.target.value)}>
+              <option value="">-</option>
+              {allProducts
+                .filter((x) => !x.is_package && x.id !== productId &&
+                  !parts.some((pt) => pt.component_product_id === x.id))
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}{x.sku ? ` (${x.sku})` : ""}
+                  </option>
+                ))}
+            </select>
+            <input type="number" className={field + " w-20 text-right"}
+              value={partQty} onChange={(e) => setPartQty(e.target.value)} />
+            <button type="button" onClick={addPart}
+              className="shrink-0 px-4 bg-slate-900 text-white rounded-lg text-sm font-medium">
+              Add
+            </button>
+          </div>
+
+          {parts.length > 0 && (
+            <div className="mt-3 text-sm flex justify-between border-t border-slate-100 pt-2">
+              <span className="text-slate-500">
+                Parts bought separately{" "}
+                {parts.reduce((n2, pt) => n2 + pt.qty * pt.price, 0).toLocaleString()} MMK
+              </span>
+              <span className="font-semibold">
+                Package price {(Number(price) || 0).toLocaleString()} MMK
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 max-w-sm">
         <a href="/products"
