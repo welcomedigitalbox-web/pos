@@ -72,6 +72,7 @@ export default function StockTransferPage() {
   const [bulkKey, setBulkKey] = useState("");
   const [bulkQty, setBulkQty] = useState("");
   const [bulkBarcode, setBulkBarcode] = useState("");
+  const [bulkSearch, setBulkSearch] = useState("");
   const [viewNo, setViewNo] = useState<string | null>(null);
   // A dispatch the warehouse raised itself sits at pending_approval until
   // the head releases it; these track that decision.
@@ -737,11 +738,14 @@ export default function StockTransferPage() {
               onChange={(e) => {
                 const v = e.target.value;
                 setBulkBarcode(v);
-                // A scanner types the whole code then Enter; match on the full
-                // value so a partial code never selects the wrong product.
-                const hit = items.find(
-                  (i) => (i.sku || "").toLowerCase() === v.trim().toLowerCase() && v.trim() !== ""
-                );
+                const code = v.trim().toLowerCase();
+                const hit = code
+                  ? items.find(
+                      (i) =>
+                        (i.sku || "").toLowerCase() === code ||
+                        ((i as any).codes || "").toLowerCase().split(/\s+/).includes(code)
+                    )
+                  : undefined;
                 if (hit) {
                   setBulkKey(`${hit.product_id}:${hit.variant_id || "base"}`);
                   setBulkBarcode("");
@@ -749,21 +753,50 @@ export default function StockTransferPage() {
               }}
             />
 
+            {/* A warehouse carries thousands of lines. Scrolling a list that
+                long to find one tin is not picking a product, it is hunting
+                for it, so the list is narrowed by what is typed here first. */}
+            <label className="text-sm text-slate-600">{t("warehouseTransfer_product")}</label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-2"
+              placeholder={t("warehouse_searchPlaceholder")}
+              value={bulkSearch}
+              onChange={(e) => setBulkSearch(e.target.value)}
+            />
+
             <div className="flex gap-2 items-end mb-4">
               <div className="flex-1">
-                <label className="text-sm text-slate-600">{t("warehouseTransfer_product")}</label>
-                <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1"
-                  value={bulkKey} onChange={(e) => setBulkKey(e.target.value)}>
-                  <option value="">—</option>
-                  {items.map((i) => {
-                    const k = `${i.product_id}:${i.variant_id || "base"}`;
-                    return (
-                      <option key={k} value={k} disabled={!!draftLines.find((l) => l.key === k)}>
-                        {i.display_name} ({i.stock_qty})
-                      </option>
-                    );
-                  })}
-                </select>
+                {(() => {
+                  const q = bulkSearch.trim();
+                  const shown = q
+                    ? items.filter((i) =>
+                        matchesSearch(q, i.display_name, i.sku, (i as any).codes)
+                      )
+                    : items;
+                  return (
+                    <>
+                      <select
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                        value={bulkKey}
+                        onChange={(e) => setBulkKey(e.target.value)}
+                        size={q && shown.length > 1 ? Math.min(8, shown.length) : undefined}
+                      >
+                        <option value="">—</option>
+                        {shown.map((i) => {
+                          const k = `${i.product_id}:${i.variant_id || "base"}`;
+                          return (
+                            <option key={k} value={k} disabled={!!draftLines.find((l) => l.key === k)}>
+                              {i.display_name} ({i.stock_qty})
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="text-xs text-slate-400 mt-1">
+                        {shown.length.toLocaleString()} / {items.length.toLocaleString()}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <div className="w-28">
                 <label className="text-sm text-slate-600">{t("warehouseTransfer_qty")}</label>
