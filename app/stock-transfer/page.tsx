@@ -778,7 +778,7 @@ export default function StockTransferPage() {
                       <select
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                         value={bulkKey}
-                        onChange={(e) => setBulkKey(e.target.value)}
+                        onChange={(e) => { setBulkKey(e.target.value); setBulkSearch(""); }}
                         size={q && shown.length > 1 ? Math.min(8, shown.length) : undefined}
                       >
                         <option value="">—</option>
