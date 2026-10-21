@@ -73,6 +73,7 @@ export default function StockTransferPage() {
   const [bulkQty, setBulkQty] = useState("");
   const [bulkBarcode, setBulkBarcode] = useState("");
   const [bulkSearch, setBulkSearch] = useState("");
+  const [bulkSearch, setBulkSearch] = useState("");
   const [viewNo, setViewNo] = useState<string | null>(null);
   // A dispatch the warehouse raised itself sits at pending_approval until
   // the head releases it; these track that decision.
