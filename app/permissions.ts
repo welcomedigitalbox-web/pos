@@ -128,6 +128,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
   { key: "ledger", href: "/stock-ledger", labelKey: "nav_ledger", group: "inventory" },
+  { key: "ledger", href: "/stock-movement", labelKey: "nav_movement", group: "inventory" },
   { key: "product-category", href: "/product-category", labelKey: "nav_productCategory", group: "setup" },
   { key: "product-variant", href: "/product-variant", labelKey: "nav_productVariant", group: "setup" },
   { key: "uom-import", href: "/uom-import", labelKey: "nav_uomImport", group: "setup" },
