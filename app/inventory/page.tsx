@@ -57,6 +57,10 @@ export default function InventoryPage() {
   const [codeMsg, setCodeMsg] = useState("");
   const [codeDraft, setCodeDraft] = useState("");
   const [detail, setDetail] = useState<Row | null>(null);
+  // The main location is the one being worked on; these are the others whose
+  // quantities are added into the balance.
+  const [alsoIds, setAlsoIds] = useState<string[]>([]);
+  const [perLoc, setPerLoc] = useState<Record<string, Record<string, number>>>({});
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "inventory")) router.replace("/");
@@ -70,33 +74,62 @@ export default function InventoryPage() {
   useEffect(() => {
     if (locId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locId]);
+  }, [locId, alsoIds]);
 
   // Hooks must run on every render, so the guard is applied just before the JSX.
   const pageBlocked = !profile || !hasPermission(profile, "inventory");
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.rpc("inventory_rows_json", { p_store: locId });
-    if (error) { setRows([]); setLoading(false); return; }
-    const all = (data as any[]) || [];
-    setRows(all.map((r) => ({
-      key: `${r.product_id}:${r.variant_id || "base"}`,
-      product_id: r.product_id,
-      variant_id: r.variant_id,
-      display_name: r.display_name,
-      sku: r.sku,
-      supplierCode: null,
-      price: Number(r.price || 0),
-      stock_qty: Number(r.stock_qty || 0),
-      avg_cost: Number(r.avg_cost || 0),
-      batches: [],
-      nearestExpiry: (r.nearest_expiry as string | null) ?? null,
-      batchCount: Number(r.batch_count || 0),
-      stockValue: Number(r.stock_qty || 0) * Number(r.avg_cost || 0),
-      soldQty: Number(r.sold_qty || 0),
-      salesValue: Number(r.sold_value || 0),
-    })));
+    const ids = [locId, ...alsoIds.filter((id) => id !== locId)];
+    const pulls = await Promise.all(
+      ids.map((id) => supabase.rpc("inventory_rows_json", { p_store: id }))
+    );
+    if (pulls[0].error) { setRows([]); setLoading(false); return; }
+
+    // One line per product, with each place's own quantity kept beside the
+    // total - a balance of 40 means nothing if 39 of them are in Mandalay.
+    const merged = new Map<string, Row>();
+    const split: Record<string, Record<string, number>> = {};
+    ids.forEach((id, i) => {
+      for (const r of ((pulls[i].data as any[]) || [])) {
+        const key = `${r.product_id}:${r.variant_id || "base"}`;
+        const qty = Number(r.stock_qty || 0);
+        const cost = Number(r.avg_cost || 0);
+        const row = merged.get(key);
+        if (row) {
+          row.stock_qty += qty;
+          row.soldQty += Number(r.sold_qty || 0);
+          row.salesValue += Number(r.sold_value || 0);
+          row.stockValue += qty * cost;
+          row.batchCount += Number(r.batch_count || 0);
+          // The soonest expiry anywhere is the one worth acting on.
+          const e = (r.nearest_expiry as string | null) ?? null;
+          if (e && (!row.nearestExpiry || e < row.nearestExpiry)) row.nearestExpiry = e;
+        } else {
+          merged.set(key, {
+            key,
+            product_id: r.product_id,
+            variant_id: r.variant_id,
+            display_name: r.display_name,
+            sku: r.sku,
+            supplierCode: null,
+            price: Number(r.price || 0),
+            stock_qty: qty,
+            avg_cost: cost,
+            batches: [],
+            nearestExpiry: (r.nearest_expiry as string | null) ?? null,
+            batchCount: Number(r.batch_count || 0),
+            stockValue: qty * cost,
+            soldQty: Number(r.sold_qty || 0),
+            salesValue: Number(r.sold_value || 0),
+          });
+        }
+        split[key] = { ...(split[key] || {}), [id]: qty };
+      }
+    });
+    setPerLoc(split);
+    setRows([...merged.values()]);
     setLoading(false);
 
     // Supplier codes come from the product, not the stock row, so they are
@@ -216,13 +249,18 @@ export default function InventoryPage() {
   );
 
   const locName = stores.find((s) => s.id === locId)?.name || locId;
+  // Only worth a column per place once there is more than one place.
+  const shownLocs = alsoIds.length ? [locId, ...alsoIds] : [];
+  const title = shownLocs.length
+    ? shownLocs.map((id) => stores.find((s) => s.id === id)?.name || id).join(" + ")
+    : locName;
 
   if (pageBlocked) return null;
 
   return (
     <div className="pt-4">
       <h2 className="font-semibold text-lg mb-1">{t("nav_inventory")}</h2>
-      <p className="text-sm text-slate-500 mb-4">{locName} · {t("inventory_subtitle")}</p>
+      <p className="text-sm text-slate-500 mb-4">{title} · {t("inventory_subtitle")}</p>
 
       <div className="flex flex-wrap gap-2 mb-4">
         {!isStoreLocked && (
@@ -233,6 +271,28 @@ export default function InventoryPage() {
               <option key={s.id} value={s.id}>{s.is_warehouse ? `🏭 ${s.name}` : s.name}</option>
             ))}
           </select>
+        )}
+
+        {!isStoreLocked && locId && stores.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {stores.filter((s) => s.id !== locId).map((s) => {
+              const on = alsoIds.includes(s.id);
+              return (
+                <button key={s.id} type="button"
+                  onClick={() => setAlsoIds(on ? alsoIds.filter((x) => x !== s.id) : [...alsoIds, s.id])}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs ${
+                    on ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>
+                  {on ? "✓ " : "+ "}{s.name}
+                </button>
+              );
+            })}
+            {alsoIds.length > 0 && (
+              <button type="button" onClick={() => setAlsoIds([])}
+                className="px-2 py-1.5 text-xs text-slate-500 underline">
+                only {locName}
+              </button>
+            )}
+          </div>
         )}
 
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
@@ -306,6 +366,11 @@ export default function InventoryPage() {
               <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">Supplier code</th>
               <th className="text-left px-3 py-2">{t("warehouse_colAvailable")}</th>
+              {shownLocs.map((id) => (
+                <th key={id} className="text-left px-3 py-2 font-normal text-xs">
+                  {stores.find((s) => s.id === id)?.name || id}
+                </th>
+              ))}
               <th className="text-left px-3 py-2">{t("ledger_unitsSold")}</th>
               <th className="text-left px-3 py-2">{t("products_price")}</th>
               {canSeeCost && <th className="text-left px-3 py-2">{t("warehouse_stockValue")}</th>}
@@ -363,6 +428,11 @@ export default function InventoryPage() {
                     <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : r.stock_qty <= 5 ? "text-orange-600" : ""}`}>
                       {r.stock_qty.toLocaleString()}
                     </td>
+                    {shownLocs.map((id) => (
+                      <td key={id} className="px-3 py-2 text-slate-500 text-xs">
+                        {(perLoc[r.key]?.[id] || 0).toLocaleString()}
+                      </td>
+                    ))}
                     <td className="px-3 py-2 text-slate-600">{r.soldQty.toLocaleString()}</td>
                     <td className="px-3 py-2">{fmt(r.price)}</td>
                     {canSeeCost && (
