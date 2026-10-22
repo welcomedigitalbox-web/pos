@@ -1,232 +1,239 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "../auth-context";
-import { useLanguage } from "../language-context";
 import { useStore } from "../store-context";
+import { useAuth } from "../auth-context";
+import { useRouter } from "next/navigation";
 import { hasPermission } from "../permissions";
+import * as XLSX from "xlsx";
 
 type Row = {
   product_id: string;
   variant_id: string | null;
-  item_name: string;
-  barcode: string | null;
-  warehouse_id: string;
-  batch_id: string;
-  expiry_date: string | null;
-  on_hand: number;
-  committed: number;
-  free: number;
-  unit_cost: number | null;
-  stock_value: number | null;
+  sku: string | null;
+  name: string;
+  opening: number;
+  received: number;
+  sold: number;
+  transfer_in: number;
+  transfer_out: number;
+  damaged: number;
+  adjusted: number;
+  online_out: number;
+  closing: number;
+};
+
+const n = (v: number) => Number(v || 0);
+const show = (v: number) => (n(v) === 0 ? "-" : n(v).toLocaleString());
+
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const daysAgo = (k: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - k);
+  return iso(d);
 };
 
 export default function StockLedgerPage() {
+  const { storeId, stores, isStoreLocked } = useStore();
   const { profile } = useAuth();
-  const { t } = useLanguage();
-  const { stores } = useStore();
+  const router = useRouter();
 
-  const [whId, setWhId] = useState("");
+  const [locId, setLocId] = useState("");
+  const [from, setFrom] = useState(daysAgo(6));
+  const [to, setTo] = useState(iso(new Date()));
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
-  const [onlyShort, setOnlyShort] = useState(false);
-
-  const warehouses = useMemo(
-    () => stores.filter((s: any) => s.is_warehouse),
-    [stores]
-  );
+  const [movedOnly, setMovedOnly] = useState(true);
 
   useEffect(() => {
-    if (!whId && warehouses.length) setWhId(warehouses[0].id);
-  }, [warehouses, whId]);
-
-  useEffect(() => {
-    if (whId) load();
+    if (profile && !hasPermission(profile, "inventory")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whId]);
+  }, [profile]);
 
-  async function load() {
+  useEffect(() => {
+    if (!locId && storeId) setLocId(storeId);
+  }, [storeId, locId]);
+
+  useEffect(() => {
+    if (!locId) return;
+    let live = true;
     setLoading(true);
-    const { data, error } = await supabase.rpc("warehouse_stock_ledger", {
-      p_warehouse_id: whId,
-    });
-    if (!error) setRows((data as Row[]) || []);
-    setLoading(false);
-  }
+    setErr("");
+    supabase
+      .rpc("stock_ledger", { p_from: from, p_to: to, p_store: locId })
+      .then(({ data, error }) => {
+        if (!live) return;
+        if (error) setErr(error.message);
+        setRows((data as Row[]) || []);
+        setLoading(false);
+      });
+    return () => { live = false; };
+  }, [locId, from, to]);
 
-  const visible = useMemo(() => {
+  const moved = (r: Row) =>
+    n(r.received) || n(r.sold) || n(r.transfer_in) || n(r.transfer_out) ||
+    n(r.damaged) || n(r.adjusted) || n(r.online_out);
+
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (onlyShort && r.free > 0) return false;
-      if (!q) return true;
-      return (
-        r.item_name.toLowerCase().includes(q) ||
-        (r.barcode || "").toLowerCase().includes(q)
-      );
+      if (movedOnly && !moved(r)) return false;
+      return matchesSearch(q, r.name, r.sku);
     });
-  }, [rows, search, onlyShort]);
+  }, [rows, search, movedOnly]);
 
-  // Totals cover what is on screen, so a filtered view adds up to itself.
-  const totals = useMemo(() => {
-    const value = visible.reduce((n, r) => n + Number(r.stock_value || 0), 0);
-    return {
-      onHand: visible.reduce((n, r) => n + Number(r.on_hand || 0), 0),
-      committed: visible.reduce((n, r) => n + Number(r.committed || 0), 0),
-      free: visible.reduce((n, r) => n + Number(r.free || 0), 0),
-      value,
-      showValue: visible.some((r) => r.stock_value !== null),
-    };
-  }, [visible]);
+  const sum = (k: keyof Row) =>
+    filtered.reduce((s, r) => s + n(r[k] as number), 0);
 
-  function downloadCsv() {
-    const showCost = totals.showValue;
-    const head = [
-      "Warehouse", "Item", "Barcode", "Expiry",
-      "On hand", "Committed", "Free",
-      ...(showCost ? ["Unit cost", "Stock value"] : []),
-    ];
-    // Quote every field: item names carry commas, and Excel splits on them.
-    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = [
-      head.map(esc).join(","),
-      ...visible.map((r) =>
-        [
-          r.warehouse_id, r.item_name, r.barcode || "", r.expiry_date || "",
-          r.on_hand, r.committed, r.free,
-          ...(showCost ? [r.unit_cost ?? "", r.stock_value ?? ""] : []),
-        ].map(esc).join(",")
-      ),
-    ];
-
-    const blob = new Blob(["\uFEFF" + lines.join("\n")], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stock-ledger-${whId}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  function exportExcel() {
+    const sheet = filtered.map((r) => ({
+      Code: r.sku || "",
+      Description: r.name,
+      Opening: n(r.opening),
+      Received: n(r.received),
+      Sold: n(r.sold),
+      "Transfer In": n(r.transfer_in),
+      "Transfer Out": n(r.transfer_out),
+      Damaged: n(r.damaged),
+      Adjusted: n(r.adjusted),
+      Online: n(r.online_out),
+      Closing: n(r.closing),
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet), "Ledger");
+    XLSX.writeFile(wb, `stock-ledger-${locId}-${from}-to-${to}.xlsx`);
   }
 
-  const fmt = (n: number | null) =>
-    n === null ? "-" : new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+  if (!profile || !hasPermission(profile, "inventory")) return null;
 
-  // Anything expiring within the month is worth moving first.
-  const soon = (d: string | null) => {
-    if (!d) return false;
-    const days = (new Date(d).getTime() - Date.now()) / 86400000;
-    return days < 30;
-  };
-
-  if (!profile || !hasPermission(profile, "ledger")) return null;
+  const cols: { key: keyof Row; label: string; tone?: string }[] = [
+    { key: "opening", label: "Opening" },
+    { key: "received", label: "Rec" },
+    { key: "sold", label: "Sale", tone: "text-slate-600" },
+    { key: "transfer_in", label: "TrnIn" },
+    { key: "transfer_out", label: "TrnOut" },
+    { key: "online_out", label: "Online" },
+    { key: "damaged", label: "Damage", tone: "text-red-600" },
+    { key: "adjusted", label: "Adjust", tone: "text-blue-600" },
+  ];
 
   return (
     <div className="pt-4">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 className="font-semibold text-lg">{t("nav_ledger")}</h2>
-          <p className="text-sm text-slate-500">{t("stockLedger_subtitle")}</p>
-        </div>
-        <button
-          onClick={downloadCsv}
-          disabled={!visible.length}
-          className="px-4 py-2 bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold"
-        >
-          {t("stockLedger_download")}
-        </button>
-      </div>
+      <h2 className="font-semibold text-lg mb-1">Stock movement</h2>
+      <p className="text-sm text-slate-500 mb-4">
+        What opened, what moved, what is left — one line per product.
+      </p>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {warehouses.length > 1 && (
+        {!isStoreLocked && (
           <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-            value={whId} onChange={(e) => setWhId(e.target.value)}>
-            {warehouses.map((w: any) => (
-              <option key={w.id} value={w.id}>🏭 {w.name}</option>
+            value={locId} onChange={(e) => setLocId(e.target.value)}>
+            {!locId && <option value="">Choose a location</option>}
+            {stores.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.is_warehouse ? `🏭 ${s.name}` : s.name}
+              </option>
             ))}
           </select>
         )}
-        <input
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-64"
-          placeholder={t("warehouse_searchPlaceholder")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <label className="flex items-center gap-2 text-sm px-3">
-          <input type="checkbox" checked={onlyShort}
-            onChange={(e) => setOnlyShort(e.target.checked)} />
-          {t("stockLedger_onlyShort")}
-        </label>
+
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+
+        {[["Today", 0], ["7 days", 6], ["30 days", 29]].map(([t, k]) => (
+          <button key={String(t)} type="button"
+            onClick={() => { setFrom(daysAgo(Number(k))); setTo(iso(new Date())); }}
+            className="px-3 py-2 rounded-lg text-xs bg-slate-100 text-slate-600">
+            {t}
+          </button>
+        ))}
+
+        <input className="flex-1 min-w-[180px] border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          placeholder="Search product or code"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
+
+        <button type="button" onClick={() => setMovedOnly(!movedOnly)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
+          {movedOnly ? "Moved only" : "All products"}
+        </button>
+
+        <button type="button" onClick={exportExcel} disabled={!filtered.length}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium disabled:opacity-40">
+          Excel
+        </button>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[880px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
-              <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
-              <th className="text-left px-3 py-2">{t("stockLedger_expiry")}</th>
-              <th className="text-right px-3 py-2">{t("stockLedger_onHand")}</th>
-              <th className="text-right px-3 py-2">{t("stockLedger_committed")}</th>
-              <th className="text-right px-3 py-2">{t("stockLedger_free")}</th>
-              {totals.showValue && (
-                <>
-                  <th className="text-right px-3 py-2">{t("warehouse_colAvgCost")}</th>
-                  <th className="text-right px-3 py-2">{t("stockLedger_value")}</th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">…</td></tr>
-            )}
-            {!loading && visible.map((r) => (
-              <tr key={r.batch_id} className="border-t border-slate-100">
-                <td className="px-3 py-2">{r.item_name}</td>
-                <td className="px-3 py-2 text-slate-400 text-xs">{r.barcode || "-"}</td>
-                <td className={`px-3 py-2 text-xs ${soon(r.expiry_date) ? "text-red-600 font-medium" : "text-slate-500"}`}>
-                  {r.expiry_date || "-"}
-                </td>
-                <td className="px-3 py-2 text-right">{fmt(r.on_hand)}</td>
-                <td className="px-3 py-2 text-right text-amber-700">
-                  {r.committed > 0 ? fmt(r.committed) : "-"}
-                </td>
-                <td className={`px-3 py-2 text-right font-medium ${r.free < 0 ? "text-red-600" : ""}`}>
-                  {fmt(r.free)}
-                </td>
-                {totals.showValue && (
-                  <>
-                    <td className="px-3 py-2 text-right text-slate-500">{fmt(r.unit_cost)}</td>
-                    <td className="px-3 py-2 text-right">{fmt(r.stock_value)}</td>
-                  </>
-                )}
-              </tr>
-            ))}
-            {!loading && visible.length === 0 && (
-              <tr><td colSpan={8} className="text-center text-slate-400 py-8">-</td></tr>
-            )}
-          </tbody>
-          {visible.length > 0 && (
-            <tfoot className="bg-slate-50 font-medium border-t-2 border-slate-200">
+      {err && <p className="text-sm text-red-600 mb-3">{err}</p>}
+
+      {!locId ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-sm">
+          Choose a location first.
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[900px]">
+            <thead className="bg-slate-50 text-slate-500">
               <tr>
-                <td className="px-3 py-2" colSpan={3}>{visible.length}</td>
-                <td className="px-3 py-2 text-right">{fmt(totals.onHand)}</td>
-                <td className="px-3 py-2 text-right">{fmt(totals.committed)}</td>
-                <td className="px-3 py-2 text-right">{fmt(totals.free)}</td>
-                {totals.showValue && (
-                  <>
-                    <td />
-                    <td className="px-3 py-2 text-right">{fmt(totals.value)}</td>
-                  </>
-                )}
+                <th className="text-left px-3 py-2">Code</th>
+                <th className="text-left px-3 py-2">Description</th>
+                {cols.map((c) => (
+                  <th key={c.key} className="text-right px-3 py-2">{c.label}</th>
+                ))}
+                <th className="text-right px-3 py-2">Closing</th>
               </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={cols.length + 3}
+                  className="text-center text-slate-400 py-8">...</td></tr>
+              )}
+              {!loading && filtered.map((r) => (
+                <tr key={`${r.product_id}:${r.variant_id || "base"}`}
+                  className="border-t border-slate-100">
+                  <td className="px-3 py-2 text-xs text-slate-400">{r.sku || "-"}</td>
+                  <td className="px-3 py-2">{r.name}</td>
+                  {cols.map((c) => (
+                    <td key={c.key} className={`px-3 py-2 text-right ${c.tone || ""}`}>
+                      {c.key === "adjusted" && n(r.adjusted) > 0
+                        ? `+${n(r.adjusted).toLocaleString()}`
+                        : show(r[c.key] as number)}
+                    </td>
+                  ))}
+                  <td className={`px-3 py-2 text-right font-medium ${
+                    n(r.closing) < 0 ? "text-red-600" : ""}`}>
+                    {n(r.closing).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+              {!loading && filtered.length > 0 && (
+                <tr className="border-t border-slate-200 bg-slate-50 font-medium">
+                  <td className="px-3 py-2" colSpan={2}>Total</td>
+                  {cols.map((c) => (
+                    <td key={c.key} className="px-3 py-2 text-right">
+                      {sum(c.key).toLocaleString()}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-right">
+                    {sum("closing").toLocaleString()}
+                  </td>
+                </tr>
+              )}
+              {!loading && filtered.length === 0 && (
+                <tr><td colSpan={cols.length + 3}
+                  className="text-center text-slate-400 py-8">
+                  Nothing moved in this range
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
