@@ -787,7 +787,7 @@ export default function POSPage() {
   const vatPercentNum = vatEnabled ? STANDARD_VAT_PERCENT : 0;
   const vatAmount = (afterDiscount * vatPercentNum) / 100;
   const beforeRounding = afterDiscount + vatAmount;
-  const roundToNum = Math.min(Math.max(Number(roundTo) || 0, 0), 500);
+  const roundToNum = Math.min(Math.max(Number(roundTo) || 0, 0), 100000);
   const grandTotal =
     roundToNum > 0 ? Math.round(beforeRounding / roundToNum) * roundToNum : beforeRounding;
   const roundingAdj = grandTotal - beforeRounding;
