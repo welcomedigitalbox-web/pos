@@ -337,3 +337,18 @@ export const DEPARTMENT_ROLES: Record<string, UserRole[]> = {
 
 // Company-wide posts that sit outside any one department.
 export const COMPANY_ROLES: UserRole[] = ["operation_director", "owner", "admin"];
+
+// Cost, and anything the margin can be worked out from, is for the people
+// who buy the goods, count the money, or run the company. Shop and warehouse
+// managers run stock, not purchasing, so this is deliberately narrower than
+// isManagerTier. The database enforces the same rule; this only keeps the
+// screen honest about it.
+export function seesCost(profile?: { role?: string; department?: string } | null) {
+  if (!profile) return false;
+  const dept = String(profile.department || "");
+  const role = String(profile.role || "");
+  return (
+    ["finance", "management", "merchandising"].includes(dept) ||
+    ["admin", "owner", "operation_director"].includes(role)
+  );
+}
