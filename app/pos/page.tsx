@@ -141,6 +141,7 @@ export default function POSPage() {
   // Shops settle in notes; the cashier says what to round to.
   const [roundTo, setRoundTo] = useState("");
   const [lineRaw, setLineRaw] = useState<Record<string, string>>({});
+  const [lineMode, setLineMode] = useState<Record<string, string>>({});
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
@@ -1180,14 +1181,28 @@ export default function POSPage() {
                       <input
                         type="text"
                         inputMode="decimal"
-                        className="w-20 border border-slate-200 rounded px-1 py-0.5 text-xs text-right"
-                        placeholder="0 / 10%"
+                        className="w-16 border border-slate-200 rounded px-1 py-0.5 text-xs text-right"
+                        placeholder="0"
                         value={lineRaw[c.key] ?? (c.line_discount ? String(c.line_discount) : "")}
                         onChange={(e) => {
-                          setLineRaw((m) => ({ ...m, [c.key]: e.target.value }));
-                          setLineDiscount(c.key, e.target.value);
+                          const v = e.target.value;
+                          setLineRaw((m) => ({ ...m, [c.key]: v }));
+                          setLineDiscount(c.key, lineMode[c.key] === "pct" ? v + "%" : v);
                         }}
                       />
+                      <select
+                        className="border border-slate-200 rounded px-1 py-0.5 text-xs"
+                        value={lineMode[c.key] || "mmk"}
+                        onChange={(e) => {
+                          const mode = e.target.value;
+                          setLineMode((m) => ({ ...m, [c.key]: mode }));
+                          const v = lineRaw[c.key] ?? "";
+                          setLineDiscount(c.key, mode === "pct" ? v + "%" : v);
+                        }}
+                      >
+                        <option value="mmk">MMK</option>
+                        <option value="pct">%</option>
+                      </select>
                     </div>
                   )}
                 </div>
