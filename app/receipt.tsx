@@ -185,7 +185,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
         </>
       )}
 
-      <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, ...MUTED }}>
+      <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, whiteSpace: "pre-line", ...MUTED }}>
         {data.footerText || "Thank you!"}
       </div>
     </div>
