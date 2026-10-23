@@ -130,7 +130,7 @@ export default function AdminSettingsPage() {
         </div>
         <div>
           <label className="text-sm text-slate-600">{t("admin_address")}</label>
-          <input
+          <textarea rows={3}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1"
             value={settings.address || ""}
             onChange={(e) => setSettings({ ...settings, address: e.target.value })}
