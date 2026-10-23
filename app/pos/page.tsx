@@ -140,6 +140,7 @@ export default function POSPage() {
   const [note, setNote] = useState("");
   // Shops settle in notes; the cashier says what to round to.
   const [roundTo, setRoundTo] = useState("");
+  const [lineRaw, setLineRaw] = useState<Record<string, string>>({});
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loyaltyTiers, setLoyaltyTiers] = useState<LoyaltyTier[]>([]);
@@ -739,11 +740,13 @@ export default function POSPage() {
   // A discount on one line, for the haggling that happens item by item. The
   // invoice-level discount still applies on top, and the server checks both.
   function setLineDiscount(key: string, raw: string) {
-    const n = Number(raw);
+    const pct = /%\s*$/.test(raw);
+    const n = Number(String(raw).replace(/%/g, "").trim());
     setCart((old) => old.map((c) => {
       if (c.key !== key) return c;
       const cap = c.price * c.qty - (promoLines[c.key]?.amount ?? 0);
-      return { ...c, line_discount: raw === "" || !(n > 0) ? 0 : Math.min(n, Math.max(cap, 0)) };
+      const asked = pct ? Math.round((Math.max(cap, 0) * n) / 100) : n;
+      return { ...c, line_discount: raw === "" || !(n > 0) ? 0 : Math.min(asked, Math.max(cap, 0)) };
     }));
   }
 
@@ -1175,11 +1178,15 @@ export default function POSPage() {
                     <div className="mt-1 flex items-center gap-1">
                       <span className="text-[10px] text-slate-400">-</span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         className="w-20 border border-slate-200 rounded px-1 py-0.5 text-xs text-right"
-                        placeholder="0"
-                        value={c.line_discount ? String(c.line_discount) : ""}
-                        onChange={(e) => setLineDiscount(c.key, e.target.value)}
+                        placeholder="0 / 10%"
+                        value={lineRaw[c.key] ?? (c.line_discount ? String(c.line_discount) : "")}
+                        onChange={(e) => {
+                          setLineRaw((m) => ({ ...m, [c.key]: e.target.value }));
+                          setLineDiscount(c.key, e.target.value);
+                        }}
                       />
                     </div>
                   )}
