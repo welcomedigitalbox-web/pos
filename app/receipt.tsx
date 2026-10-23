@@ -55,7 +55,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
           {data.businessName || data.storeId}
         </div>
         {data.logoText && <div style={{ ...MUTED, fontSize: 11 }}>{data.logoText}</div>}
-        {data.address && <div style={{ ...MUTED, fontSize: 11 }}>{data.address}</div>}
+        {data.address && <div style={{ ...MUTED, fontSize: 11, whiteSpace: "pre-line" }}>{data.address}</div>}
         {data.phone && <div style={{ ...MUTED, fontSize: 11 }}>{data.phone}</div>}
       </div>
 

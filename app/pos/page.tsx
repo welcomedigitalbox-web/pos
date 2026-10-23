@@ -518,7 +518,8 @@ export default function POSPage() {
     if (!hit) return;
 
     const found = items.find(
-      (i) => i.product_id === hit.product_id &&
+      (i) => !String(i.key).endsWith(":pkg") &&
+        i.product_id === hit.product_id &&
         (i.variant_id || null) === (hit.variant_id || null)
     );
     if (!found) return showToast("not on sale here: " + hit.product_id.slice(0, 8));
@@ -531,7 +532,7 @@ export default function POSPage() {
 
   function addToCart(item: SellableItem) {
     if (item.stock_qty <= 0)
-      return showToast(t("pos_outOfStock") + " — " + item.display_name + " [" + item.key + "] = " + item.stock_qty);
+      return showToast(t("pos_outOfStock"));
     if (cartQtyForItem(item.key) >= item.stock_qty) return showToast(t("pos_notEnoughStock"));
 
     setCart((prev) => {
