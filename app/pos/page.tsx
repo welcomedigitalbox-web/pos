@@ -505,50 +505,6 @@ export default function POSPage() {
     }
   }
 
-  async function unusedDiscountApproval() {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      const { data, error } = await supabase.functions.invoke("verify-discount-approver", {
-        body: usingPin ? { pin: approverPin } : { email: approverEmail, password: approverPassword },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (error) {
-        // supabase-js throws a generic error for non-2xx responses â pull the
-        // actual message out of the function's JSON response body if possible.
-        let message = error.message || String(error);
-        try {
-          if (error.context && typeof error.context.json === "function") {
-            const body = await error.context.json();
-            if (body?.error) message = body.error;
-          }
-        } catch {
-          // ignore parse failure, fall back to generic message
-        }
-        setApproverError(message);
-        return;
-      }
-      if (data?.error) {
-        setApproverError(data.error);
-        return;
-      }
-
-      setDiscountApproved(true);
-      setDiscountApprovedBy(data.approver_email);
-      setShowApprovalModal(false);
-      setApproverEmail("");
-      setApproverPassword("");
-      setApproverPin("");
-      showToast(`â ${t("pos_discountApprovedBy")} ${data.approver_email}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setApproverError(message);
-    } finally {
-      setApproving(false);
-    }
-  }
-
   // Group sellable items by their parent product so the grid shows one card per
   // product; products with variants open a picker instead of adding directly.
   const productGroups = useMemo(() => {
