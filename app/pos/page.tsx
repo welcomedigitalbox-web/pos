@@ -115,6 +115,9 @@ export default function POSPage() {
   // Discount approval workflow (cashier-tier roles need Sale Manager/Owner/Admin sign-off)
   const [discountApproved, setDiscountApproved] = useState(false);
   const [discountApprovedBy, setDiscountApprovedBy] = useState<string | null>(null);
+  const [approvedPin, setApprovedPin] = useState<string | null>(null);
+  const [approvalRequest, setApprovalRequest] = useState<string | null>(null);
+  const [requestState, setRequestState] = useState<"" | "waiting" | "rejected">("");
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [approvalMode, setApprovalMode] = useState<"pin" | "password">("pin");
   const [approverPin, setApproverPin] = useState("");
@@ -411,13 +414,98 @@ export default function POSPage() {
     setDiscountApprovedBy(null);
   }
 
+  // What the shop is being asked to allow, in kyats.
+  const discountAsked = () => discountAmount + lineDiscountTotal;
+
   async function submitDiscountApproval() {
-    const usingPin = approvalMode === "pin";
-    if (usingPin && approverPin.length < 4) return;
-    if (!usingPin && (!approverEmail || !approverPassword)) return;
+    if (approverPin.length < 4) return;
 
     setApproving(true);
     setApproverError("");
+    try {
+      const { data, error } = await supabase.rpc("verify_store_pin", {
+        p_store: storeId,
+        p_pin: approverPin,
+        p_discount: discountAsked(),
+      });
+      if (error) {
+        setApproverError(error.message);
+        return;
+      }
+      setDiscountApproved(true);
+      setDiscountApprovedBy(String(data));
+      setApprovedPin(approverPin);
+      setApprovalRequest(null);
+      setShowApprovalModal(false);
+      setApproverPin("");
+      showToast(String(data));
+    } catch (err) {
+      setApproverError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  // When the shop may not allow it on its own, the manager is asked - and
+  // the till waits for his answer rather than for a phone call.
+  async function askTheManager() {
+    setApproving(true);
+    setApproverError("");
+    try {
+      const { data, error } = await supabase.rpc("request_discount", {
+        p_store: storeId,
+        p_subtotal: subtotal,
+        p_discount: discountAsked(),
+        p_customer_name: selectedCustomer?.name || customerSearch.trim() || null,
+        p_note: note.trim() || null,
+      });
+      if (error) {
+        setApproverError(error.message);
+        return;
+      }
+      const id = String(data);
+      setApprovalRequest(id);
+      setRequestState("waiting");
+
+      // Check back every few seconds until he answers or the till gives up.
+      const started = Date.now();
+      const timer = setInterval(async () => {
+        if (Date.now() - started > 10 * 60 * 1000) {
+          clearInterval(timer);
+          setRequestState("");
+          setApproverError("No answer yet. Try the shop PIN or ask again.");
+          return;
+        }
+        const { data: row } = await supabase
+          .from("discount_requests")
+          .select("status, decider_email, reason")
+          .eq("id", id)
+          .maybeSingle();
+        const r = row as { status?: string; decider_email?: string; reason?: string } | null;
+        if (!r) return;
+        if (r.status === "approved") {
+          clearInterval(timer);
+          setRequestState("");
+          setDiscountApproved(true);
+          setDiscountApprovedBy(r.decider_email || "manager");
+          setApprovedPin(null);
+          setShowApprovalModal(false);
+          showToast(`${t("pos_discountApprovedBy")} ${r.decider_email || ""}`);
+        } else if (r.status === "rejected") {
+          clearInterval(timer);
+          setRequestState("rejected");
+          setApprovalRequest(null);
+          setApproverError(r.reason || "The manager said no.");
+        }
+      }, 4000);
+    } catch (err) {
+      setApproverError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function unusedDiscountApproval() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
@@ -901,6 +989,8 @@ export default function POSPage() {
           discount_value: discountValueNum,
           discount_amount: effectiveDiscount,
           discount_approved_by: discountApprovedBy,
+          approval_pin: approvedPin,
+          approval_request: approvalRequest,
           vat_percent: vatPercentNum,
           round_to: roundToNum,
           amount_received: splitting ? grandTotal : (isCashMethod ? amountReceivedNum : grandTotal),
@@ -1717,7 +1807,7 @@ export default function POSPage() {
                 }}
                 className={`flex-1 py-2 ${approvalMode === "password" ? "bg-blue-600 text-white" : "bg-white text-slate-500"}`}
               >
-                {t("pos_passwordMethod")}
+                Ask the manager
               </button>
             </div>
 
@@ -1738,23 +1828,25 @@ export default function POSPage() {
               </>
             ) : (
               <>
-                <label className="text-sm text-slate-600">{t("admin_email")}</label>
-                <input
-                  type="email"
-                  autoFocus
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3"
-                  value={approverEmail}
-                  onChange={(e) => setApproverEmail(e.target.value)}
-                />
-
-                <label className="text-sm text-slate-600">{t("admin_password")}</label>
-                <input
-                  type="password"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 mb-2"
-                  value={approverPassword}
-                  onChange={(e) => setApproverPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submitDiscountApproval()}
-                />
+                <p className="text-sm text-slate-600 mb-3">
+                  {fmt(discountAsked())} off this sale. The request goes to
+                  whoever approves for this shop, and the sale continues as
+                  soon as they answer.
+                </p>
+                {requestState === "waiting" ? (
+                  <p className="text-sm text-blue-700 mb-2">
+                    Sent. Waiting for an answer...
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={approving}
+                    onClick={askTheManager}
+                    className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 mb-2"
+                  >
+                    Send the request
+                  </button>
+                )}
               </>
             )}
             {approverError && <p className="text-red-600 text-xs mb-2">{approverError}</p>}
