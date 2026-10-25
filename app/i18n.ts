@@ -704,6 +704,7 @@ export const translations = {
     ledger_empty: "Movement history မရှိသေးပါ",
     nav_barcode: "Barcode ရှာမည်",
     nav_movement: "Stock Movement",
+    nav_discountRequests: "Discount requests",
     nav_ledger: "Stock Ledger",
     nav_warehouse: "Warehouse",
     nav_stockTransfer: "Stock Transfer",
