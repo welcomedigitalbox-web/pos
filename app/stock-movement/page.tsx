@@ -48,6 +48,8 @@ export default function StockLedgerPage() {
   const [err, setErr] = useState("");
   const [search, setSearch] = useState("");
   const [movedOnly, setMovedOnly] = useState(true);
+  // Every barcode a product answers to, including the supplier's own.
+  const [codes, setCodes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "inventory")) router.replace("/");
@@ -74,6 +76,25 @@ export default function StockLedgerPage() {
     return () => { live = false; };
   }, [locId, from, to]);
 
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const map: Record<string, string> = {};
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from("product_barcodes")
+          .select("product_id,barcode")
+          .eq("is_active", true)
+          .range(from, from + 999);
+        const page = (data as { product_id: string; barcode: string }[]) || [];
+        for (const b of page) map[b.product_id] = (map[b.product_id] || "") + " " + b.barcode;
+        if (error || page.length < 1000) break;
+      }
+      if (live) setCodes(map);
+    })();
+    return () => { live = false; };
+  }, []);
+
   const moved = (r: Row) =>
     n(r.received) || n(r.sold) || n(r.transfer_in) || n(r.transfer_out) ||
     n(r.damaged) || n(r.adjusted) || n(r.online_out);
@@ -82,9 +103,9 @@ export default function StockLedgerPage() {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (movedOnly && !moved(r)) return false;
-      return matchesSearch(q, r.name, r.sku);
+      return matchesSearch(q, r.name, r.sku, codes[r.product_id]);
     });
-  }, [rows, search, movedOnly]);
+  }, [rows, search, movedOnly, codes]);
 
   const sum = (k: keyof Row) =>
     filtered.reduce((s, r) => s + n(r[k] as number), 0);
