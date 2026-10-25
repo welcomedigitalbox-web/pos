@@ -119,7 +119,13 @@ export default function StockRequestDetailPage() {
           ← {t("nav_stockRequest")}
         </button>
         <button
-          onClick={() => window.print()}
+          onClick={() => {
+            const s = document.createElement("style");
+            s.textContent = "@page { size: A4; margin: 14mm; }";
+            document.head.appendChild(s);
+            window.print();
+            setTimeout(() => s.remove(), 0);
+          }}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold"
         >
           {t("stockTransfer_print")}

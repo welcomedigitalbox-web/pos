@@ -652,7 +652,13 @@ export default function PoDetailPage() {
           </span>
         )}
         <button
-          onClick={() => window.print()}
+          onClick={() => {
+            const s = document.createElement("style");
+            s.textContent = "@page { size: A4; margin: 14mm; }";
+            document.head.appendChild(s);
+            window.print();
+            setTimeout(() => s.remove(), 0);
+          }}
           className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-medium print:hidden"
         >
           {t("po_printPdf")}

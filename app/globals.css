@@ -56,10 +56,6 @@ body {
 /* A purchase order is a document the supplier keeps, so printing renders a
    dedicated sheet rather than the live screen. */
 @media print {
-  @page {
-    size: A4;
-    margin: 14mm;
-  }
   body * {
     visibility: hidden;
   }
