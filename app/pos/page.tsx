@@ -533,7 +533,10 @@ export default function POSPage() {
       setVariantPickerProductId(productId);
       return;
     }
-    addToCart(group.items[0]);
+    // A package row carries the product's own id but counts how many
+    // sets could be built, which is usually none. Prefer the real thing.
+    const real = group.items.filter((i) => !String(i.key).endsWith(":pkg"));
+    addToCart((real.find((i) => i.stock_qty > 0) || real[0] || group.items[0]));
   }
 
   // A scan may be the supplier's own barcode, one we printed ourselves, a
