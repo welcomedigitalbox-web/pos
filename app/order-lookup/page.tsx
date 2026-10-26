@@ -343,7 +343,7 @@ export default function OrderLookupPage() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-8">...</td></tr>}
-            {!loading && filtered.map((o) => (
+            {!loading && ((profile?.role || "").includes("manager") || (profile?.role || "").includes("director") || profile?.role === "owner" || profile?.role === "admin" || search.trim().length >= 3 ? filtered : []).map((o) => (
               <tr key={o.id} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-mono text-xs">
                   {o.sale_ref || o.id.slice(0, 8).toUpperCase()}
