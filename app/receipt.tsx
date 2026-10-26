@@ -55,7 +55,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
           {data.businessName || data.storeId}
         </div>
         {data.logoText && <div style={{ ...MUTED, fontSize: 11 }}>{data.logoText}</div>}
-        {data.address && <div style={{ ...MUTED, fontSize: 11, whiteSpace: "pre-line" }}>{data.address}</div>}
+        {data.address && <div style={{ ...MUTED, fontSize: 11, whiteSpace: "pre-line" }}>{String(data.address).replace(/\\n|\/n/g, "\n")}</div>}
         {data.phone && <div style={{ ...MUTED, fontSize: 11 }}>{data.phone}</div>}
       </div>
 
@@ -186,7 +186,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
       )}
 
       <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, whiteSpace: "pre-line", ...MUTED }}>
-        {data.footerText || "Thank you!"}
+        {String(data.footerText || "Thank you!").replace(/\\n|\/n/g, "\n")}
       </div>
     </div>
   );
