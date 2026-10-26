@@ -38,9 +38,9 @@ export type ReceiptData = {
   cashierEmail: string;
 };
 
-const RULE = { borderTop: "1px solid #ddd", margin: "10px 0" };
+const RULE = { borderTop: "1px solid #000", margin: "10px 0" };
 const ROW = { display: "flex", justifyContent: "space-between", gap: 12 };
-const MUTED = { color: "#888" };
+const MUTED = { color: "#000" };
 
 export default function Receipt({ data }: { data: ReceiptData | null }) {
   if (!data) return null;
