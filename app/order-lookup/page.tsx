@@ -552,7 +552,7 @@ export default function OrderLookupPage() {
               )}
               {!itemsLoading && (
                 <div className="flex justify-between text-green-700 font-medium border-t border-slate-100 pt-2 mt-2">
-                  <span>{t("dashboard_gp")}</span><span>{fmt(gp)}</span>
+                  {seesCost(profile) && (<><span>{t("dashboard_gp")}</span><span>{fmt(gp)}</span></>)}
                 </div>
               )}
             </div>
