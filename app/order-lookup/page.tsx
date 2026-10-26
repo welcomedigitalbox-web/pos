@@ -6,7 +6,7 @@ import Receipt, { ReceiptData } from "../receipt";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
-import { hasPermission } from "../permissions";
+import { hasPermission , seesCost } from "../permissions";
 import type { TranslationKey } from "../i18n";
 
 function fmt(n: number) {
