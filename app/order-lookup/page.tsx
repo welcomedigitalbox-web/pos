@@ -478,11 +478,12 @@ export default function OrderLookupPage() {
                     <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
                     <th className="text-left px-3 py-2">{t("ledger_qty")}</th>
                     <th className="text-left px-3 py-2">{t("products_price")}</th>
+                    <th className="text-left px-3 py-2">{t("pos_discount")}</th>
                     <th className="text-left px-3 py-2">{t("pos_total")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {itemsLoading && <tr><td colSpan={4} className="text-center text-slate-400 py-4">...</td></tr>}
+                  {itemsLoading && <tr><td colSpan={5} className="text-center text-slate-400 py-4">...</td></tr>}
                   {!itemsLoading && items.map((i) => {
                     const returnedQty = returnedItems
                       .filter((r) => r.product_id === (i as any).product_id)
@@ -499,6 +500,7 @@ export default function OrderLookupPage() {
                       </td>
                       <td className="px-3 py-2">{i.qty}</td>
                       <td className="px-3 py-2">{fmt(i.unit_price)}</td>
+                      <td className="px-3 py-2 text-red-600">{(Number((i as any).line_discount || 0) + Number((i as any).promo_discount || 0)) > 0 ? "-" + fmt(Number((i as any).line_discount || 0) + Number((i as any).promo_discount || 0)) : "-"}</td>
                       <td className="px-3 py-2 font-medium">{fmt(i.line_total)}</td>
                     </tr>
                     );
