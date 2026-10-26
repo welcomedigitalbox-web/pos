@@ -147,7 +147,8 @@ export default function OrderLookupPage() {
     // The short reference is a prefix of the uuid, which Postgres can't match
     // directly, so narrow that last step here
     const rows = ((data as Order[]) || []).filter((o) =>
-      q ? o.id.toLowerCase().startsWith(q.toLowerCase()) ||
+      q ? (o.sale_ref || "").toLowerCase().includes(q.toLowerCase()) ||
+          o.id.toLowerCase().startsWith(q.toLowerCase()) ||
           (o.customer_name || "").toLowerCase().includes(q.toLowerCase()) ||
           (o.cashier_email || "").toLowerCase().includes(q.toLowerCase()) ||
           (o.sale_rep_name || "").toLowerCase().includes(q.toLowerCase())
