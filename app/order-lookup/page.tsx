@@ -260,7 +260,7 @@ export default function OrderLookupPage() {
         businessName: settings?.business_name || null,
         phone: settings?.phone || null,
         address: settings?.address || null,
-        footerText: settings?.footer_text || null,
+        footerText: settings?.receipt_footer || null,
         logoText: settings?.logo_text || null,
         saleRef: selected.sale_ref || selected.id.slice(0, 8).toUpperCase(),
         createdAt: selected.created_at,
