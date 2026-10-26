@@ -135,15 +135,11 @@ export default function OrderLookupPage() {
 
     const q = term.trim();
     if (q) {
-      // Staff quote the short reference from the receipt, so match on that too
-      const isRef = /^[0-9a-f-]{4,}$/i.test(q);
-      query = isRef
-        ? query.or(
-            `customer_name.ilike.%${q}%,cashier_email.ilike.%${q}%,sale_rep_name.ilike.%${q}%,id.gte.${q}`
-          )
-        : query.or(
-            `customer_name.ilike.%${q}%,cashier_email.ilike.%${q}%,sale_rep_name.ilike.%${q}%`
-          );
+      // Staff read the invoice number off the receipt, so that is what the
+      // search has to answer to first.
+      query = query.or(
+        `sale_ref.ilike.%${q}%,customer_name.ilike.%${q}%,cashier_email.ilike.%${q}%,sale_rep_name.ilike.%${q}%`
+      );
     }
 
     const { data } = await query;
