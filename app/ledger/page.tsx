@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase, SellableItem, fetchSellableItems, netLineTotal } from "@/lib/supabase";
 import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
-import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
+import { hasPermission, isManagerTier, APPROVER_ROLES, seesCost } from "../permissions";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
 
@@ -91,9 +91,7 @@ export default function LedgerPage() {
 
   // Cost and margin are commercially sensitive, so shop-floor staff see the
   // sales side only — the same page, with those columns withheld.
-  const canSeeCost =
-    isManagerTier(profile?.role) ||
-    profile?.role === "owner" || profile?.role === "admin";
+  const canSeeCost = seesCost(profile);
 
   const [storeId, setStoreId] = useState("");
   const [rows, setRows] = useState<Row[]>([]);

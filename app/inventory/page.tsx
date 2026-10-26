@@ -7,7 +7,7 @@ import { useStore } from "../store-context";
 import { useAuth } from "../auth-context";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "../language-context";
-import { hasPermission, isManagerTier, APPROVER_ROLES } from "../permissions";
+import { hasPermission, isManagerTier, APPROVER_ROLES, seesCost } from "../permissions";
 import * as XLSX from "xlsx";
 import ProductDetail from "./detail";
 
@@ -42,9 +42,7 @@ export default function InventoryPage() {
   const router = useRouter();
 
   // Stock value exposes cost, which shop-floor staff shouldn't see
-  const canSeeCost =
-    isManagerTier(profile?.role) ||
-    profile?.role === "owner" || profile?.role === "admin";
+  const canSeeCost = seesCost(profile);
 
   const [locId, setLocId] = useState("");
   const [rows, setRows] = useState<Row[]>([]);

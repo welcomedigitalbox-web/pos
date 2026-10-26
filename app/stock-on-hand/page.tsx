@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useStore } from "../store-context";
-import { hasPermission } from "../permissions";
+import { hasPermission, seesCost } from "../permissions";
 import { useRouter } from "next/navigation";
 
 function n0(n: number) {
@@ -55,12 +55,7 @@ export default function StockOnHandPage() {
   const [cat, setCat] = useState("");
   const [onlyStock, setOnlyStock] = useState(true);
 
-  const canSeeCost =
-    profile?.role === "owner" ||
-    profile?.role === "admin" ||
-    (profile?.role || "").includes("manager") ||
-    (profile?.role || "").includes("director") ||
-    (profile?.role || "").includes("account");
+  const canSeeCost = seesCost(profile);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "inventory")) router.replace("/");
