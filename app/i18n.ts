@@ -1751,6 +1751,7 @@ export const translations = {
     ledger_empty: "No movement history yet",
     nav_barcode: "Barcode Lookup",
     nav_movement: "ပစ္စည်း အဝင်အထွက်",
+    nav_discountRequests: "လျှော့စျေး တောင်းဆိုချက်",
     nav_ledger: "Stock Ledger",
     nav_warehouse: "Warehouse",
     nav_stockTransfer: "Stock Transfer",
