@@ -268,6 +268,12 @@ export default function OrderLookupPage() {
           lineTotal: Number(i.line_total),
         })),
         subtotal: Number(o.subtotal || 0),
+        // What the promotion and the line-by-line haggling took off,
+        // so a reprint reads like the slip the customer was handed.
+        promoDiscount: items.reduce(
+          (n: number, i: any) => n + Number((i as any).promo_discount || 0), 0),
+        lineDiscount: items.reduce(
+          (n: number, i: any) => n + Number((i as any).line_discount || 0), 0),
         discountLabel: o.discount_type === "percent" ? `${o.discount_value}%` : "",
         discountAmount: Number(o.discount_amount || 0),
         vatPercent: Number(o.vat_percent || 0),
