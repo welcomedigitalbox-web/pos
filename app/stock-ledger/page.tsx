@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
 import { useLanguage } from "../language-context";
@@ -30,7 +30,7 @@ export default function StockLedgerPage() {
   const [whIds, setWhIds] = useState<string[]>([]);
   // One row per batch answers "what is on this shelf". Pivot answers
   // "where is this item", which is the question when several places hold it.
-  const [pivot, setPivot] = useState(false);
+  const [pivot, setPivot] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -99,17 +99,31 @@ export default function StockLedgerPage() {
     };
   }, [visible]);
 
-  // Item by item, with a column for each place that holds it.
+  // Item by item, with a block of columns for each place that holds it.
+  // The batches are added up: a buyer wants one line per product, not one
+  // line per carton that arrived.
+  type Cell = { on: number; com: number; free: number; exp: string | null };
   const pivotRows = useMemo(() => {
     const by = new Map<string, {
       name: string; barcode: string | null;
-      per: Record<string, number>; total: number;
+      per: Record<string, Cell>;
+      on: number; com: number; free: number;
     }>();
     for (const r of visible) {
       const key = `${r.item_name}|${r.barcode || ""}`;
-      const e = by.get(key) || { name: r.item_name, barcode: r.barcode, per: {}, total: 0 };
-      e.per[r.warehouse_id] = (e.per[r.warehouse_id] || 0) + Number(r.on_hand || 0);
-      e.total += Number(r.on_hand || 0);
+      const e = by.get(key) || {
+        name: r.item_name, barcode: r.barcode, per: {}, on: 0, com: 0, free: 0,
+      };
+      const c = e.per[r.warehouse_id] || { on: 0, com: 0, free: 0, exp: null };
+      c.on += Number(r.on_hand || 0);
+      c.com += Number(r.committed || 0);
+      c.free += Number(r.free || 0);
+      // The date that matters is the first one to run out.
+      if (r.expiry_date && (!c.exp || r.expiry_date < c.exp)) c.exp = r.expiry_date;
+      e.per[r.warehouse_id] = c;
+      e.on += Number(r.on_hand || 0);
+      e.com += Number(r.committed || 0);
+      e.free += Number(r.free || 0);
       by.set(key, e);
     }
     return [...by.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -216,37 +230,87 @@ export default function StockLedgerPage() {
 
       {pivot ? (
         <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+          <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500">
               <tr>
-                <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
-                <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
+                <th className="text-left px-3 py-2 border-r border-slate-200" rowSpan={2}>
+                  {t("warehouse_colProduct")}
+                </th>
+                <th className="text-left px-3 py-2 border-r border-slate-200" rowSpan={2}>
+                  {t("warehouse_colBarcode")}
+                </th>
                 {whIds.map((id) => (
-                  <th key={id} className="text-right px-3 py-2">{whName(id)}</th>
+                  <th key={id} colSpan={4}
+                      className="text-center px-3 py-1.5 border-l border-slate-200 text-slate-700 font-medium">
+                    {whName(id)}
+                  </th>
                 ))}
-                <th className="text-right px-3 py-2 font-semibold">
+                <th colSpan={3}
+                    className="text-center px-3 py-1.5 border-l-2 border-slate-300 text-slate-700 font-semibold">
+                  စုစုပေါင်း
+                </th>
+              </tr>
+              <tr className="text-[11px]">
+                {whIds.map((id) => (
+                  <Fragment key={id}>
+                    <th className="text-left px-2 py-1 border-l border-slate-200">
+                      {t("stockLedger_expiry")}
+                    </th>
+                    <th className="text-right px-2 py-1">{t("stockLedger_onHand")}</th>
+                    <th className="text-right px-2 py-1">{t("stockLedger_committed")}</th>
+                    <th className="text-right px-2 py-1">{t("stockLedger_free")}</th>
+                  </Fragment>
+                ))}
+                <th className="text-right px-2 py-1 border-l-2 border-slate-300">
                   {t("stockLedger_onHand")}
                 </th>
+                <th className="text-right px-2 py-1">{t("stockLedger_committed")}</th>
+                <th className="text-right px-2 py-1">{t("stockLedger_free")}</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={whIds.length + 3} className="text-center text-slate-400 py-8">…</td></tr>
+                <tr><td colSpan={whIds.length * 4 + 5} className="text-center text-slate-400 py-8">…</td></tr>
               )}
               {!loading && pivotRows.map((r) => (
                 <tr key={`${r.name}|${r.barcode || ""}`} className="border-t border-slate-100">
-                  <td className="px-3 py-2">{r.name}</td>
-                  <td className="px-3 py-2 text-slate-400 text-xs">{r.barcode || "-"}</td>
-                  {whIds.map((id) => (
-                    <td key={id} className="px-3 py-2 text-right">
-                      {r.per[id] ? fmt(r.per[id]) : <span className="text-slate-300">-</span>}
-                    </td>
-                  ))}
-                  <td className="px-3 py-2 text-right font-medium">{fmt(r.total)}</td>
+                  <td className="px-3 py-2 border-r border-slate-100">{r.name}</td>
+                  <td className="px-3 py-2 text-slate-400 text-xs border-r border-slate-100">
+                    {r.barcode || "-"}
+                  </td>
+                  {whIds.map((id) => {
+                    const c = r.per[id];
+                    return (
+                      <Fragment key={id}>
+                        <td className={`px-2 py-2 text-xs border-l border-slate-100 ${
+                          c && soon(c.exp) ? "text-red-600 font-medium" : "text-slate-500"}`}>
+                          {c?.exp || "-"}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          {c?.on ? fmt(c.on) : <span className="text-slate-300">-</span>}
+                        </td>
+                        <td className="px-2 py-2 text-right text-amber-700">
+                          {c?.com ? fmt(c.com) : <span className="text-slate-300">-</span>}
+                        </td>
+                        <td className={`px-2 py-2 text-right ${c && c.free < 0 ? "text-red-600 font-medium" : ""}`}>
+                          {c ? fmt(c.free) : <span className="text-slate-300">-</span>}
+                        </td>
+                      </Fragment>
+                    );
+                  })}
+                  <td className="px-2 py-2 text-right font-medium border-l-2 border-slate-200">
+                    {fmt(r.on)}
+                  </td>
+                  <td className="px-2 py-2 text-right text-amber-700">
+                    {r.com ? fmt(r.com) : "-"}
+                  </td>
+                  <td className={`px-2 py-2 text-right font-medium ${r.free < 0 ? "text-red-600" : ""}`}>
+                    {fmt(r.free)}
+                  </td>
                 </tr>
               ))}
               {!loading && pivotRows.length === 0 && (
-                <tr><td colSpan={whIds.length + 3} className="text-center text-slate-400 py-8">-</td></tr>
+                <tr><td colSpan={whIds.length * 4 + 5} className="text-center text-slate-400 py-8">-</td></tr>
               )}
             </tbody>
             {pivotRows.length > 0 && (
@@ -254,12 +318,27 @@ export default function StockLedgerPage() {
                 <tr>
                   <td className="px-3 py-2" colSpan={2}>{pivotRows.length}</td>
                   {whIds.map((id) => (
-                    <td key={id} className="px-3 py-2 text-right">
-                      {fmt(pivotRows.reduce((n, r) => n + (r.per[id] || 0), 0))}
-                    </td>
+                    <Fragment key={id}>
+                      <td className="border-l border-slate-200" />
+                      <td className="px-2 py-2 text-right">
+                        {fmt(pivotRows.reduce((n, r) => n + (r.per[id]?.on || 0), 0))}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        {fmt(pivotRows.reduce((n, r) => n + (r.per[id]?.com || 0), 0))}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        {fmt(pivotRows.reduce((n, r) => n + (r.per[id]?.free || 0), 0))}
+                      </td>
+                    </Fragment>
                   ))}
-                  <td className="px-3 py-2 text-right">
-                    {fmt(pivotRows.reduce((n, r) => n + r.total, 0))}
+                  <td className="px-2 py-2 text-right border-l-2 border-slate-300">
+                    {fmt(pivotRows.reduce((n, r) => n + r.on, 0))}
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    {fmt(pivotRows.reduce((n, r) => n + r.com, 0))}
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    {fmt(pivotRows.reduce((n, r) => n + r.free, 0))}
                   </td>
                 </tr>
               </tfoot>
