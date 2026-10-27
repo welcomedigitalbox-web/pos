@@ -198,10 +198,14 @@ function NotificationBell() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative px-2 py-1 text-lg leading-none"
+        className="relative px-2 py-1 text-slate-500 hover:text-slate-700 leading-none"
         aria-label="Notifications"
       >
-        <span>&#128266;</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+             strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z" />
+        </svg>
         {unread > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">
             {unread}
