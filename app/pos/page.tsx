@@ -1006,6 +1006,8 @@ export default function POSPage() {
           lineTotal: c.price * c.qty - (c.line_discount ?? 0),
         })),
         subtotal,
+        promoDiscount: promoTotal,
+        lineDiscount: lineDiscountTotal,
         discountLabel: isLoyaltyLocked
           ? `${loyaltyPercent}%`
           : discountType === "percent"

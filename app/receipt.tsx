@@ -19,6 +19,10 @@ export type ReceiptData = {
   createdAt: string;
   items: { name: string; qty: number; price: number; lineTotal: number; unit?: string | null }[];
   subtotal: number;
+  // What the promotion and the line-by-line haggling took off. The
+  // customer should be able to add the slip up himself.
+  promoDiscount?: number;
+  lineDiscount?: number;
   discountLabel: string;
   discountAmount: number;
   vatPercent: number;
@@ -102,6 +106,18 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
 
       <div style={RULE} />
 
+      {!!data.promoDiscount && data.promoDiscount > 0 && (
+        <div style={ROW}>
+          <span>Promotion</span>
+          <span>-{mmk(data.promoDiscount)}</span>
+        </div>
+      )}
+      {!!data.lineDiscount && data.lineDiscount > 0 && (
+        <div style={ROW}>
+          <span>Item discount</span>
+          <span>-{mmk(data.lineDiscount)}</span>
+        </div>
+      )}
       <div style={ROW}>
         <span>Subtotal</span>
         <span>{mmk(data.subtotal)}</span>
