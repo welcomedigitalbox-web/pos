@@ -303,6 +303,29 @@ export default function TransferReportPage() {
     return [...m.values()].sort((a, b) => b.short - a.short);
   }, [rows, costs]);
 
+  const [resolveKind, setResolveKind] = useState<Record<string, string>>({});
+  const [resolveNote, setResolveNote] = useState<Record<string, string>>({});
+
+  // Settling is the warehouse's word on missing units: found puts them
+  // back on its own shelf, lost and damaged only say so.
+  async function settleShort(id: string) {
+    const kind = resolveKind[id];
+    const note = (resolveNote[id] || "").trim();
+    if (!kind || !note) return;
+    const { error } = await supabase.rpc("resolve_transfer_discrepancy", {
+      p_id: id,
+      p_resolution: kind,
+      p_note: note,
+    });
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setResolveKind((m) => ({ ...m, [id]: "" }));
+    setResolveNote((m) => ({ ...m, [id]: "" }));
+    load();
+  }
+
   function csv() {
     const head = [
       "Transfer no", "Date", "From", "To", "Product", "Expiry", "Sent", "Received",
@@ -541,11 +564,46 @@ export default function TransferReportPage() {
                               {sh > 0 ? money(sh) : "—"}
                             </td>
                             <td className="px-3 py-1.5 text-gray-500" colSpan={3}>
-                              {r.resolution
-                                ? `${r.resolution}${r.resolution_note ? ` · ${r.resolution_note}` : ""}`
-                                : r.received_by
-                                ? `received by ${r.received_by}`
-                                : ""}
+                              {r.resolution ? (
+                                `${r.resolution}${r.resolution_note ? ` · ${r.resolution_note}` : ""}`
+                              ) : sh > 0 ? (
+                                // A hole in the books stays open until the
+                                // sending warehouse says what happened.
+                                <span className="inline-flex items-center gap-1">
+                                  <select
+                                    value={resolveKind[r.id] || ""}
+                                    onChange={(e) =>
+                                      setResolveKind((m) => ({ ...m, [r.id]: e.target.value }))
+                                    }
+                                    className="border rounded px-1 py-0.5 text-xs"
+                                  >
+                                    <option value="">Settle…</option>
+                                    <option value="found">Found</option>
+                                    <option value="lost">Lost</option>
+                                    <option value="damaged">Damaged</option>
+                                  </select>
+                                  <input
+                                    value={resolveNote[r.id] || ""}
+                                    onChange={(e) =>
+                                      setResolveNote((m) => ({ ...m, [r.id]: e.target.value }))
+                                    }
+                                    placeholder="What happened"
+                                    className="border rounded px-1 py-0.5 text-xs w-40"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={!resolveKind[r.id] || !(resolveNote[r.id] || "").trim()}
+                                    onClick={() => settleShort(r.id)}
+                                    className="px-2 py-0.5 rounded bg-blue-600 text-white disabled:opacity-40"
+                                  >
+                                    Save
+                                  </button>
+                                </span>
+                              ) : r.received_by ? (
+                                `received by ${r.received_by}`
+                              ) : (
+                                ""
+                              )}
                             </td>
                           </tr>
                         );
