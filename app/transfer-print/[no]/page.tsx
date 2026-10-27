@@ -46,6 +46,19 @@ type Head = {
 const num = (n: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n || 0));
 
+// The dates that travelled with the goods, as the dispatch recorded them.
+function expiryOf(b: unknown): string {
+  if (!Array.isArray(b)) return "";
+  const dates = Array.from(
+    new Set(
+      (b as { expiry?: string }[])
+        .map((x) => String(x?.expiry || "").slice(0, 10))
+        .filter(Boolean)
+    )
+  );
+  return dates.join(", ");
+}
+
 export default function TransferPrintPage() {
   const params = useParams<{ no: string }>();
   const no = decodeURIComponent(String(params?.no || ""));
@@ -217,6 +230,7 @@ export default function TransferPrintPage() {
               <th style={{ width: "10mm" }} className="num">#</th>
               <th>Item</th>
               <th style={{ width: "30mm" }}>Code</th>
+              <th style={{ width: "26mm" }}>Expiry</th>
               <th style={{ width: "20mm" }} className="num">Sent</th>
               <th style={{ width: "26mm" }} className="num">Received</th>
             </tr>
@@ -230,6 +244,9 @@ export default function TransferPrintPage() {
                   <td>{p?.name || l.product_id}</td>
                   <td style={{ fontFamily: "monospace", fontSize: "9.5pt" }}>
                     {p?.sku || ""}
+                  </td>
+                  <td style={{ fontSize: "9.5pt" }}>
+                    {expiryOf((l as unknown as { batches?: unknown }).batches)}
                   </td>
                   <td className="num">{num(l.qty)}</td>
                   {/* Left empty on purpose — counted in pen at the far end. */}
@@ -246,12 +263,13 @@ export default function TransferPrintPage() {
                 <td />
                 <td />
                 <td />
+                <td />
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr>
-              <th colSpan={3} style={{ textAlign: "right" }}>Total</th>
+              <th colSpan={4} style={{ textAlign: "right" }}>Total</th>
               <th className="num">{num(totalQty)}</th>
               <th className="num" />
             </tr>

@@ -64,6 +64,19 @@ function isoDaysAgo(n: number) {
   return d.toISOString().slice(0, 10);
 }
 
+// The dates that travelled with the goods, as the dispatch recorded them.
+function expiryOf(b: unknown): string {
+  if (!Array.isArray(b)) return "";
+  const dates = Array.from(
+    new Set(
+      (b as { expiry?: string }[])
+        .map((x) => String(x?.expiry || "").slice(0, 10))
+        .filter(Boolean)
+    )
+  );
+  return dates.join(", ");
+}
+
 export default function TransferReportPage() {
   const { profile } = useAuth();
   const router = useRouter();
@@ -291,7 +304,7 @@ export default function TransferReportPage() {
 
   function csv() {
     const head = [
-      "Transfer no", "Date", "From", "To", "Product", "Sent", "Received",
+      "Transfer no", "Date", "From", "To", "Product", "Expiry", "Sent", "Received",
       "Short", "Cost of short", "Status", "Sent by", "Received by", "Resolution", "Note",
     ];
     const lines = shown.map((r) => {
@@ -302,6 +315,7 @@ export default function TransferReportPage() {
         r.from_store_id,
         r.to_store_id,
         (names.get(r.product_id) || r.product_id).replace(/"/g, '""'),
+        expiryOf((r as unknown as { batches?: unknown }).batches),
         r.qty,
         r.received_qty ?? "",
         s || "",

@@ -41,6 +41,19 @@ const statusColor: Record<string, string> = {
   rejected: "bg-red-100 text-red-700",
 };
 
+// The dates that travelled with the goods, as the dispatch recorded them.
+function expiryOf(b: unknown): string {
+  if (!Array.isArray(b)) return "";
+  const dates = Array.from(
+    new Set(
+      (b as { expiry?: string }[])
+        .map((x) => String(x?.expiry || "").slice(0, 10))
+        .filter(Boolean)
+    )
+  );
+  return dates.join(", ");
+}
+
 export default function TransferDetailPage() {
   const { transferNo } = useParams<{ transferNo: string }>();
   const router = useRouter();
@@ -153,6 +166,7 @@ export default function TransferDetailPage() {
             <tr>
               <th className="text-left py-2">{t("warehouse_colProduct")}</th>
               <th className="text-left py-2">{t("warehouse_colBarcode")}</th>
+              <th className="text-left py-2">Expiry</th>
               <th className="text-right py-2">{t("transferIn_sent")}</th>
               <th className="text-right py-2">{t("transferIn_actual")}</th>
               <th className="text-right py-2">{t("transferIn_diff")}</th>
@@ -165,6 +179,9 @@ export default function TransferDetailPage() {
                 <tr key={l.id} className="border-b border-slate-100">
                   <td className="py-2">{l.display_name}</td>
                   <td className="py-2 text-slate-400 text-xs">{l.sku || "-"}</td>
+                  <td className="py-2 text-slate-500 text-xs">
+                    {expiryOf((l as unknown as { batches?: unknown }).batches) || "-"}
+                  </td>
                   <td className="py-2 text-right">{l.qty}</td>
                   <td className="py-2 text-right">{l.received_qty ?? "-"}</td>
                   <td className={`py-2 text-right ${diff ? "text-red-600 font-medium" : "text-slate-400"}`}>
@@ -176,7 +193,7 @@ export default function TransferDetailPage() {
           </tbody>
           <tfoot className="border-t-2 border-slate-200 font-medium">
             <tr>
-              <td className="py-2" colSpan={2}>
+              <td className="py-2" colSpan={3}>
                 {lines.length} {t("stockTransfer_lines")}
               </td>
               <td className="py-2 text-right">{totals.sent}</td>
