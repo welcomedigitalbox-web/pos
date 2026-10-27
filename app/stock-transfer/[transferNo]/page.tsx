@@ -204,7 +204,8 @@ export default function TransferDetailPage() {
         </table>
 
         {/* Cost is the warehouse's business, not the receiving shop's. */}
-        {profile?.role !== "cashier" && totals.value > 0 && (
+        {/^(owner|admin|itadmin|finance|merchandising)/.test(profile?.role || "") &&
+          totals.value > 0 && (
           <div className="text-sm text-slate-500 mb-6">
             {t("warehouse_colAvgCost")}: {fmt(totals.value)}
           </div>

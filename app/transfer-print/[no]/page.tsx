@@ -75,7 +75,7 @@ export default function TransferPrintPage() {
       const { data, error } = await supabase
         .from("stock_transfers")
         .select(
-          "id, transfer_no, from_store_id, to_store_id, product_id, variant_id, qty, unit_cost, status, received_qty, transferred_by, created_at, note"
+          "id, transfer_no, from_store_id, to_store_id, product_id, variant_id, qty, unit_cost, status, received_qty, transferred_by, created_at, note, batches"
         )
         .eq("transfer_no", no)
         .order("created_at", { ascending: true });
