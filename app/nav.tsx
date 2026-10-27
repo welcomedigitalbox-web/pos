@@ -201,7 +201,7 @@ function NotificationBell() {
         className="relative px-2 py-1 text-lg leading-none"
         aria-label="Notifications"
       >
-        <span>&#128276;</span>
+        <span>&#128266;</span>
         {unread > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">
             {unread}
@@ -387,9 +387,8 @@ export default function Nav() {
 
               <span className="text-xs text-slate-400 hidden md:inline">
                 {profile.email} ({profile.role})
-              <NotificationBell />
-                {profile.email} ({profile.role})
               </span>
+              <NotificationBell />
               <button
                 onClick={signOut}
                 className="hidden sm:inline-block text-xs text-slate-500 border border-slate-200 rounded-lg px-2 py-1.5"
