@@ -1008,7 +1008,11 @@ export default function POSPage() {
         subtotal,
         promoDiscount: promoTotal,
         promoLabel: Array.from(
-          new Set(Object.values(promoLines).map((x) => x.name).filter(Boolean))
+          new Set(
+            (promoNames as unknown[])
+              .map((x) => (typeof x === "string" ? x : ((x as any)?.name ?? "")))
+              .filter(Boolean)
+          )
         ).join(", "),
         lineDiscount: lineDiscountTotal,
         discountLabel: isLoyaltyLocked
