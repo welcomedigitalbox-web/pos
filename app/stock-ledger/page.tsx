@@ -52,18 +52,30 @@ export default function StockLedgerPage() {
 
   // The function answers for one warehouse, so several warehouses are
   // several calls, asked at once and laid end to end.
+  // PostgREST hands back a thousand rows at a time and says nothing about
+  // the rest, so a warehouse with more batches than that was quietly short.
+  // Ask page by page until a page comes back short.
+  async function loadOne(id: string) {
+    const out: Row[] = [];
+    const page = 1000;
+    for (let from = 0; ; from += page) {
+      const { data, error } = await supabase
+        .rpc("warehouse_stock_ledger", { p_warehouse_id: id })
+        .range(from, from + page - 1);
+      if (error) break;
+      const batch = (data as Row[]) || [];
+      out.push(...batch);
+      if (batch.length < page) break;
+      // A warehouse with more than this is a different problem.
+      if (from > 50000) break;
+    }
+    return out;
+  }
+
   async function load() {
     setLoading(true);
-    const results = await Promise.all(
-      whIds.map((id) =>
-        supabase.rpc("warehouse_stock_ledger", { p_warehouse_id: id })
-      )
-    );
-    const all: Row[] = [];
-    for (const { data, error } of results) {
-      if (!error) all.push(...((data as Row[]) || []));
-    }
-    setRows(all);
+    const results = await Promise.all(whIds.map(loadOne));
+    setRows(results.flat());
     setLoading(false);
   }
 
