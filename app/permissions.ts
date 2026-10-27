@@ -16,6 +16,7 @@ export type PageKey =
   | "stock-request"
   | "damage"
   | "stock-adjust"
+  | "discount-approvals"
   | "incoming-transfers"
   | "barcode"
   | "labels"
@@ -127,7 +128,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "to-send", href: "/to-send", labelKey: "toSend_title", group: "warehouse" },
   { key: "stock-transfer", href: "/stock-transfer", labelKey: "nav_stockTransfer", group: "warehouse" },
   { key: "warehouse-history", href: "/warehouse-history", labelKey: "nav_warehouseHistory", group: "warehouse" },
-  { key: "approvals", href: "/discount-approvals", labelKey: "nav_discountRequests", group: "sale" },
+  { key: "discount-approvals", href: "/discount-approvals", labelKey: "nav_discountRequests", group: "sale" },
   { key: "ledger", href: "/stock-ledger", labelKey: "nav_ledger", group: "inventory" },
   { key: "ledger", href: "/stock-movement", labelKey: "nav_movement", group: "inventory" },
   { key: "product-category", href: "/product-category", labelKey: "nav_productCategory", group: "setup" },
