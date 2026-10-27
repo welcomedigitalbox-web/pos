@@ -22,6 +22,7 @@ export type ReceiptData = {
   // What the promotion and the line-by-line haggling took off. The
   // customer should be able to add the slip up himself.
   promoDiscount?: number;
+  promoLabel?: string;
   lineDiscount?: number;
   discountLabel: string;
   discountAmount: number;
@@ -108,7 +109,7 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
 
       {!!data.promoDiscount && data.promoDiscount > 0 && (
         <div style={ROW}>
-          <span>Promotion</span>
+          <span>{data.promoLabel ? `Promotion (${data.promoLabel})` : "Promotion"}</span>
           <span>-{mmk(data.promoDiscount)}</span>
         </div>
       )}
