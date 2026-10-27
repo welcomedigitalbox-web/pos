@@ -38,6 +38,8 @@ type Head = {
   from_store_id: string;
   to_store_id: string;
   transferred_by: string | null;
+  received_by: string | null;
+  received_at: string | null;
   created_at: string;
   note: string | null;
   status: string;
@@ -75,7 +77,7 @@ export default function TransferPrintPage() {
       const { data, error } = await supabase
         .from("stock_transfers")
         .select(
-          "id, transfer_no, from_store_id, to_store_id, product_id, variant_id, qty, unit_cost, status, received_qty, transferred_by, created_at, note, batches"
+          "id, transfer_no, from_store_id, to_store_id, product_id, variant_id, qty, unit_cost, status, received_qty, transferred_by, received_by, received_at, created_at, note, batches"
         )
         .eq("transfer_no", no)
         .order("created_at", { ascending: true });
@@ -89,6 +91,8 @@ export default function TransferPrintPage() {
         from_store_id: first.from_store_id,
         to_store_id: first.to_store_id,
         transferred_by: first.transferred_by,
+        received_by: first.received_by,
+        received_at: first.received_at,
         created_at: first.created_at,
         note: first.note,
         status: first.status,
@@ -297,12 +301,12 @@ export default function TransferPrintPage() {
               <td style={{ height: "22mm" }} />
               <td />
               <td style={{ verticalAlign: "top", fontSize: "10pt" }}>
-                {t?.received_by ? (
+                {head?.received_by ? (
                   <>
-                    {t.received_by}
+                    {head?.received_by}
                     <br />
-                    {t.received_at
-                      ? new Date(t.received_at).toLocaleDateString()
+                    {head?.received_at
+                      ? new Date(head.received_at).toLocaleDateString()
                       : ""}
                   </>
                 ) : null}
