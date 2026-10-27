@@ -249,8 +249,12 @@ export default function TransferPrintPage() {
                     {expiryOf((l as unknown as { batches?: unknown }).batches)}
                   </td>
                   <td className="num">{num(l.qty)}</td>
-                  {/* Left empty on purpose — counted in pen at the far end. */}
-                  <td className="num" />
+                  {/* Blank while it travels; once counted, the figure stands. */}
+                  <td className="num">
+                    {l.received_qty === null || l.received_qty === undefined
+                      ? ""
+                      : num(Number(l.received_qty))}
+                  </td>
                 </tr>
               );
             })}
@@ -271,7 +275,11 @@ export default function TransferPrintPage() {
             <tr>
               <th colSpan={4} style={{ textAlign: "right" }}>Total</th>
               <th className="num">{num(totalQty)}</th>
-              <th className="num" />
+              <th className="num">
+                {lines.some((l) => l.received_qty !== null && l.received_qty !== undefined)
+                  ? num(lines.reduce((n, l) => n + Number(l.received_qty || 0), 0))
+                  : ""}
+              </th>
             </tr>
           </tfoot>
         </table>
@@ -288,7 +296,17 @@ export default function TransferPrintPage() {
             <tr>
               <td style={{ height: "22mm" }} />
               <td />
-              <td />
+              <td style={{ verticalAlign: "top", fontSize: "10pt" }}>
+                {t?.received_by ? (
+                  <>
+                    {t.received_by}
+                    <br />
+                    {t.received_at
+                      ? new Date(t.received_at).toLocaleDateString()
+                      : ""}
+                  </>
+                ) : null}
+              </td>
             </tr>
             <tr>
               <td style={{ fontSize: "9pt" }}>Name / Date</td>
