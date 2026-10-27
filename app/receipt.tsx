@@ -108,10 +108,17 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
       <div style={RULE} />
 
       {!!data.promoDiscount && data.promoDiscount > 0 && (
-        <div style={ROW}>
-          <span>{data.promoLabel ? `Promotion (${data.promoLabel})` : "Promotion"}</span>
-          <span>-{mmk(data.promoDiscount)}</span>
-        </div>
+        <>
+          <div style={ROW}>
+            <span>Promotion</span>
+            <span>-{mmk(data.promoDiscount)}</span>
+          </div>
+          {data.promoLabel && (
+            <div style={{ ...ROW, fontSize: 11, opacity: 0.75 }}>
+              <span>{data.promoLabel}</span>
+            </div>
+          )}
+        </>
       )}
       {!!data.lineDiscount && data.lineDiscount > 0 && (
         <div style={ROW}>
