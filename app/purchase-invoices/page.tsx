@@ -98,8 +98,19 @@ function PurchaseInvoicesInner() {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
   const [taxPercent, setTaxPercent] = useState("0");
-  const [freight, setFreight] = useState("0");
-  const [otherCharge, setOtherCharge] = useState("0");
+  // A delivery, a customs duty and a handling fee can all land on one bill,
+  // so this is a list rather than a box or two.
+  const CHARGE_KINDS = ["freight", "delivery", "customs", "handling", "other"] as const;
+  const CHARGE_LABEL: Record<string, string> = {
+    freight: "Freight", delivery: "Delivery", customs: "Customs duty",
+    handling: "Handling", other: "Other",
+  };
+  const [charges, setCharges] = useState<
+    { kind: string; amount: string; note: string }[]
+  >([]);
+  const [newKind, setNewKind] = useState<string>("freight");
+  const [newAmount, setNewAmount] = useState("");
+  const [newNote, setNewNote] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [saving, setSaving] = useState(false);
@@ -214,8 +225,16 @@ function PurchaseInvoicesInner() {
     setStoreId(b.store_id);
     setInvoiceDate(b.invoice_date);
     setDueDate(b.due_date || "");
-    setFreight(String((b as any).freight_amount ?? 0));
-    setOtherCharge(String((b as any).other_charge ?? 0));
+    const { data: ch } = await supabase
+      .from("purchase_invoice_charges")
+      .select("kind, amount, note")
+      .eq("invoice_id", b.id)
+      .order("created_at");
+    setCharges(
+      ((ch as { kind: string; amount: number; note: string | null }[]) || []).map((c) => ({
+        kind: c.kind, amount: String(c.amount), note: c.note || "",
+      }))
+    );
     setNote("");
     const { data } = await supabase
       .from("purchase_invoice_items")
@@ -244,11 +263,10 @@ function PurchaseInvoicesInner() {
     0
   );
   const taxAmount = (subtotal * (Number(taxPercent) || 0)) / 100;
-  const freightNum = Number(freight) || 0;
-  const otherNum = Number(otherCharge) || 0;
+  const chargesTotal = charges.reduce((n, c) => n + (Number(c.amount) || 0), 0);
   // Tax is on the goods; carriage is added after it, and ends up in the
   // cost of whatever it carried when finance approves the bill.
-  const total = subtotal + taxAmount + freightNum + otherNum;
+  const total = subtotal + taxAmount + chargesTotal;
 
   async function save(thenSubmit: boolean) {
     setSaving(true);
@@ -263,8 +281,13 @@ function PurchaseInvoicesInner() {
           invoice_date: invoiceDate,
           due_date: dueDate || null,
           tax_percent: Number(taxPercent) || 0,
-          freight_amount: freightNum,
-          other_charge: otherNum,
+          charges: charges
+            .filter((c) => Number(c.amount) > 0)
+            .map((c) => ({
+              kind: c.kind,
+              amount: Number(c.amount),
+              note: c.note.trim() || null,
+            })),
           note: note.trim() || null,
           items: lines
             .filter((l) => Number(l.qty) > 0)
@@ -594,24 +617,6 @@ function PurchaseInvoicesInner() {
                   onChange={(e) => setTaxPercent(e.target.value)}
                 />
               </div>
-              <div className="w-32">
-                <label className="text-sm text-slate-600">Freight</label>
-                <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 text-right"
-                  inputMode="decimal"
-                  value={freight}
-                  onChange={(e) => setFreight(e.target.value.replace(/[^0-9.]/g, ""))}
-                />
-              </div>
-              <div className="w-32">
-                <label className="text-sm text-slate-600">Other charge</label>
-                <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 text-right"
-                  inputMode="decimal"
-                  value={otherCharge}
-                  onChange={(e) => setOtherCharge(e.target.value.replace(/[^0-9.]/g, ""))}
-                />
-              </div>
               <div className="flex-1">
                 <label className="text-sm text-slate-600">Note</label>
                 <input
@@ -623,9 +628,77 @@ function PurchaseInvoicesInner() {
               <div className="text-right">
                 <div className="text-xs text-slate-500">
                   {fmt(subtotal)} + {fmt(taxAmount)}
-                  {freightNum + otherNum > 0 && ` + ${fmt(freightNum + otherNum)}`}
+                  {chargesTotal > 0 && ` + ${fmt(chargesTotal)}`}
                 </div>
                 <div className="text-lg font-bold">{fmt(total)}</div>
+              </div>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl p-3 mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-sm">Freight &amp; other charges</h3>
+                <span className="text-sm font-semibold">{fmt(chargesTotal)}</span>
+              </div>
+              <p className="text-xs text-slate-400 mb-2">
+                These are spread over the lines by value and go into stock cost (landed cost).
+              </p>
+
+              {charges.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {charges.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-xs">
+                        {CHARGE_LABEL[c.kind] || c.kind}
+                      </span>
+                      <span className="text-slate-500 text-xs flex-1 truncate">{c.note}</span>
+                      <span className="font-medium">{fmt(Number(c.amount) || 0)}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCharges(charges.filter((_, x) => x !== i))}
+                        className="text-red-600 px-1"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <select
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  value={newKind}
+                  onChange={(e) => setNewKind(e.target.value)}
+                >
+                  {CHARGE_KINDS.map((k) => (
+                    <option key={k} value={k}>{CHARGE_LABEL[k]}</option>
+                  ))}
+                </select>
+                <input
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-32 text-right"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={newAmount}
+                  onChange={(e) => setNewAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                />
+                <input
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-[8rem]"
+                  placeholder="Note"
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={!(Number(newAmount) > 0)}
+                  onClick={() => {
+                    setCharges([...charges, { kind: newKind, amount: newAmount, note: newNote }]);
+                    setNewAmount("");
+                    setNewNote("");
+                  }}
+                  className="px-4 py-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium"
+                >
+                  Add
+                </button>
               </div>
             </div>
 
