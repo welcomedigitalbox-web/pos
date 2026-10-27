@@ -98,6 +98,8 @@ function PurchaseInvoicesInner() {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState("");
   const [taxPercent, setTaxPercent] = useState("0");
+  const [freight, setFreight] = useState("0");
+  const [otherCharge, setOtherCharge] = useState("0");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [saving, setSaving] = useState(false);
@@ -212,6 +214,8 @@ function PurchaseInvoicesInner() {
     setStoreId(b.store_id);
     setInvoiceDate(b.invoice_date);
     setDueDate(b.due_date || "");
+    setFreight(String((b as any).freight_amount ?? 0));
+    setOtherCharge(String((b as any).other_charge ?? 0));
     setNote("");
     const { data } = await supabase
       .from("purchase_invoice_items")
@@ -240,7 +244,11 @@ function PurchaseInvoicesInner() {
     0
   );
   const taxAmount = (subtotal * (Number(taxPercent) || 0)) / 100;
-  const total = subtotal + taxAmount;
+  const freightNum = Number(freight) || 0;
+  const otherNum = Number(otherCharge) || 0;
+  // Tax is on the goods; carriage is added after it, and ends up in the
+  // cost of whatever it carried when finance approves the bill.
+  const total = subtotal + taxAmount + freightNum + otherNum;
 
   async function save(thenSubmit: boolean) {
     setSaving(true);
@@ -255,6 +263,8 @@ function PurchaseInvoicesInner() {
           invoice_date: invoiceDate,
           due_date: dueDate || null,
           tax_percent: Number(taxPercent) || 0,
+          freight_amount: freightNum,
+          other_charge: otherNum,
           note: note.trim() || null,
           items: lines
             .filter((l) => Number(l.qty) > 0)
@@ -584,6 +594,24 @@ function PurchaseInvoicesInner() {
                   onChange={(e) => setTaxPercent(e.target.value)}
                 />
               </div>
+              <div className="w-32">
+                <label className="text-sm text-slate-600">Freight</label>
+                <input
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 text-right"
+                  inputMode="decimal"
+                  value={freight}
+                  onChange={(e) => setFreight(e.target.value.replace(/[^0-9.]/g, ""))}
+                />
+              </div>
+              <div className="w-32">
+                <label className="text-sm text-slate-600">Other charge</label>
+                <input
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-1 text-right"
+                  inputMode="decimal"
+                  value={otherCharge}
+                  onChange={(e) => setOtherCharge(e.target.value.replace(/[^0-9.]/g, ""))}
+                />
+              </div>
               <div className="flex-1">
                 <label className="text-sm text-slate-600">Note</label>
                 <input
@@ -595,6 +623,7 @@ function PurchaseInvoicesInner() {
               <div className="text-right">
                 <div className="text-xs text-slate-500">
                   {fmt(subtotal)} + {fmt(taxAmount)}
+                  {freightNum + otherNum > 0 && ` + ${fmt(freightNum + otherNum)}`}
                 </div>
                 <div className="text-lg font-bold">{fmt(total)}</div>
               </div>
