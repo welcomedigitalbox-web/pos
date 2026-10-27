@@ -150,6 +150,100 @@ function FocBell() {
   );
 }
 
+type Noti = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  href: string | null;
+  created_at: string;
+  read: boolean;
+};
+
+// The bell. What the system has to say to this person, newest first,
+// with the unread ones counted on the badge.
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<Noti[]>([]);
+
+  async function load() {
+    const { data } = await supabase.rpc("my_notifications_json");
+    setRows((data as Noti[]) || []);
+  }
+
+  useEffect(() => {
+    load();
+    // Checking every few minutes is enough for things a day old.
+    const t = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const unread = rows.filter((r) => !r.read).length;
+
+  async function openOne(n: Noti) {
+    if (!n.read) {
+      await supabase.rpc("mark_notification_read", { p_id: n.id });
+      setRows((xs) => xs.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    }
+    if (n.href) window.location.href = n.href;
+  }
+
+  async function readAll() {
+    await supabase.rpc("mark_all_notifications_read");
+    setRows((xs) => xs.map((x) => ({ ...x, read: true })));
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="relative px-2 py-1 text-lg leading-none"
+        aria-label="Notifications"
+      >
+        <span>&#128276;</span>
+        {unread > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">
+            {unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg z-50">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+            <span className="text-sm font-medium text-slate-700">Notifications</span>
+            {unread > 0 && (
+              <button type="button" onClick={readAll} className="text-xs text-blue-600">
+                Mark all read
+              </button>
+            )}
+          </div>
+          {rows.length === 0 && (
+            <div className="px-3 py-8 text-center text-sm text-slate-400">-</div>
+          )}
+          {rows.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              onClick={() => openOne(n)}
+              className={`w-full text-left px-3 py-2 border-b border-slate-50 hover:bg-slate-50 ${
+                n.read ? "opacity-60" : ""
+              }`}
+            >
+              <div className="text-sm text-slate-800">{n.title}</div>
+              {n.body && <div className="text-xs text-slate-500 mt-0.5">{n.body}</div>}
+              <div className="text-[10px] text-slate-400 mt-1">
+                {String(n.created_at).slice(0, 10)}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Nav() {
   const pathname = usePathname();
   const { storeId, setStoreId, stores, isStoreLocked } = useStore();
@@ -292,6 +386,8 @@ export default function Nav() {
               </div>
 
               <span className="text-xs text-slate-400 hidden md:inline">
+                {profile.email} ({profile.role})
+              <NotificationBell />
                 {profile.email} ({profile.role})
               </span>
               <button
