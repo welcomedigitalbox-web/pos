@@ -99,7 +99,8 @@ export default function TransferReportPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    if (profile && !hasPermission(profile, "warehouse")) router.replace("/");
+    // The page answers for itself, so whoever is given this report can read it.
+    if (profile && !hasPermission(profile, "transfer-report")) router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
