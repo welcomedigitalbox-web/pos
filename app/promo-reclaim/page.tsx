@@ -47,6 +47,10 @@ export default function PromoReclaimPage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
+  // What has already been collected, so closing a promotion leaves a
+  // record rather than only emptying the list.
+  const [tab, setTab] = useState<"open" | "done">("open");
+  const [past, setPast] = useState<any[]>([]);
 
   useEffect(() => {
     if (profile && !hasPermission(profile, "promotions")) router.replace("/");
@@ -62,9 +66,13 @@ export default function PromoReclaimPage() {
   async function load() {
     setLoading(true);
     setErr("");
-    const { data, error } = await supabase.rpc("promo_foc_reclaim_json");
+    const [{ data, error }, { data: hist }] = await Promise.all([
+      supabase.rpc("promo_foc_reclaim_json"),
+      supabase.rpc("promo_foc_history_json"),
+    ]);
     if (error) setErr(errText(error));
     setRows((data as Row[]) || []);
+    setPast((hist as any[]) || []);
     setLoading(false);
   }
 
@@ -109,15 +117,74 @@ export default function PromoReclaimPage() {
       <h2 className="font-semibold text-lg">{t("promoReclaim_title")}</h2>
       <p className="text-sm text-slate-500 mb-4">{t("promoReclaim_subtitle")}</p>
 
+      <div className="flex gap-2 mb-4">
+        {([
+          ["open", `${t("promoReclaim_title")} (${rows.length})`],
+          ["done", `\u1015\u103c\u102e\u1038\u1005\u102e\u1038 (${past.length})`],
+        ] as const).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k as "open" | "done")}
+            className={`px-3 py-1.5 rounded-lg text-sm ${
+              tab === k ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "done" && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-4">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="text-left px-3 py-2">Closed</th>
+                <th className="text-left px-3 py-2">Promotion</th>
+                <th className="text-left px-3 py-2">Store</th>
+                <th className="text-left px-3 py-2">Product</th>
+                <th className="text-right px-3 py-2">Qty</th>
+                <th className="text-right px-3 py-2">Value</th>
+                <th className="text-left px-3 py-2">By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {past.map((h) => (
+                <tr key={h.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2 text-xs text-slate-500">
+                    {String(h.closed_at || "").slice(0, 10)}
+                  </td>
+                  <td className="px-3 py-2">{h.promo_name}</td>
+                  <td className="px-3 py-2">{h.store_name || h.store_id}</td>
+                  <td className="px-3 py-2">
+                    {h.product_name}
+                    {h.sku && <span className="text-slate-400 text-xs"> · {h.sku}</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">{n0(h.qty)}</td>
+                  <td className="px-3 py-2 text-right">{n0(h.value)}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{h.closed_by}</td>
+                </tr>
+              ))}
+              {past.length === 0 && (
+                <tr><td colSpan={7} className="text-center text-slate-400 py-8">-</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {err && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl px-3 py-2 mb-4 text-xs">
           {err}
         </div>
       )}
 
-      {loading && <div className="text-center text-slate-400 py-10 text-sm">...</div>}
+      {tab === "open" && loading && (
+        <div className="text-center text-slate-400 py-10 text-sm">...</div>
+      )}
 
-      {!loading && promos.length === 0 && (
+      {tab === "open" && !loading && promos.length === 0 && (
         <div className="bg-white border border-slate-200 rounded-xl px-4 py-10 text-center text-slate-400 text-sm">
           {t("promoReclaim_empty")}
         </div>
