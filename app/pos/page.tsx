@@ -1010,9 +1010,6 @@ export default function POSPage() {
         promoLabel: Array.from(
           new Set(Object.values(promoLines).map((x) => x.name).filter(Boolean))
         ).join(", "),
-        promoLabel: Array.from(
-          new Set(Object.values(promoLines).map((x) => x.name).filter(Boolean))
-        ).join(", "),
         lineDiscount: lineDiscountTotal,
         discountLabel: isLoyaltyLocked
           ? `${loyaltyPercent}%`
