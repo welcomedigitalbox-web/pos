@@ -193,7 +193,9 @@ export default function Nav() {
   // Which branch you are working in decides what every page shows and where
   // a sale lands, so it belongs on screen everywhere, not only on the home
   // page. A cashier could not see which shop the till was ringing up.
-  const showStoreSelector = true;
+  // A buyer works across every shop at once - the pages he opens carry their
+  // own location picker - so the one in the bar only invites a wrong choice.
+  const showStoreSelector = !/^merchandising/.test(profile.role || "");
 
   return (
     <>
