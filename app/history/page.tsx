@@ -190,6 +190,10 @@ export default function HistoryPage() {
           lineTotal: Number(i.line_total),
         })),
         subtotal: Number(full.subtotal || 0),
+        promoDiscount: ((items as any[]) || []).reduce(
+          (n: number, i: any) => n + Number(i.promo_discount || 0), 0),
+        lineDiscount: ((items as any[]) || []).reduce(
+          (n: number, i: any) => n + Number(i.line_discount || 0), 0),
         discountLabel:
           full.discount_type === "percent" ? `${full.discount_value}%` : "",
         discountAmount: Number(full.discount_amount || 0),
