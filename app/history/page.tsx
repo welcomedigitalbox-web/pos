@@ -174,6 +174,18 @@ export default function HistoryPage() {
       );
 
       const full = sale as any;
+      // The till's slip names the promotion; a reprint reads the names
+      // back from the ids saved on the lines.
+      const promoIds = Array.from(
+        new Set(((items as any[]) || []).map((i: any) => i.promotion_id).filter(Boolean))
+      );
+      let promoLabel = "";
+      if (promoIds.length) {
+        const { data: promoRows } = await supabase
+          .from("promotions").select("name").in("id", promoIds as string[]);
+        promoLabel = ((promoRows as { name: string }[]) || [])
+          .map((x) => x.name).filter(Boolean).join(", ");
+      }
       setReceipt({
         storeId: sale.store_id,
         businessName: settings?.business_name || null,
@@ -192,6 +204,7 @@ export default function HistoryPage() {
         subtotal: Number(full.subtotal || 0),
         promoDiscount: ((items as any[]) || []).reduce(
           (n: number, i: any) => n + Number(i.promo_discount || 0), 0),
+        promoLabel,
         lineDiscount: ((items as any[]) || []).reduce(
           (n: number, i: any) => n + Number(i.line_discount || 0), 0),
         discountLabel:

@@ -252,6 +252,18 @@ export default function OrderLookupPage() {
         .maybeSingle();
 
       const o = selected as any;
+      // The till's slip names the promotion; a reprint reads the names
+      // back from the ids saved on the lines.
+      const promoIds = Array.from(
+        new Set(((items as any[]) || []).map((i: any) => i.promotion_id).filter(Boolean))
+      );
+      let promoLabel = "";
+      if (promoIds.length) {
+        const { data: promoRows } = await supabase
+          .from("promotions").select("name").in("id", promoIds as string[]);
+        promoLabel = ((promoRows as { name: string }[]) || [])
+          .map((x) => x.name).filter(Boolean).join(", ");
+      }
       setReceipt({
         storeId: selected.store_id,
         businessName: settings?.business_name || null,
@@ -272,6 +284,7 @@ export default function OrderLookupPage() {
         // so a reprint reads like the slip the customer was handed.
         promoDiscount: items.reduce(
           (n: number, i: any) => n + Number((i as any).promo_discount || 0), 0),
+        promoLabel,
         lineDiscount: items.reduce(
           (n: number, i: any) => n + Number((i as any).line_discount || 0), 0),
         discountLabel: o.discount_type === "percent" ? `${o.discount_value}%` : "",
