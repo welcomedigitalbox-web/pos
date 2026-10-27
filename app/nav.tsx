@@ -293,7 +293,9 @@ export default function Nav() {
   // page. A cashier could not see which shop the till was ringing up.
   // A buyer works across every shop at once - the pages he opens carry their
   // own location picker - so the one in the bar only invites a wrong choice.
-  const showStoreSelector = !/^merchandising/.test(profile.role || "");
+  // The warehouse side picks its location on the page it is working on,
+  // so the one in the bar only invites a wrong choice - same as the buyer.
+  const showStoreSelector = !/^(merchandising|warehouse)/.test(profile.role || "");
 
   return (
     <>
