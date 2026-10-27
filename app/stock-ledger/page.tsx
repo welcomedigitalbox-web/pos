@@ -27,7 +27,10 @@ export default function StockLedgerPage() {
   const { t } = useLanguage();
   const { stores } = useStore();
 
-  const [whId, setWhId] = useState("");
+  const [whIds, setWhIds] = useState<string[]>([]);
+  // One row per batch answers "what is on this shelf". Pivot answers
+  // "where is this item", which is the question when several places hold it.
+  const [pivot, setPivot] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -39,21 +42,37 @@ export default function StockLedgerPage() {
   );
 
   useEffect(() => {
-    if (!whId && warehouses.length) setWhId(warehouses[0].id);
-  }, [warehouses, whId]);
+    if (!whIds.length && warehouses.length) setWhIds([warehouses[0].id]);
+  }, [warehouses, whIds.length]);
 
   useEffect(() => {
-    if (whId) load();
+    if (whIds.length) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whId]);
+  }, [whIds.join(",")]);
 
+  // The function answers for one warehouse, so several warehouses are
+  // several calls, asked at once and laid end to end.
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.rpc("warehouse_stock_ledger", {
-      p_warehouse_id: whId,
-    });
-    if (!error) setRows((data as Row[]) || []);
+    const results = await Promise.all(
+      whIds.map((id) =>
+        supabase.rpc("warehouse_stock_ledger", { p_warehouse_id: id })
+      )
+    );
+    const all: Row[] = [];
+    for (const { data, error } of results) {
+      if (!error) all.push(...((data as Row[]) || []));
+    }
+    setRows(all);
     setLoading(false);
+  }
+
+  function toggleWh(id: string) {
+    setWhIds((cur) =>
+      cur.includes(id)
+        ? (cur.length === 1 ? cur : cur.filter((x) => x !== id))
+        : [...cur, id]
+    );
   }
 
   const visible = useMemo(() => {
@@ -79,6 +98,25 @@ export default function StockLedgerPage() {
       showValue: visible.some((r) => r.stock_value !== null),
     };
   }, [visible]);
+
+  // Item by item, with a column for each place that holds it.
+  const pivotRows = useMemo(() => {
+    const by = new Map<string, {
+      name: string; barcode: string | null;
+      per: Record<string, number>; total: number;
+    }>();
+    for (const r of visible) {
+      const key = `${r.item_name}|${r.barcode || ""}`;
+      const e = by.get(key) || { name: r.item_name, barcode: r.barcode, per: {}, total: 0 };
+      e.per[r.warehouse_id] = (e.per[r.warehouse_id] || 0) + Number(r.on_hand || 0);
+      e.total += Number(r.on_hand || 0);
+      by.set(key, e);
+    }
+    return [...by.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [visible]);
+
+  const whName = (id: string) =>
+    (warehouses.find((w: any) => w.id === id) as any)?.name || id;
 
   function downloadCsv() {
     const showCost = totals.showValue;
@@ -106,7 +144,7 @@ export default function StockLedgerPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `stock-ledger-${whId}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `stock-ledger-${whIds.join("-")}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -141,12 +179,22 @@ export default function StockLedgerPage() {
 
       <div className="flex flex-wrap gap-2 mb-4">
         {warehouses.length > 1 && (
-          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-            value={whId} onChange={(e) => setWhId(e.target.value)}>
+          <div className="flex flex-wrap gap-1.5">
             {warehouses.map((w: any) => (
-              <option key={w.id} value={w.id}>🏭 {w.name}</option>
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => toggleWh(w.id)}
+                className={`px-3 py-2 rounded-lg text-sm border ${
+                  whIds.includes(w.id)
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-slate-600 border-slate-200"
+                }`}
+              >
+                {w.name}
+              </button>
             ))}
-          </select>
+          </div>
         )}
         <input
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-64"
@@ -159,12 +207,71 @@ export default function StockLedgerPage() {
             onChange={(e) => setOnlyShort(e.target.checked)} />
           {t("stockLedger_onlyShort")}
         </label>
+        <label className="flex items-center gap-2 text-sm px-3">
+          <input type="checkbox" checked={pivot}
+            onChange={(e) => setPivot(e.target.checked)} />
+          ပစ္စည်းအလိုက် စုပြ
+        </label>
       </div>
 
+      {pivot ? (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
+                <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
+                {whIds.map((id) => (
+                  <th key={id} className="text-right px-3 py-2">{whName(id)}</th>
+                ))}
+                <th className="text-right px-3 py-2 font-semibold">
+                  {t("stockLedger_onHand")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={whIds.length + 3} className="text-center text-slate-400 py-8">…</td></tr>
+              )}
+              {!loading && pivotRows.map((r) => (
+                <tr key={`${r.name}|${r.barcode || ""}`} className="border-t border-slate-100">
+                  <td className="px-3 py-2">{r.name}</td>
+                  <td className="px-3 py-2 text-slate-400 text-xs">{r.barcode || "-"}</td>
+                  {whIds.map((id) => (
+                    <td key={id} className="px-3 py-2 text-right">
+                      {r.per[id] ? fmt(r.per[id]) : <span className="text-slate-300">-</span>}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-right font-medium">{fmt(r.total)}</td>
+                </tr>
+              ))}
+              {!loading && pivotRows.length === 0 && (
+                <tr><td colSpan={whIds.length + 3} className="text-center text-slate-400 py-8">-</td></tr>
+              )}
+            </tbody>
+            {pivotRows.length > 0 && (
+              <tfoot className="bg-slate-50 font-medium border-t-2 border-slate-200">
+                <tr>
+                  <td className="px-3 py-2" colSpan={2}>{pivotRows.length}</td>
+                  {whIds.map((id) => (
+                    <td key={id} className="px-3 py-2 text-right">
+                      {fmt(pivotRows.reduce((n, r) => n + (r.per[id] || 0), 0))}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-right">
+                    {fmt(pivotRows.reduce((n, r) => n + r.total, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      ) : (
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm min-w-[880px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
+              {whIds.length > 1 && <th className="text-left px-3 py-2">🏭</th>}
               <th className="text-left px-3 py-2">{t("warehouse_colProduct")}</th>
               <th className="text-left px-3 py-2">{t("warehouse_colBarcode")}</th>
               <th className="text-left px-3 py-2">{t("stockLedger_expiry")}</th>
@@ -185,6 +292,9 @@ export default function StockLedgerPage() {
             )}
             {!loading && visible.map((r) => (
               <tr key={r.batch_id} className="border-t border-slate-100">
+                {whIds.length > 1 && (
+                  <td className="px-3 py-2 text-xs text-slate-500">{whName(r.warehouse_id)}</td>
+                )}
                 <td className="px-3 py-2">{r.item_name}</td>
                 <td className="px-3 py-2 text-slate-400 text-xs">{r.barcode || "-"}</td>
                 <td className={`px-3 py-2 text-xs ${soon(r.expiry_date) ? "text-red-600 font-medium" : "text-slate-500"}`}>
@@ -212,7 +322,7 @@ export default function StockLedgerPage() {
           {visible.length > 0 && (
             <tfoot className="bg-slate-50 font-medium border-t-2 border-slate-200">
               <tr>
-                <td className="px-3 py-2" colSpan={3}>{visible.length}</td>
+                <td className="px-3 py-2" colSpan={whIds.length > 1 ? 4 : 3}>{visible.length}</td>
                 <td className="px-3 py-2 text-right">{fmt(totals.onHand)}</td>
                 <td className="px-3 py-2 text-right">{fmt(totals.committed)}</td>
                 <td className="px-3 py-2 text-right">{fmt(totals.free)}</td>
@@ -227,6 +337,7 @@ export default function StockLedgerPage() {
           )}
         </table>
       </div>
+      )}
     </div>
   );
 }
