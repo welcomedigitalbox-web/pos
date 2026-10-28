@@ -445,7 +445,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
           was actually paid. Typing over either here would quietly rewrite the
           profit on every past sale. A brand new product is the exception,
           because its first count has to come from somewhere. */}
-      {stockOnThisRow && (
+      {stockOnThisRow && !!productId && (
         <div className={card}>
           <h3 className="text-sm font-medium">
             {productId
