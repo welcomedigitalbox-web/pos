@@ -190,28 +190,24 @@ export default function StockInPage() {
         const newQty = selectedProduct.stock_qty + qtyNum;
         const newAvgCost = newQty > 0 ? (existingValue + newValue) / newQty : 0;
 
-        const { error: purchaseErr } = await supabase.from("stock_purchases").insert({
-          product_id: selectedProduct.product_id,
-          variant_id: selectedProduct.variant_id,
-          store_id: storeId,
-          supplier: supplier.trim() || null,
-          qty: qtyNum,
-          unit_cost: unitCostNum,
-          total_cost: qtyNum * unitCostNum,
-          new_avg_cost: newAvgCost,
-          expiry_date: expiryDate || null,
-          remaining_qty: qtyNum,
-          received_by: profile?.email || null,
-          received_at: new Date().toISOString(),
+        // One call, done in the database: the batch, the expiry rule and
+        // the new average are all settled there, so nothing here can
+        // invent stock on its own.
+        const { error: purchaseErr } = await supabase.rpc("stock_in_manual", {
+          p_store: storeId,
+          p_supplier: supplier.trim() || null,
+          p_note: null,
+          p_lines: [
+            {
+              product_id: selectedProduct.product_id,
+              variant_id: selectedProduct.variant_id,
+              qty: qtyNum,
+              unit_cost: unitCostNum,
+              expiry_date: expiryDate || null,
+            },
+          ],
         });
         if (purchaseErr) throw purchaseErr;
-
-        await upsertStoreInventory(storeId, selectedProduct.product_id, selectedProduct.variant_id, {
-          stock_qty: newQty,
-          avg_cost: newAvgCost,
-          previous_avg_cost: selectedProduct.avg_cost,
-          last_purchase_cost: unitCostNum,
-        });
 
         showToast(`${t("stockIn_success")} ${fmt(newAvgCost)}`);
       }
