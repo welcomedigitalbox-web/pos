@@ -986,9 +986,6 @@ export default function POSPage() {
         if (payErr) showToast("\u26a0\ufe0f " + payErr.message);
       }
 
-      // The server deducted stock; the cached list is now stale.
-      await loadProducts();
-
       setReceiptData({
         storeId,
         businessName: storeSettings?.business_name || null,
@@ -1045,7 +1042,9 @@ export default function POSPage() {
 
       showToast(`${t("pos_saleSuccess")} ${fmt(grandTotal)}`);
       resetOrder();
-      await loadProducts();
+      // The shelf count is already right in the database. Refreshing it here
+      // is for the next customer, so it must not hold up this one's slip.
+      void loadProducts();
 
       // @page can't be scoped by a CSS class, so the thermal-roll page size is
       // injected only for this print and removed afterwards â otherwise every
