@@ -40,6 +40,10 @@ export default function PriceSchedulePage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, Product>>({});
   const [busy, setBusy] = useState(false);
+  // Lines put together by hand, waiting to be written down together.
+  const [draft, setDraft] = useState<
+    { product: Product; price: string; date: string; note: string }[]
+  >([]);
 
   // Thousands of prices change at once when a supplier reprices a range, and
   // nobody is typing those one at a time. The sheet is the list of prices as
@@ -88,6 +92,36 @@ export default function PriceSchedulePage() {
       });
     return () => { live = false; };
   }, [search]);
+
+  // Adding keeps the date, because a batch of prices usually starts on the
+  // same morning, and clears the product so the next one can be searched.
+  function addToDraft() {
+    if (!pick || !price.trim() || !date) {
+      return setMsg("Pick a product, a price and a date");
+    }
+    setDraft((d) => [...d, { product: pick, price, date, note }]);
+    setPick(null); setPrice(""); setNote(""); setSearch(""); setFound([]);
+    setMsg("");
+  }
+
+  async function saveDraft() {
+    if (draft.length === 0) return;
+    setBusy(true); setMsg("");
+    const { error } = await supabase.from("price_schedule").insert(
+      draft.map((d) => ({
+        product_id: d.product.id,
+        new_price: Number(d.price.replace(/[, ]/g, "")),
+        effective_on: d.date,
+        note: d.note.trim() || null,
+        created_by: profile?.email || null,
+      }))
+    );
+    setBusy(false);
+    if (error) return setMsg(error.message);
+    setMsg(`${draft.length} scheduled`);
+    setDraft([]);
+    await load();
+  }
 
   async function add() {
     if (!pick || !price.trim() || !date) return setMsg("Pick a product, a price and a date");
@@ -265,9 +299,13 @@ export default function PriceSchedulePage() {
               <input value={note} onChange={(e) => setNote(e.target.value)}
                 className="mt-1 block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
             </label>
-            <button onClick={add} disabled={busy}
+            <button onClick={addToDraft} disabled={busy}
               className="px-4 py-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">
-              Schedule
+              Add
+            </button>
+            <button onClick={add} disabled={busy}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
+              Add &amp; save now
             </button>
             <button onClick={() => setPick(null)}
               className="px-3 py-2 border border-slate-200 rounded-lg text-sm">Cancel</button>
@@ -293,6 +331,53 @@ export default function PriceSchedulePage() {
               </ul>
             )}
           </>
+        )}
+        {draft.length > 0 && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium">To be scheduled ({draft.length})</h3>
+              <button onClick={saveDraft} disabled={busy}
+                className="px-4 py-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">
+                Schedule all
+              </button>
+            </div>
+            <table className="min-w-full text-sm">
+              <thead className="text-xs text-slate-500">
+                <tr>
+                  <th className="text-left px-2 py-1">Product</th>
+                  <th className="text-right px-2 py-1">Now</th>
+                  <th className="text-right px-2 py-1">New</th>
+                  <th className="text-left px-2 py-1">Starts</th>
+                  <th className="text-left px-2 py-1">Note</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {draft.map((d, i) => (
+                  <tr key={i} className="border-t border-slate-100">
+                    <td className="px-2 py-1">
+                      {d.product.name}
+                      <span className="text-xs text-slate-400 ml-1">{d.product.sku}</span>
+                    </td>
+                    <td className="px-2 py-1 text-right text-slate-400">
+                      {money(d.product.price)}
+                    </td>
+                    <td className="px-2 py-1 text-right font-medium">{d.price}</td>
+                    <td className="px-2 py-1">{d.date}</td>
+                    <td className="px-2 py-1 text-slate-500">{d.note}</td>
+                    <td className="px-2 py-1 text-right">
+                      <button
+                        onClick={() => setDraft((r) => r.filter((_, n) => n !== i))}
+                        className="text-xs text-red-600"
+                      >
+                        remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {msg && <p className="text-xs text-slate-500 mt-2">{msg}</p>}
       </div>
