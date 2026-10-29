@@ -612,7 +612,7 @@ export const translations = {
     po_logDetail: "အသေးစိတ်",
     po_logActor: "ပြုလုပ်သူ",
     po_log_item_added: "ပစ္စည်းထည့်",
-    po_log_po_received: "Goods received",
+    po_log_po_received: "ပစ္စည်းလက်ခံ",
     po_log_received: "လက်ခံ",
     po_log_payment_added: "ငွေပေးချေ",
     po_log_cancelled: "ပယ်ဖျက်",
