@@ -40,6 +40,67 @@ export default function PriceSchedulePage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, Product>>({});
   const [busy, setBusy] = useState(false);
+
+  // One row per price change, as a sheet would have it.
+  type PriceLine = {
+    key: string;
+    term: string;
+    product: Product | null;
+    price: string;
+    date: string;
+    note: string;
+    found: Product[];
+  };
+  const emptyLine = (date = ""): PriceLine => ({
+    key: crypto.randomUUID(), term: "", product: null,
+    price: "", date, note: "", found: [],
+  });
+  const [lines, setLines] = useState<PriceLine[]>([emptyLine()]);
+
+  function setLine(key: string, patch: Partial<PriceLine>) {
+    setLines((r) => r.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  // Searching is the database's job now, so a supplier's barcode finds the
+  // product here exactly as it does at the till.
+  async function searchLine(key: string, term: string) {
+    if (term.trim().length < 2) { setLine(key, { found: [] }); return; }
+    const { data } = await supabase.rpc("search_products", { p_term: term, p_limit: 8 });
+    setLine(key, { found: (data as Product[]) || [] });
+  }
+
+  function pickOnLine(key: string, p: Product) {
+    setLines((r) => {
+      const next = r.map((l) => (l.key === key
+        ? { ...l, product: p, term: p.sku || p.name, found: [],
+            price: l.price || String(p.price ?? "") }
+        : l));
+      // A filled last row earns an empty one under it, carrying the date
+      // forward because a batch usually starts on the same morning.
+      const last = next[next.length - 1];
+      return last.product ? [...next, emptyLine(last.date)] : next;
+    });
+  }
+
+  async function saveLines() {
+    const ready = lines.filter((l) => l.product && l.price.trim() && l.date);
+    if (ready.length === 0) return setMsg("Nothing filled in yet");
+    setBusy(true); setMsg("");
+    const { error } = await supabase.from("price_schedule").insert(
+      ready.map((l) => ({
+        product_id: l.product!.id,
+        new_price: Number(l.price.replace(/[, ]/g, "")),
+        effective_on: l.date,
+        note: l.note.trim() || null,
+        created_by: profile?.email || null,
+      }))
+    );
+    setBusy(false);
+    if (error) return setMsg(error.message);
+    setMsg(`${ready.length} scheduled`);
+    setLines([emptyLine()]);
+    await load();
+  }
   // Lines put together by hand, waiting to be written down together.
   const [draft, setDraft] = useState<
     { product: Product; price: string; date: string; note: string }[]
@@ -274,113 +335,118 @@ export default function PriceSchedulePage() {
       </p>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
-        {pick ? (
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[14rem]">
-              <div className="text-xs text-slate-500">Product</div>
-              <div className="text-sm font-medium">{pick.name}</div>
-              <div className="text-xs text-slate-400">
-                {pick.sku} · now {money(pick.price)} MMK
-              </div>
-            </div>
-            <label className="text-xs text-slate-500">
-              New price
-              <input value={price} onChange={(e) => setPrice(e.target.value)}
-                inputMode="numeric"
-                className="mt-1 block w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-            </label>
-            <label className="text-xs text-slate-500">
-              Starts on
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                className="mt-1 block border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-            </label>
-            <label className="text-xs text-slate-500 grow">
-              Note
-              <input value={note} onChange={(e) => setNote(e.target.value)}
-                className="mt-1 block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-            </label>
-            <button onClick={addToDraft} disabled={busy}
-              className="px-4 py-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">
-              Add
-            </button>
-            <button onClick={add} disabled={busy}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
-              Add &amp; save now
-            </button>
-            <button onClick={() => setPick(null)}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm">Cancel</button>
-          </div>
-        ) : (
-          <>
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search a product or SKU…"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-            {found.length > 0 && (
-              <ul className="border border-slate-200 rounded-lg mt-2 divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                {found.map((p) => (
-                  <li key={p.id}>
-                    <button onClick={() => { setPick(p); setPrice(String(p.price ?? "")); }}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">
-                      {p.name}
-                      <span className="text-xs text-slate-400 ml-2">
-                        {p.sku} · {money(p.price)} MMK
-                      </span>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold">One at a time</h2>
+          <button
+            onClick={saveLines}
+            disabled={busy || !lines.some((l) => l.product && l.price.trim() && l.date)}
+            className="px-4 py-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium"
+          >
+            Schedule {lines.filter((l) => l.product && l.price.trim() && l.date).length || ""}
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="text-xs text-slate-500">
+              <tr>
+                <th className="text-left px-2 py-1 w-72">Product</th>
+                <th className="text-right px-2 py-1 w-24">Now</th>
+                <th className="text-right px-2 py-1 w-28">New price</th>
+                <th className="text-left px-2 py-1 w-40">Starts on</th>
+                <th className="text-left px-2 py-1">Note</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.key} className="border-t border-slate-100 align-top">
+                  <td className="px-2 py-1 relative">
+                    <input
+                      value={l.term}
+                      placeholder="Search name, SKU or barcode..."
+                      onChange={(e) => {
+                        setLine(l.key, { term: e.target.value, product: null });
+                        searchLine(l.key, e.target.value);
+                      }}
+                      className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                    />
+                    {l.product && (
+                      <div className="text-xs text-slate-400 mt-0.5">{l.product.name}</div>
+                    )}
+                    {l.found.length > 0 && (
+                      <ul className="absolute z-20 left-2 top-full w-80 max-h-60 overflow-auto bg-white border border-slate-200 rounded shadow">
+                        {l.found.map((p) => (
+                          <li key={p.id}>
+                            <button
+                              onMouseDown={(e) => { e.preventDefault(); pickOnLine(l.key, p); }}
+                              className="block w-full text-left px-2 py-1 text-sm hover:bg-slate-50"
+                            >
+                              {p.name}
+                              <span className="text-xs text-slate-400 ml-2">
+                                {p.sku} · {money(p.price)}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                  <td className="px-2 py-1 text-right text-slate-400">
+                    {l.product ? money(l.product.price) : "-"}
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      value={l.price}
+                      inputMode="numeric"
+                      onChange={(e) => setLine(l.key, { price: e.target.value })}
+                      className="w-full text-right border border-slate-200 rounded px-2 py-1 text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="date"
+                      value={l.date}
+                      onChange={(e) => setLine(l.key, { date: e.target.value })}
+                      className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      value={l.note}
+                      onChange={(e) => setLine(l.key, { note: e.target.value })}
+                      className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                    />
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    <button
+                      onClick={() =>
+                        setLines((r) => {
+                          const next = r.filter((x) => x.key !== l.key);
+                          return next.length ? next : [emptyLine()];
+                        })
+                      }
+                      className="text-xs text-red-600"
+                    >
+                      &times;
                     </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-        {draft.length > 0 && (
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium">To be scheduled ({draft.length})</h3>
-              <button onClick={saveDraft} disabled={busy}
-                className="px-4 py-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-lg text-sm font-medium">
-                Schedule all
-              </button>
-            </div>
-            <table className="min-w-full text-sm">
-              <thead className="text-xs text-slate-500">
-                <tr>
-                  <th className="text-left px-2 py-1">Product</th>
-                  <th className="text-right px-2 py-1">Now</th>
-                  <th className="text-right px-2 py-1">New</th>
-                  <th className="text-left px-2 py-1">Starts</th>
-                  <th className="text-left px-2 py-1">Note</th>
-                  <th />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {draft.map((d, i) => (
-                  <tr key={i} className="border-t border-slate-100">
-                    <td className="px-2 py-1">
-                      {d.product.name}
-                      <span className="text-xs text-slate-400 ml-1">{d.product.sku}</span>
-                    </td>
-                    <td className="px-2 py-1 text-right text-slate-400">
-                      {money(d.product.price)}
-                    </td>
-                    <td className="px-2 py-1 text-right font-medium">{d.price}</td>
-                    <td className="px-2 py-1">{d.date}</td>
-                    <td className="px-2 py-1 text-slate-500">{d.note}</td>
-                    <td className="px-2 py-1 text-right">
-                      <button
-                        onClick={() => setDraft((r) => r.filter((_, n) => n !== i))}
-                        className="text-xs text-red-600"
-                      >
-                        remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <button
+          onClick={() => setLines((r) => [...r, emptyLine(r[r.length - 1]?.date || "")])}
+          className="text-xs text-blue-600 mt-2"
+        >
+          + add line
+        </button>
+
         {msg && <p className="text-xs text-slate-500 mt-2">{msg}</p>}
       </div>
+
 
       {/* The bulk route. One sheet, thousands of prices, one start date each. */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
