@@ -38,6 +38,9 @@ type Conv = {
   cost: number;
   created_by: string | null;
   created_at: string;
+  status: string | null;
+  cancelled_by: string | null;
+  cancel_note: string | null;
 };
 
 type ConvLine = {
@@ -123,7 +126,7 @@ export default function ConversionPage() {
     if (!storeId) return;
     const { data } = await supabase
       .from("stock_conversions")
-      .select("id,ref,store_id,note,cost,created_by,created_at")
+      .select("id,ref,store_id,note,cost,created_by,created_at,status,cancelled_by,cancel_note")
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(25);
@@ -142,6 +145,54 @@ export default function ConversionPage() {
       .eq("conversion_id", id)
       .order("side");
     setDocLines((m) => ({ ...m, [id]: (data as ConvLine[]) || [] }));
+  }
+
+  // Putting one back. The database refuses if the parts have already been
+  // sold or sent on, which is the honest answer rather than a tidy one.
+  async function cancelConversion(h: Conv) {
+    const why = window.prompt(`Cancel ${h.ref}? Say why:`, "");
+    if (why === null) return;
+    const { error } = await supabase.rpc("cancel_conversion", {
+      p_id: h.id,
+      p_note: why.trim() || null,
+    });
+    if (error) { setErr(describeError(error)); return; }
+    setErr(""); setMsg(`${h.ref} cancelled - the stock is back as it was`);
+    loadOnHand(); loadHistory();
+  }
+
+  // Everything on screen, as a file, for whoever asks for it in a spreadsheet.
+  async function exportCsv() {
+    const { data } = await supabase
+      .from("stock_conversion_lines")
+      .select("conversion_id,side,product_name,qty,unit_cost")
+      .in("conversion_id", history.map((h) => h.id));
+    const lines = (data as (ConvLine & { conversion_id: string })[]) || [];
+    const head = ["Ref", "Date", "Status", "Side", "Product", "Qty", "Unit cost", "By", "Note"];
+    const rows = history.flatMap((h) =>
+      lines
+        .filter((l) => l.conversion_id === h.id)
+        .map((l) => [
+          h.ref,
+          new Date(h.created_at).toLocaleDateString("en-CA", { timeZone: "Asia/Yangon" }),
+          h.status || "active",
+          l.side,
+          l.product_name || "",
+          String(l.qty),
+          String(l.unit_cost),
+          h.created_by || "",
+          h.note || "",
+        ])
+    );
+    const csv = [head, ...rows]
+      .map((c) => c.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `conversions-${storeId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // Typing in the code box searches the catalogue, because the person at
@@ -389,9 +440,16 @@ export default function ConversionPage() {
       {msg && <p className="text-sm text-green-700 mt-3">{msg}</p>}
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold tracking-wide text-slate-700 mb-2">
-          Earlier conversions
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold tracking-wide text-slate-700">
+            Earlier conversions
+          </h2>
+          {history.length > 0 && (
+            <button onClick={exportCsv} className="text-xs text-blue-600">
+              Download CSV
+            </button>
+          )}
+        </div>
         {history.length === 0 && (
           <p className="text-xs text-slate-400">Nothing converted here yet.</p>
         )}
@@ -410,10 +468,36 @@ export default function ConversionPage() {
                 </span>
                 <span className="text-slate-500">{money(Number(h.cost))} MMK</span>
                 {h.note && <span className="text-slate-400">{h.note}</span>}
+                {h.status === "cancelled" && (
+                  <span className="text-red-600 text-xs font-medium">cancelled</span>
+                )}
                 <span className="ml-auto text-slate-400 text-xs">{h.created_by}</span>
               </button>
               {openDoc === h.id && (
                 <div className="px-3 pb-3">
+                  <div className="flex items-center gap-3 mb-2">
+                    <a
+                      href={`/conversion-print/${h.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-blue-600"
+                    >
+                      Print
+                    </a>
+                    {h.status !== "cancelled" && (
+                      <button
+                        onClick={() => cancelConversion(h)}
+                        className="text-xs text-red-600"
+                      >
+                        Cancel this conversion
+                      </button>
+                    )}
+                    {h.cancel_note && (
+                      <span className="text-xs text-slate-400">
+                        {h.cancelled_by}: {h.cancel_note}
+                      </span>
+                    )}
+                  </div>
                   <table className="min-w-full text-xs">
                     <tbody>
                       {(docLines[h.id] || []).map((l, i) => (
