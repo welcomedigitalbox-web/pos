@@ -222,66 +222,19 @@ export default function ConversionPage() {
   const search = useCallback(async (key: string, q: string) => {
     const term = q.trim();
     if (term.length < 2) { setSugg({ key, items: [] }); return; }
-    const { data } = await supabase
-      .from("products")
-      .select("id,name,sku,price")
-      .eq("is_active", true)
-      .or(`name.ilike.%${term}%,sku.ilike.%${term}%`)
-      .order("name")
-      .limit(8);
+    const { data } = await supabase.rpc("search_products", { p_term: term, p_limit: 8 });
     setSugg({ key, items: (data as Product[]) || [] });
   }, []);
 
   // A code is whatever is printed on the box: one of ours, the supplier's,
-  // or the article number. All three end at the same product.
+  // or the article number. One function on the server answers all three,
+  // so every screen finds the same things.
   async function findByCode(raw: string): Promise<Product | null> {
     const code = raw.trim();
     if (!code) return null;
-
-    const { data: bar } = await supabase
-      .from("product_barcodes")
-      .select("product_id")
-      .eq("barcode", code)
-      .eq("is_active", true)
-      .limit(1);
-    const hit = (bar as { product_id: string }[] | null)?.[0]?.product_id;
-
-    const q = supabase.from("products").select("id,name,sku,price").limit(1);
-    const { data } = hit
-      ? await q.eq("id", hit)
-      : await q.or(`sku.eq.${code},name.eq.${code}`);
-    return ((data as Product[]) || [])[0] || null;
-  }
-
-  // The unit a shelf is counted in is the base one of that product's units.
-  async function baseUnit(productId: string): Promise<string> {
-    const { data } = await supabase
-      .from("product_uoms")
-      .select("code")
-      .eq("product_id", productId)
-      .eq("is_base", true)
-      .limit(1);
-    return ((data as { code: string }[]) || [])[0]?.code || "PC";
-  }
-
-  async function fill(side: "in" | "out", key: string, p: Product) {
-    const set = side === "in" ? setInLines : setOutLines;
-    setSugg({ key: "", items: [] });
-    const unit = await baseUnit(p.id);
-    set((r) => {
-      const next = r.map((l) => (l.key === key
-        ? {
-            ...l,
-            code: p.sku || p.name,
-            product_id: p.id,
-            name: p.name,
-            unit,
-            salePrice: Number(p.price || 0),
-            purPrice: side === "out" ? String(Math.round(onHand[p.id]?.cost || 0)) : l.purPrice,
-          }
-        : l));
-      return next[next.length - 1].product_id ? [...next, blank()] : next;
-    });
+    const { data } = await supabase.rpc("search_products", { p_term: code, p_limit: 1 });
+    const hit = ((data as Product[]) || [])[0];
+    return hit || null;
   }
 
   async function resolve(side: "in" | "out", key: string, code: string) {
