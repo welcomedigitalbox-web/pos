@@ -28,7 +28,6 @@ type Product = {
   name: string;
   sku: string | null;
   price: number | null;
-  base_uom: string | null;
 };
 
 type Line = {
@@ -111,7 +110,7 @@ export default function ConversionPage() {
     if (term.length < 2) { setSugg({ key, items: [] }); return; }
     const { data } = await supabase
       .from("products")
-      .select("id,name,sku,price,base_uom")
+      .select("id,name,sku,price")
       .eq("is_active", true)
       .or(`name.ilike.%${term}%,sku.ilike.%${term}%`)
       .order("name")
@@ -133,16 +132,28 @@ export default function ConversionPage() {
       .limit(1);
     const hit = (bar as { product_id: string }[] | null)?.[0]?.product_id;
 
-    const q = supabase.from("products").select("id,name,sku,price,base_uom").limit(1);
+    const q = supabase.from("products").select("id,name,sku,price").limit(1);
     const { data } = hit
       ? await q.eq("id", hit)
       : await q.or(`sku.eq.${code},name.eq.${code}`);
     return ((data as Product[]) || [])[0] || null;
   }
 
-  function fill(side: "in" | "out", key: string, p: Product) {
+  // The unit a shelf is counted in is the base one of that product's units.
+  async function baseUnit(productId: string): Promise<string> {
+    const { data } = await supabase
+      .from("product_uoms")
+      .select("code")
+      .eq("product_id", productId)
+      .eq("is_base", true)
+      .limit(1);
+    return ((data as { code: string }[]) || [])[0]?.code || "PC";
+  }
+
+  async function fill(side: "in" | "out", key: string, p: Product) {
     const set = side === "in" ? setInLines : setOutLines;
     setSugg({ key: "", items: [] });
+    const unit = await baseUnit(p.id);
     set((r) => {
       const next = r.map((l) => (l.key === key
         ? {
@@ -150,7 +161,7 @@ export default function ConversionPage() {
             code: p.sku || p.name,
             product_id: p.id,
             name: p.name,
-            unit: p.base_uom || "PC",
+            unit,
             salePrice: Number(p.price || 0),
             purPrice: side === "out" ? String(Math.round(onHand[p.id]?.cost || 0)) : l.purPrice,
           }
@@ -171,13 +182,14 @@ export default function ConversionPage() {
         ? { ...l, product_id: "", name: "not found", unit: "", salePrice: 0 } : l)));
       return;
     }
+    const unit = await baseUnit(p.id);
     set((r) => {
       const next = r.map((l) => (l.key === key
         ? {
             ...l,
             product_id: p.id,
             name: p.name,
-            unit: p.base_uom || "PC",
+            unit,
             salePrice: Number(p.price || 0),
             // On the way out the cost is whatever the shelf says.
             purPrice: side === "out" ? String(Math.round(onHand[p.id]?.cost || 0)) : l.purPrice,
