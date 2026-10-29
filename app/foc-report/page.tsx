@@ -37,8 +37,22 @@ type Row = {
 const money = (n: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n || 0));
 
+// Every shop runs on Myanmar time; the reader may not.
+const SHOP_TZ = "Asia/Yangon";
+const SHOP_OFFSET = "+06:30";
+
 const day = (s: string | null) =>
-  s ? new Date(s).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "-";
+  s
+    ? new Date(s).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone: SHOP_TZ,
+      })
+    : "-";
+
+// The date a sale belongs to, as the shop would say it.
+const shopDay = (s: string | null) =>
+  s ? new Date(s).toLocaleDateString("en-CA", { timeZone: SHOP_TZ }) : "";
 
 function isoDaysAgo(n: number) {
   const d = new Date();
@@ -78,8 +92,8 @@ export default function FocReportPage() {
           "sales!inner(sale_ref, store_id, created_at, cashier_email)"
       )
       .eq("is_free_gift", true)
-      .gte("sales.created_at", from)
-      .lte("sales.created_at", to + "T23:59:59")
+      .gte("sales.created_at", from + "T00:00:00" + SHOP_OFFSET)
+      .lte("sales.created_at", to + "T23:59:59" + SHOP_OFFSET)
       .order("created_at", { ascending: false })
       .limit(5000);
     if (store) q = q.eq("sales.store_id", store);
@@ -152,7 +166,7 @@ export default function FocReportPage() {
       const qty = Number(r.qty) || 0;
       const cost = Number(r.line_cogs ?? (Number(r.unit_cost) || 0) * qty) || 0;
       return [
-        r.sales?.created_at?.slice(0, 10) || "",
+        shopDay(r.sales?.created_at ?? null),
         r.sales?.sale_ref || "",
         r.sales?.store_id || "",
         r.product_name || "",
