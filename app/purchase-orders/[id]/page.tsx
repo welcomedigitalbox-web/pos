@@ -1034,12 +1034,13 @@ export default function PoDetailPage() {
         <>
           <h3 className="font-semibold mb-2">{t("po_receiptHistory")}</h3>
           <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
-            <table className="w-full text-sm min-w-[620px]">
+            <table className="w-full text-sm min-w-[720px]">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   <th className="text-left px-3 py-2">{t("ledger_date")}</th>
                   <th className="text-left px-3 py-2">{t("stockIn_product")}</th>
                   <th className="text-left px-3 py-2">{t("po_receivedQty")}</th>
+                  <th className="text-left px-3 py-2">Into</th>
                   <th className="text-left px-3 py-2">{t("stockIn_unitCost")}</th>
                   <th className="text-left px-3 py-2">{t("stockIn_expiryDate")}</th>
                   <th className="text-left px-3 py-2">{t("po_receivedBy")}</th>
@@ -1051,6 +1052,7 @@ export default function PoDetailPage() {
                     <td className="px-3 py-2">{new Date(r.received_at || r.created_at).toLocaleString()}</td>
                     <td className="px-3 py-2">{r.display_name}</td>
                     <td className="px-3 py-2 font-medium">{r.qty}</td>
+                    <td className="px-3 py-2">{r.store_id || "-"}</td>
                     <td className="px-3 py-2">{fmt(Number(r.unit_cost))}</td>
                     <td className="px-3 py-2 text-slate-400">{r.expiry_date || "-"}</td>
                     <td className="px-3 py-2 text-slate-500 text-xs">{r.received_by || "-"}</td>
