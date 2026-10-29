@@ -43,6 +43,8 @@ export default function PoDetailPage() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [payments, setPayments] = useState<PoPayment[]>([]);
   const [receipts, setReceipts] = useState<any[]>([]);
+  // Written down by the office, not yet counted by the warehouse.
+  const [pendingDecls, setPendingDecls] = useState<any[]>([]);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [sellables, setSellables] = useState<SellableItem[]>([]);
   const [notFound, setNotFound] = useState(false);
@@ -193,6 +195,14 @@ export default function PoDetailPage() {
         requires_expiry: !!i.products?.requires_expiry,
       }))
     );
+
+    const { data: declData } = await supabase
+      .from("po_receipt_declarations")
+      .select("*, purchase_order_items(products(name))")
+      .eq("po_id", id)
+      .eq("status", "pending")
+      .order("declared_at", { ascending: false });
+    setPendingDecls((declData as any[]) || []);
 
     const { data: receiptData } = await supabase
       .from("stock_purchases")
@@ -1030,6 +1040,62 @@ export default function PoDetailPage() {
       </div>
 
       {/* Receipt history */}
+      {pendingDecls.length > 0 && (
+        <>
+          <h3 className="font-semibold mb-2">Waiting to be counted</h3>
+          <p className="text-xs text-slate-500 mb-2">
+            Written down from the supplier&apos;s paperwork. The warehouse puts
+            it on the shelf once the cartons have been opened and counted.
+          </p>
+          <div className="bg-white border border-amber-200 rounded-xl overflow-x-auto mb-6">
+            <table className="w-full text-sm min-w-[620px]">
+              <thead className="bg-amber-50 text-amber-800">
+                <tr>
+                  <th className="text-left px-3 py-2">Declared</th>
+                  <th className="text-left px-3 py-2">Product</th>
+                  <th className="text-left px-3 py-2">Qty</th>
+                  <th className="text-left px-3 py-2">Into</th>
+                  <th className="text-left px-3 py-2">Expiry</th>
+                  <th className="text-left px-3 py-2">By</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {pendingDecls.map((d) => (
+                  <tr key={d.id} className="border-t border-amber-100">
+                    <td className="px-3 py-2">{new Date(d.declared_at).toLocaleString()}</td>
+                    <td className="px-3 py-2">
+                      {d.purchase_order_items?.products?.name || "-"}
+                    </td>
+                    <td className="px-3 py-2 font-medium">{d.qty}</td>
+                    <td className="px-3 py-2">{d.store_id}</td>
+                    <td className="px-3 py-2 text-slate-400">{d.expiry_date || "-"}</td>
+                    <td className="px-3 py-2 text-slate-500 text-xs">{d.declared_by}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        className="text-xs text-red-600"
+                        onClick={async () => {
+                          const why = window.prompt("Withdraw this entry? Say why:", "");
+                          if (why === null) return;
+                          const { error } = await supabase.rpc("cancel_po_declaration", {
+                            p_id: d.id,
+                            p_note: why.trim() || null,
+                          });
+                          if (error) return showToast("" + error.message);
+                          await load();
+                        }}
+                      >
+                        withdraw
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {receipts.length > 0 && (
         <>
           <h3 className="font-semibold mb-2">{t("po_receiptHistory")}</h3>
