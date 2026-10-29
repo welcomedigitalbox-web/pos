@@ -164,10 +164,7 @@ export default function PoConfirmPage() {
                     <div className="text-[11px] text-slate-500">Declared</div>
                     <div className="text-sm font-medium">{Number(r.qty)}</div>
                   </div>
-                  <div>
-                    <div className="text-[11px] text-slate-500">Cost each</div>
-                    <div className="text-sm text-slate-500">{money(Number(r.unit_cost))}</div>
-                  </div>
+                  
                   <div>
                     <div className="text-[11px] text-slate-500">Expiry</div>
                     <div className="text-sm text-slate-500">{r.expiry_date || "-"}</div>
