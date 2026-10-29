@@ -1176,6 +1176,20 @@ export default function POSPage() {
           )}
         </div>
 
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={async () => {
+              showToast("Syncing...");
+              await loadProducts();
+              showToast("Prices and stock are up to date");
+            }}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600"
+          >
+            Sync prices &amp; stock
+          </button>
+        </div>
+
         {held.length > 0 && (
           <div className="mb-3 border border-amber-200 bg-amber-50 rounded-lg p-2">
             <div className="text-[11px] text-amber-800 font-medium mb-1">
