@@ -30,6 +30,23 @@ type Product = {
   price: number | null;
 };
 
+type Conv = {
+  id: string;
+  ref: string;
+  store_id: string;
+  note: string | null;
+  cost: number;
+  created_by: string | null;
+  created_at: string;
+};
+
+type ConvLine = {
+  side: string;
+  product_name: string | null;
+  qty: number;
+  unit_cost: number;
+};
+
 type Line = {
   key: string;
   code: string;          // what was typed or scanned
@@ -65,6 +82,9 @@ export default function ConversionPage() {
   const [err, setErr] = useState("");
   const [onHand, setOnHand] = useState<Record<string, { qty: number; cost: number }>>({});
   const looking = useRef<Record<string, boolean>>({});
+  const [history, setHistory] = useState<Conv[]>([]);
+  const [openDoc, setOpenDoc] = useState<string | null>(null);
+  const [docLines, setDocLines] = useState<Record<string, ConvLine[]>>({});
 
   useEffect(() => {
     supabase
@@ -99,7 +119,30 @@ export default function ConversionPage() {
     setOnHand(map);
   }, [storeId]);
 
-  useEffect(() => { loadOnHand(); }, [loadOnHand]);
+  const loadHistory = useCallback(async () => {
+    if (!storeId) return;
+    const { data } = await supabase
+      .from("stock_conversions")
+      .select("id,ref,store_id,note,cost,created_by,created_at")
+      .eq("store_id", storeId)
+      .order("created_at", { ascending: false })
+      .limit(25);
+    setHistory((data as Conv[]) || []);
+  }, [storeId]);
+
+  useEffect(() => { loadOnHand(); loadHistory(); }, [loadOnHand, loadHistory]);
+
+  // The lines of one conversion are only fetched when somebody opens it.
+  async function openConversion(id: string) {
+    setOpenDoc((cur) => (cur === id ? null : id));
+    if (docLines[id]) return;
+    const { data } = await supabase
+      .from("stock_conversion_lines")
+      .select("side,product_name,qty,unit_cost")
+      .eq("conversion_id", id)
+      .order("side");
+    setDocLines((m) => ({ ...m, [id]: (data as ConvLine[]) || [] }));
+  }
 
   // Typing in the code box searches the catalogue, because the person at
   // the bench knows the product by its name as often as by its number.
@@ -256,7 +299,7 @@ export default function ConversionPage() {
     const res = (data as { cost?: number; lines_in?: number }) || {};
     setMsg(`Done - ${money(Number(res.cost || 0))} MMK carried across ${res.lines_in || 0} line(s)`);
     setInLines([blank()]); setOutLines([blank()]); setNote("");
-    loadOnHand();
+    loadOnHand(); loadHistory();
   }
 
   if (!allowed) {
@@ -344,6 +387,60 @@ export default function ConversionPage() {
 
       {err && <p className="text-sm text-red-600 mt-3">{err}</p>}
       {msg && <p className="text-sm text-green-700 mt-3">{msg}</p>}
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold tracking-wide text-slate-700 mb-2">
+          Earlier conversions
+        </h2>
+        {history.length === 0 && (
+          <p className="text-xs text-slate-400">Nothing converted here yet.</p>
+        )}
+        <div className="divide-y divide-slate-100 border border-slate-200 rounded">
+          {history.map((h) => (
+            <div key={h.id}>
+              <button
+                onClick={() => openConversion(h.id)}
+                className="w-full flex flex-wrap items-center gap-3 px-3 py-2 text-sm text-left hover:bg-slate-50"
+              >
+                <span className="font-medium">{h.ref}</span>
+                <span className="text-slate-500">
+                  {new Date(h.created_at).toLocaleDateString(undefined, {
+                    month: "short", day: "numeric", timeZone: "Asia/Yangon",
+                  })}
+                </span>
+                <span className="text-slate-500">{money(Number(h.cost))} MMK</span>
+                {h.note && <span className="text-slate-400">{h.note}</span>}
+                <span className="ml-auto text-slate-400 text-xs">{h.created_by}</span>
+              </button>
+              {openDoc === h.id && (
+                <div className="px-3 pb-3">
+                  <table className="min-w-full text-xs">
+                    <tbody>
+                      {(docLines[h.id] || []).map((l, i) => (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="py-1 pr-3 w-16">
+                            <span className={l.side === "out" ? "text-red-600" : "text-green-700"}>
+                              {l.side === "out" ? "out" : "in"}
+                            </span>
+                          </td>
+                          <td className="py-1 pr-3">{l.product_name}</td>
+                          <td className="py-1 pr-3 text-right w-16">{Number(l.qty)}</td>
+                          <td className="py-1 text-right w-28 text-slate-500">
+                            {money(Number(l.unit_cost))} each
+                          </td>
+                        </tr>
+                      ))}
+                      {(docLines[h.id] || []).length === 0 && (
+                        <tr><td className="py-1 text-slate-400">Loading...</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
