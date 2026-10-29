@@ -285,11 +285,15 @@ export default function PoDetailPage() {
   }, [itemKey]);
 
   const chosenUnit = units.find((u) => u.code === uomCode);
+  const [addingItem, setAddingItem] = useState(false);
   const unitFactor = Number(chosenUnit?.factor || 1);
   const baseCode = units.find((u) => u.is_base)?.code || "PC";
 
+  // One press, one line. Until the first save comes back, a second press
+  // does nothing at all.
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
+    if (addingItem) return;
     const sel = sellables.find((s) => s.key === itemKey);
     const qtyNum = Number(qty);
     const costNum = Number(unitCost);
@@ -300,6 +304,7 @@ export default function PoDetailPage() {
     // system means by a quantity. What was agreed is kept alongside it so the
     // order still reads the way the supplier wrote it.
     const buyingInBase = !chosenUnit || chosenUnit.is_base || unitFactor === 1;
+    setAddingItem(true);
     const { error } = await supabase.from("purchase_order_items").insert({
       po_id: id,
       product_id: sel.product_id,
@@ -311,7 +316,7 @@ export default function PoDetailPage() {
       order_unit_cost: buyingInBase ? null : (isNaN(costNum) ? 0 : costNum),
       order_factor: buyingInBase ? null : unitFactor,
     });
-    if (error) return showToast("❌ " + error.message);
+    if (error) { setAddingItem(false); return showToast("❌ " + error.message); }
     await logActivity({
       entityType: "purchase_order",
       entityId: id,
@@ -323,6 +328,7 @@ export default function PoDetailPage() {
     setQty("");
     setUnitCost("");
     await load();
+    setAddingItem(false);
   }
 
   async function deleteItem(itemId: string) {
