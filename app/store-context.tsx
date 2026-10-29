@@ -35,7 +35,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const defaultWarehouseId = warehouses[0]?.id || "";
 
   async function refreshStores() {
-    const { data } = await supabase.from("stores").select("*").eq("is_active", true).order("name");
+    // The database decides which branches belong to this person; the
+    // picker only shows them. If the call is unavailable for any reason
+    // the old list is used, so nobody is locked out by a missing function.
+    const mine = await supabase.rpc("my_store_list");
+    const allowed = ((mine.data as { id: string }[]) || []).map((x) => x.id);
+    let query = supabase.from("stores").select("*").eq("is_active", true).order("name");
+    if (!mine.error && allowed.length > 0) query = query.in("id", allowed);
+    const { data } = await query;
+
     setStores(data || []);
 
     // A locked account belongs to exactly one branch, and defaulting to the
