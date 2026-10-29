@@ -1286,9 +1286,7 @@ export default function POSPage() {
                               x.key === c.key
                                 ? {
                                     ...x,
-                                    // Choosing "Other" clears the box so the
-                                    // cashier has to say what it was.
-                                    foc_reason: e.target.value === "Other" ? "" : e.target.value,
+                                    foc_reason: e.target.value,
                                   }
                                 : x
                             )
@@ -1301,17 +1299,21 @@ export default function POSPage() {
                         <option value="Other">Other</option>
                       </select>
                     )}
-                    {c.foc && !FOC_REASONS.includes(c.foc_reason || "Gift") && (
+                    {c.foc && !!c.foc_reason && !FOC_REASONS.includes(c.foc_reason) && (
                       <input
                         type="text"
                         autoFocus
                         placeholder="Say why"
                         className="w-28 border border-slate-200 rounded px-1 py-0.5 text-[10px]"
-                        value={c.foc_reason || ""}
+                        value={c.foc_reason === "Other" ? "" : c.foc_reason}
                         onChange={(e) =>
                           setCart((r) =>
                             r.map((x) =>
-                              x.key === c.key ? { ...x, foc_reason: e.target.value } : x
+                              // Emptying the box leaves the line on "Other"
+                              // rather than silently turning it into a gift.
+                              x.key === c.key
+                                ? { ...x, foc_reason: e.target.value || "Other" }
+                                : x
                             )
                           )
                         }
