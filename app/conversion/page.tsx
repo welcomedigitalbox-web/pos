@@ -52,6 +52,7 @@ type ConvLine = {
 
 type Line = {
   key: string;
+  auto?: boolean;        // the cost shown was worked out, not typed
   code: string;          // what was typed or scanned
   product_id: string;
   name: string;
@@ -67,6 +68,7 @@ const money = (n: number) =>
 
 const blank = (): Line => ({
   key: crypto.randomUUID(),
+  auto: true,
   code: "", product_id: "", name: "", unit: "", qty: "1",
   salePrice: 0, purPrice: "", expiry: "",
 });
@@ -80,6 +82,8 @@ export default function ConversionPage() {
   const [inLines, setInLines] = useState<Line[]>([blank()]);
   const [outLines, setOutLines] = useState<Line[]>([blank()]);
   const [note, setNote] = useState("");
+  // Shelf costs read better as whole notes than as 1,885.5.
+  const [roundTo, setRoundTo] = useState("100");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -322,6 +326,54 @@ export default function ConversionPage() {
     });
   }
 
+  // What the database is going to do, shown before it does it: the cost
+  // leaving the shelf shared across the parts by what they sell for, in
+  // whole notes, with the odd money on the last of them. A cost somebody
+  // typed is left exactly as typed.
+  useEffect(() => {
+    const outCost = outLines.reduce((n, l) => {
+      const q = Number(l.qty) || 0;
+      return n + (l.product_id ? q * (onHand[l.product_id]?.cost || 0) : 0);
+    }, 0);
+    if (outCost <= 0) return;
+
+    const auto = inLines.filter((l) => l.product_id && Number(l.qty) > 0 && l.auto !== false);
+    if (auto.length === 0) return;
+
+    const typed = inLines
+      .filter((l) => l.product_id && Number(l.qty) > 0 && l.auto === false)
+      .reduce((n, l) => n + (Number(l.qty) || 0) * (Number(l.purPrice) || 0), 0);
+
+    const left = Math.max(outCost - typed, 0);
+    const weight = auto.reduce((n, l) => n + (Number(l.qty) || 0) * l.salePrice, 0);
+    const step = Number(roundTo) || 0;
+
+    let spent = 0;
+    const share: Record<string, string> = {};
+    auto.forEach((l, i) => {
+      const q = Number(l.qty) || 0;
+      let amount = weight > 0
+        ? (left * q * l.salePrice) / weight
+        : left / auto.length;
+      if (step > 0) {
+        if (i < auto.length - 1) amount = Math.round(amount / step) * step;
+        else amount = Math.max(left - spent, 0);
+      }
+      spent += amount;
+      share[l.key] = q > 0 ? String(Math.round((amount / q) * 100) / 100) : "";
+    });
+
+    setInLines((rows) => {
+      let changed = false;
+      const next = rows.map((l) => {
+        if (share[l.key] === undefined || l.purPrice === share[l.key]) return l;
+        changed = true;
+        return { ...l, purPrice: share[l.key] };
+      });
+      return changed ? next : rows;
+    });
+  }, [outLines, inLines, onHand, roundTo]);
+
   const totals = useMemo(() => {
     const sum = (lines: Line[]) => {
       let qty = 0, pur = 0, sale = 0;
@@ -359,6 +411,7 @@ export default function ConversionPage() {
       p_out: out,
       p_in: into,
       p_note: note.trim() || null,
+      p_round: Number(roundTo) || 0,
     });
     setBusy(false);
     if (error) { setErr(describeError(error)); return; }
@@ -395,6 +448,16 @@ export default function ConversionPage() {
           <label className="block text-[11px] text-slate-500">Location</label>
           <select className={field} value={storeId} onChange={(e) => setStoreId(e.target.value)}>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] text-slate-500">Round costs to</label>
+          <select className={field} value={roundTo} onChange={(e) => setRoundTo(e.target.value)}>
+            <option value="0">exact</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="500">500</option>
+            <option value="1000">1,000</option>
           </select>
         </div>
         <div className="flex-1 min-w-[220px]">
@@ -635,9 +698,26 @@ function Block({
                         onChange={(e) => onSet(l.key, { qty: e.target.value })}
                       />
                     </td>
-                    <td className={cell + " text-slate-500"}>{l.unit || "-"}</td>
-                    <td className={cell + " text-right text-slate-500"}>
-                      {l.salePrice ? money(l.salePrice) : "-"}
+                    <td className={cell}>
+                      <input
+                        className={input}
+                        value={l.unit}
+                        placeholder="PC"
+                        onChange={(e) => onSet(l.key, { unit: e.target.value })}
+                      />
+                    </td>
+                    <td className={cell}>
+                      {/* The catalogue price, which decides how the cost is
+                          shared. Changing it here changes the share, not
+                          what the shop sells it for. */}
+                      <input
+                        type="number" min="0"
+                        className={input + " text-right"}
+                        value={l.salePrice ? String(l.salePrice) : ""}
+                        onChange={(e) =>
+                          onSet(l.key, { salePrice: Number(e.target.value) || 0 })
+                        }
+                      />
                     </td>
                     <td className={cell}>
                       <input
@@ -645,7 +725,7 @@ function Block({
                         className={input + " text-right"}
                         placeholder={side === "in" ? "auto" : ""}
                         value={l.purPrice}
-                        onChange={(e) => onSet(l.key, { purPrice: e.target.value })}
+                        onChange={(e) => onSet(l.key, { purPrice: e.target.value, auto: false })}
                       />
                     </td>
                     <td className={cell + " text-right"}>{amount ? money(amount) : "-"}</td>
