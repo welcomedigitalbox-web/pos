@@ -7,13 +7,17 @@
 // becomes a body, a pipe and a cap, because that is how the customer
 // wants to buy it, or because one part of it broke.
 //
-// Both sides are one movement. The cost of what went out is carried over
-// to what came in, so the warehouse is worth the same before and after.
-// The database does the sharing; this page only says what went in and
-// what came out.
+// The shape of the screen is the one the warehouse already knows from the
+// old system: what comes in on top, what goes out below, a running total
+// beside each. The one thing it does differently is the cost. What the
+// article cost is carried over to the parts rather than invented again,
+// so the warehouse is worth the same before and after.
+//
+// Codes are typed or scanned, not hunted for in a list, because the
+// barcode is already on the box in somebody's hand.
 // =====================================================================
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase, describeError } from "@/lib/supabase";
 import { useAuth } from "../auth-context";
@@ -24,18 +28,29 @@ type Product = {
   name: string;
   sku: string | null;
   price: number | null;
+  base_uom: string | null;
 };
 
 type Line = {
   key: string;
+  code: string;          // what was typed or scanned
   product_id: string;
   name: string;
+  unit: string;
   qty: string;
-  unit_cost: string; // only used on the way in, and only if typed
+  salePrice: number;
+  purPrice: string;      // left empty on the way in means "share it out"
+  expiry: string;
 };
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n || 0));
+
+const blank = (): Line => ({
+  key: crypto.randomUUID(),
+  code: "", product_id: "", name: "", unit: "", qty: "1",
+  salePrice: 0, purPrice: "", expiry: "",
+});
 
 export default function ConversionPage() {
   const { profile } = useAuth();
@@ -43,14 +58,14 @@ export default function ConversionPage() {
 
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [storeId, setStoreId] = useState("");
-  const [products, setProducts] = useState<Product[]>([]);
-  const [outLines, setOutLines] = useState<Line[]>([]);
-  const [inLines, setInLines] = useState<Line[]>([]);
+  const [inLines, setInLines] = useState<Line[]>([blank()]);
+  const [outLines, setOutLines] = useState<Line[]>([blank()]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
-  const [onHand, setOnHand] = useState<Record<string, number>>({});
+  const [onHand, setOnHand] = useState<Record<string, { qty: number; cost: number }>>({});
+  const looking = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     supabase
@@ -60,40 +75,26 @@ export default function ConversionPage() {
       .then(({ data }) => {
         const list = (data as { id: string; name: string }[]) || [];
         setStores(list);
-        setStoreId((s) => s || list.find((x) => /wh|warehouse/i.test(x.id))?.id || list[0]?.id || "");
+        setStoreId((s) => s || list.find((x) => /wh/i.test(x.id))?.id || list[0]?.id || "");
       });
-
-    // The catalogue, once. A warehouse list is long but it is only names.
-    (async () => {
-      const all: Product[] = [];
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await supabase
-          .from("products")
-          .select("id,name,sku,price")
-          .eq("is_active", true)
-          .order("name")
-          .range(from, from + 999);
-        const page = (data as Product[]) || [];
-        all.push(...page);
-        if (error || page.length < 1000) break;
-      }
-      setProducts(all);
-    })();
   }, []);
 
-  // What is on the shelf here, so a line that cannot be taken apart is
-  // obvious before the button is pressed rather than after.
   const loadOnHand = useCallback(async () => {
     if (!storeId) return;
-    const map: Record<string, number> = {};
+    const map: Record<string, { qty: number; cost: number }> = {};
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
         .from("store_inventory")
-        .select("product_id,stock_qty")
+        .select("product_id,stock_qty,avg_cost")
         .eq("store_id", storeId)
         .range(from, from + 999);
-      const page = (data as { product_id: string; stock_qty: number }[]) || [];
-      for (const r of page) map[r.product_id] = (map[r.product_id] || 0) + Number(r.stock_qty || 0);
+      const page = (data as { product_id: string; stock_qty: number; avg_cost: number }[]) || [];
+      for (const r of page) {
+        const cur = map[r.product_id] || { qty: 0, cost: 0 };
+        cur.qty += Number(r.stock_qty || 0);
+        cur.cost = Number(r.avg_cost || 0);
+        map[r.product_id] = cur;
+      }
       if (error || page.length < 1000) break;
     }
     setOnHand(map);
@@ -101,39 +102,82 @@ export default function ConversionPage() {
 
   useEffect(() => { loadOnHand(); }, [loadOnHand]);
 
-  function addLine(side: "out" | "in") {
-    const row: Line = { key: crypto.randomUUID(), product_id: "", name: "", qty: "1", unit_cost: "" };
-    (side === "out" ? setOutLines : setInLines)((r) => [...r, row]);
+  // A code is whatever is printed on the box: one of ours, the supplier's,
+  // or the article number. All three end at the same product.
+  async function findByCode(raw: string): Promise<Product | null> {
+    const code = raw.trim();
+    if (!code) return null;
+
+    const { data: bar } = await supabase
+      .from("product_barcodes")
+      .select("product_id")
+      .eq("barcode", code)
+      .eq("is_active", true)
+      .limit(1);
+    const hit = (bar as { product_id: string }[] | null)?.[0]?.product_id;
+
+    const q = supabase.from("products").select("id,name,sku,price,base_uom").limit(1);
+    const { data } = hit
+      ? await q.eq("id", hit)
+      : await q.or(`sku.eq.${code},name.eq.${code}`);
+    return ((data as Product[]) || [])[0] || null;
   }
 
-  function setLine(side: "out" | "in", key: string, patch: Partial<Line>) {
-    (side === "out" ? setOutLines : setInLines)((r) =>
-      r.map((l) => (l.key === key ? { ...l, ...patch } : l))
-    );
+  async function resolve(side: "in" | "out", key: string, code: string) {
+    if (looking.current[key]) return;
+    looking.current[key] = true;
+    const p = await findByCode(code);
+    looking.current[key] = false;
+
+    const set = side === "in" ? setInLines : setOutLines;
+    if (!p) {
+      set((r) => r.map((l) => (l.key === key
+        ? { ...l, product_id: "", name: "not found", unit: "", salePrice: 0 } : l)));
+      return;
+    }
+    set((r) => {
+      const next = r.map((l) => (l.key === key
+        ? {
+            ...l,
+            product_id: p.id,
+            name: p.name,
+            unit: p.base_uom || "PC",
+            salePrice: Number(p.price || 0),
+            // On the way out the cost is whatever the shelf says.
+            purPrice: side === "out" ? String(Math.round(onHand[p.id]?.cost || 0)) : l.purPrice,
+          }
+        : l));
+      // A filled last row earns an empty one under it, as the old screen did.
+      return next[next.length - 1].product_id ? [...next, blank()] : next;
+    });
   }
 
-  function dropLine(side: "out" | "in", key: string) {
-    (side === "out" ? setOutLines : setInLines)((r) => r.filter((l) => l.key !== key));
+  function setLine(side: "in" | "out", key: string, patch: Partial<Line>) {
+    (side === "in" ? setInLines : setOutLines)((r) =>
+      r.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
-  const byId = useMemo(() => {
-    const m: Record<string, Product> = {};
-    for (const p of products) m[p.id] = p;
-    return m;
-  }, [products]);
+  function dropLine(side: "in" | "out", key: string) {
+    (side === "in" ? setInLines : setOutLines)((r) => {
+      const next = r.filter((l) => l.key !== key);
+      return next.length ? next : [blank()];
+    });
+  }
 
-  // What the parts would sell for, which is how the cost gets shared.
-  const inValue = useMemo(
-    () =>
-      inLines.reduce((sum, l) => {
-        const price = Number(byId[l.product_id]?.price || 0);
-        return sum + price * (Number(l.qty) || 0);
-      }, 0),
-    [inLines, byId]
-  );
-
-  const outPieces = outLines.reduce((n, l) => n + (Number(l.qty) || 0), 0);
-  const inPieces = inLines.reduce((n, l) => n + (Number(l.qty) || 0), 0);
+  const totals = useMemo(() => {
+    const sum = (lines: Line[]) => {
+      let qty = 0, pur = 0, sale = 0;
+      for (const l of lines) {
+        const q = Number(l.qty) || 0;
+        if (!l.product_id || q <= 0) continue;
+        qty += q;
+        pur += q * (Number(l.purPrice) || 0);
+        sale += q * l.salePrice;
+      }
+      return { qty, pur, sale };
+    };
+    return { in: sum(inLines), out: sum(outLines) };
+  }, [inLines, outLines]);
 
   async function confirm() {
     setErr(""); setMsg("");
@@ -145,11 +189,11 @@ export default function ConversionPage() {
       .map((l) => ({
         product_id: l.product_id,
         qty: Number(l.qty),
-        unit_cost: l.unit_cost.trim() === "" ? null : Number(l.unit_cost),
+        unit_cost: l.purPrice.trim() === "" ? null : Number(l.purPrice),
       }));
 
-    if (out.length === 0) return setErr("Nothing to take apart");
-    if (into.length === 0) return setErr("Nothing comes back");
+    if (out.length === 0) return setErr("Nothing in Stock Out");
+    if (into.length === 0) return setErr("Nothing in Stock In");
 
     setBusy(true);
     const { data, error } = await supabase.rpc("convert_stock", {
@@ -161,9 +205,9 @@ export default function ConversionPage() {
     setBusy(false);
     if (error) { setErr(describeError(error)); return; }
 
-    const res = (data as { ref?: string; cost?: number; lines_in?: number }) || {};
-    setMsg(`Done - ${money(Number(res.cost || 0))} MMK moved across ${res.lines_in || 0} line(s)`);
-    setOutLines([]); setInLines([]); setNote("");
+    const res = (data as { cost?: number; lines_in?: number }) || {};
+    setMsg(`Done - ${money(Number(res.cost || 0))} MMK carried across ${res.lines_in || 0} line(s)`);
+    setInLines([blank()]); setOutLines([blank()]); setNote("");
     loadOnHand();
   }
 
@@ -178,74 +222,70 @@ export default function ConversionPage() {
     );
   }
 
-  const field = "border border-slate-300 rounded-lg px-2 py-1 text-sm";
+  const field = "border border-slate-300 rounded px-2 py-1 text-sm";
 
   return (
-    <main className="p-4 sm:p-6 max-w-5xl mx-auto">
+    <main className="p-4 sm:p-6 max-w-6xl mx-auto">
       <h1 className="text-lg font-semibold">Conversion</h1>
       <p className="text-xs text-slate-500 mb-4">
-        Take one article off the shelf and put its parts on. What it cost
-        goes with the parts, shared by what each of them sells for.
+        What goes out is taken off at what it cost; what comes in carries
+        that cost, shared by what each part sells for.
       </p>
 
-      <div className="flex flex-wrap items-end gap-2 mb-4">
+      <div className="flex flex-wrap items-end gap-3 mb-4">
         <div>
           <label className="block text-[11px] text-slate-500">Location</label>
           <select className={field} value={storeId} onChange={(e) => setStoreId(e.target.value)}>
-            {stores.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-[11px] text-slate-500">Note</label>
-          <input
-            className={field + " w-full"}
-            placeholder="Why it was taken apart"
-            value={note}
+        <div className="flex-1 min-w-[220px]">
+          <label className="block text-[11px] text-slate-500">Remark</label>
+          <input className={field + " w-full"} value={note}
             onChange={(e) => setNote(e.target.value)}
-          />
+            placeholder="Why it was taken apart" />
         </div>
       </div>
 
-      <Side
-        title="Taken apart"
-        hint="The article that leaves the shelf"
-        lines={outLines}
-        products={products}
-        byId={byId}
-        onHand={onHand}
-        showCost={false}
-        onAdd={() => addLine("out")}
-        onSet={(k, patch) => setLine("out", k, patch)}
-        onDrop={(k) => dropLine("out", k)}
-      />
-
-      <Side
-        title="Comes back"
-        hint="The parts that go on the shelf. Leave the cost empty to let it be shared automatically."
+      <Block
+        title="STOCK IN"
+        subtitle="The parts that go on the shelf. Leave Pur Price empty to let the cost be shared."
+        tone="bg-blue-600"
         lines={inLines}
-        products={products}
-        byId={byId}
+        side="in"
+        showExpiry={false}
         onHand={onHand}
-        showCost
-        onAdd={() => addLine("in")}
+        onCode={(k, c) => resolve("in", k, c)}
         onSet={(k, patch) => setLine("in", k, patch)}
         onDrop={(k) => dropLine("in", k)}
+        totals={totals.in}
+      />
+
+      <Block
+        title="STOCK OUT"
+        subtitle="The article that leaves the shelf."
+        tone="bg-slate-700"
+        lines={outLines}
+        side="out"
+        showExpiry
+        onHand={onHand}
+        onCode={(k, c) => resolve("out", k, c)}
+        onSet={(k, patch) => setLine("out", k, patch)}
+        onDrop={(k) => dropLine("out", k)}
+        totals={totals.out}
       />
 
       <div className="mt-5 flex flex-wrap items-center gap-4">
-        <button
-          onClick={confirm}
-          disabled={busy}
-          className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm disabled:opacity-50"
-        >
-          {busy ? "Working..." : "Confirm conversion"}
+        <button onClick={confirm} disabled={busy}
+          className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm disabled:opacity-50">
+          {busy ? "Working..." : "Confirm (F5)"}
         </button>
-        <span className="text-xs text-slate-500">
-          {outPieces} piece(s) out, {inPieces} back
-          {inValue > 0 ? ` - parts sell for ${money(inValue)} MMK` : ""}
-        </span>
+        {totals.out.pur > 0 && (
+          <span className="text-xs text-slate-500">
+            {money(totals.out.pur)} MMK leaves the shelf
+            {totals.in.sale > 0 ? ` - the parts sell for ${money(totals.in.sale)} MMK` : ""}
+          </span>
+        )}
       </div>
 
       {err && <p className="text-sm text-red-600 mt-3">{err}</p>}
@@ -254,79 +294,126 @@ export default function ConversionPage() {
   );
 }
 
-function Side({
-  title, hint, lines, products, byId, onHand, showCost, onAdd, onSet, onDrop,
+function Block({
+  title, subtitle, tone, lines, side, showExpiry, onHand, onCode, onSet, onDrop, totals,
 }: {
   title: string;
-  hint: string;
+  subtitle: string;
+  tone: string;
   lines: Line[];
-  products: Product[];
-  byId: Record<string, Product>;
-  onHand: Record<string, number>;
-  showCost: boolean;
-  onAdd: () => void;
+  side: "in" | "out";
+  showExpiry: boolean;
+  onHand: Record<string, { qty: number; cost: number }>;
+  onCode: (key: string, code: string) => void;
   onSet: (key: string, patch: Partial<Line>) => void;
   onDrop: (key: string) => void;
+  totals: { qty: number; pur: number; sale: number };
 }) {
-  const field = "border border-slate-300 rounded-lg px-2 py-1 text-sm";
+  const cell = "border border-slate-200 px-2 py-1 text-sm";
+  const input = "w-full outline-none text-sm";
+
   return (
-    <section className="border border-slate-200 rounded-lg p-3 mb-4">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-medium">{title}</h2>
-        <button onClick={onAdd} className="text-xs text-blue-600">+ add line</button>
-      </div>
-      <p className="text-[11px] text-slate-500 mb-2">{hint}</p>
+    <section className="mb-5">
+      <h2 className="text-sm font-semibold tracking-wide text-slate-700 mb-1">{title}</h2>
+      <p className="text-[11px] text-slate-500 mb-2">{subtitle}</p>
 
-      {lines.length === 0 && (
-        <p className="text-xs text-slate-400">No lines yet.</p>
-      )}
+      <div className="flex flex-col lg:flex-row gap-3">
+        <div className="flex-1 overflow-x-auto">
+          <table className="min-w-full border border-slate-200">
+            <thead className="bg-slate-50">
+              <tr className="text-left text-[11px] text-slate-500">
+                <th className={cell + " w-10"}>Sr</th>
+                <th className={cell + " w-36"}>Code</th>
+                <th className={cell}>Description</th>
+                <th className={cell + " w-20 text-right"}>Qty</th>
+                <th className={cell + " w-16"}>Unit</th>
+                <th className={cell + " w-24 text-right"}>Sale Price</th>
+                <th className={cell + " w-24 text-right"}>Pur Price</th>
+                <th className={cell + " w-28 text-right"}>Amount</th>
+                {showExpiry && <th className={cell + " w-24"}>On hand</th>}
+                <th className={cell + " w-10"}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => {
+                const qty = Number(l.qty) || 0;
+                const amount = qty * (Number(l.purPrice) || 0);
+                return (
+                  <tr key={l.key}>
+                    <td className={cell + " text-slate-400"}>{i + 1}</td>
+                    <td className={cell}>
+                      <input
+                        className={input}
+                        value={l.code}
+                        placeholder="scan"
+                        onChange={(e) => onSet(l.key, { code: e.target.value })}
+                        onBlur={(e) => onCode(l.key, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") onCode(l.key, (e.target as HTMLInputElement).value);
+                        }}
+                      />
+                    </td>
+                    <td className={cell + (l.name === "not found" ? " text-red-600" : "")}>
+                      {l.name || <span className="text-slate-300">-</span>}
+                    </td>
+                    <td className={cell}>
+                      <input
+                        type="number" min="0"
+                        className={input + " text-right"}
+                        value={l.qty}
+                        onChange={(e) => onSet(l.key, { qty: e.target.value })}
+                      />
+                    </td>
+                    <td className={cell + " text-slate-500"}>{l.unit || "-"}</td>
+                    <td className={cell + " text-right text-slate-500"}>
+                      {l.salePrice ? money(l.salePrice) : "-"}
+                    </td>
+                    <td className={cell}>
+                      <input
+                        type="number" min="0"
+                        className={input + " text-right"}
+                        placeholder={side === "in" ? "auto" : ""}
+                        value={l.purPrice}
+                        onChange={(e) => onSet(l.key, { purPrice: e.target.value })}
+                      />
+                    </td>
+                    <td className={cell + " text-right"}>{amount ? money(amount) : "-"}</td>
+                    {showExpiry && (
+                      <td className={cell + " text-right text-slate-500"}>
+                        {l.product_id ? (onHand[l.product_id]?.qty || 0).toLocaleString() : "-"}
+                      </td>
+                    )}
+                    <td className={cell + " text-center"}>
+                      <button onClick={() => onDrop(l.key)}
+                        className="text-red-500 text-xs">&times;</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
-      <div className="space-y-2">
-        {lines.map((l) => (
-          <div key={l.key} className="flex flex-wrap items-center gap-2">
-            <select
-              className={field + " flex-1 min-w-[220px]"}
-              value={l.product_id}
-              onChange={(e) => onSet(l.key, { product_id: e.target.value })}
-            >
-              <option value="">Pick a product...</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}{p.sku ? ` (${p.sku})` : ""}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="0"
-              className={field + " w-20 text-right"}
-              value={l.qty}
-              onChange={(e) => onSet(l.key, { qty: e.target.value })}
-            />
-            {showCost && (
-              <input
-                type="number"
-                min="0"
-                placeholder="cost"
-                className={field + " w-24 text-right"}
-                value={l.unit_cost}
-                onChange={(e) => onSet(l.key, { unit_cost: e.target.value })}
-              />
-            )}
-            <span className="text-[11px] text-slate-400 w-28">
-              {l.product_id
-                ? `on hand ${(onHand[l.product_id] || 0).toLocaleString()}`
-                : ""}
-              {l.product_id && byId[l.product_id]?.price
-                ? ` - ${money(Number(byId[l.product_id]?.price))}`
-                : ""}
-            </span>
-            <button onClick={() => onDrop(l.key)} className="text-xs text-red-600 px-1">
-              remove
-            </button>
+        <div className="lg:w-64 shrink-0">
+          <div className={`${tone} text-white text-[11px] font-medium px-3 py-1 rounded-t`}>
+            {title}
           </div>
-        ))}
+          <div className="border border-slate-200 rounded-b divide-y divide-slate-100">
+            <Row label="Qty" value={totals.qty.toLocaleString()} />
+            <Row label="Total PurAmount" value={money(totals.pur)} />
+            <Row label="Total SaleAmount" value={money(totals.sale)} />
+          </div>
+        </div>
       </div>
     </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-medium">{value}</span>
+    </div>
   );
 }
