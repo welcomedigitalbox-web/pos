@@ -102,6 +102,23 @@ export default function ConversionPage() {
 
   useEffect(() => { loadOnHand(); }, [loadOnHand]);
 
+  // Typing in the code box searches the catalogue, because the person at
+  // the bench knows the product by its name as often as by its number.
+  const [sugg, setSugg] = useState<{ key: string; items: Product[] }>({ key: "", items: [] });
+
+  const search = useCallback(async (key: string, q: string) => {
+    const term = q.trim();
+    if (term.length < 2) { setSugg({ key, items: [] }); return; }
+    const { data } = await supabase
+      .from("products")
+      .select("id,name,sku,price,base_uom")
+      .eq("is_active", true)
+      .or(`name.ilike.%${term}%,sku.ilike.%${term}%`)
+      .order("name")
+      .limit(8);
+    setSugg({ key, items: (data as Product[]) || [] });
+  }, []);
+
   // A code is whatever is printed on the box: one of ours, the supplier's,
   // or the article number. All three end at the same product.
   async function findByCode(raw: string): Promise<Product | null> {
@@ -121,6 +138,25 @@ export default function ConversionPage() {
       ? await q.eq("id", hit)
       : await q.or(`sku.eq.${code},name.eq.${code}`);
     return ((data as Product[]) || [])[0] || null;
+  }
+
+  function fill(side: "in" | "out", key: string, p: Product) {
+    const set = side === "in" ? setInLines : setOutLines;
+    setSugg({ key: "", items: [] });
+    set((r) => {
+      const next = r.map((l) => (l.key === key
+        ? {
+            ...l,
+            code: p.sku || p.name,
+            product_id: p.id,
+            name: p.name,
+            unit: p.base_uom || "PC",
+            salePrice: Number(p.price || 0),
+            purPrice: side === "out" ? String(Math.round(onHand[p.id]?.cost || 0)) : l.purPrice,
+          }
+        : l));
+      return next[next.length - 1].product_id ? [...next, blank()] : next;
+    });
   }
 
   async function resolve(side: "in" | "out", key: string, code: string) {
@@ -256,6 +292,9 @@ export default function ConversionPage() {
         showExpiry={false}
         onHand={onHand}
         onCode={(k, c) => resolve("in", k, c)}
+        onSearch={(k, q) => search(k, q)}
+        onPick={(k, p) => fill("in", k, p)}
+        sugg={sugg}
         onSet={(k, patch) => setLine("in", k, patch)}
         onDrop={(k) => dropLine("in", k)}
         totals={totals.in}
@@ -270,6 +309,9 @@ export default function ConversionPage() {
         showExpiry
         onHand={onHand}
         onCode={(k, c) => resolve("out", k, c)}
+        onSearch={(k, q) => search(k, q)}
+        onPick={(k, p) => fill("out", k, p)}
+        sugg={sugg}
         onSet={(k, patch) => setLine("out", k, patch)}
         onDrop={(k) => dropLine("out", k)}
         totals={totals.out}
@@ -295,7 +337,7 @@ export default function ConversionPage() {
 }
 
 function Block({
-  title, subtitle, tone, lines, side, showExpiry, onHand, onCode, onSet, onDrop, totals,
+  title, subtitle, tone, lines, side, showExpiry, onHand, onCode, onSearch, onPick, sugg, onSet, onDrop, totals,
 }: {
   title: string;
   subtitle: string;
@@ -305,6 +347,9 @@ function Block({
   showExpiry: boolean;
   onHand: Record<string, { qty: number; cost: number }>;
   onCode: (key: string, code: string) => void;
+  onSearch: (key: string, q: string) => void;
+  onPick: (key: string, p: Product) => void;
+  sugg: { key: string; items: Product[] };
   onSet: (key: string, patch: Partial<Line>) => void;
   onDrop: (key: string) => void;
   totals: { qty: number; pur: number; sale: number };
@@ -341,17 +386,34 @@ function Block({
                 return (
                   <tr key={l.key}>
                     <td className={cell + " text-slate-400"}>{i + 1}</td>
-                    <td className={cell}>
+                    <td className={cell + " relative"}>
                       <input
                         className={input}
                         value={l.code}
-                        placeholder="scan"
-                        onChange={(e) => onSet(l.key, { code: e.target.value })}
-                        onBlur={(e) => onCode(l.key, e.target.value)}
+                        placeholder="scan or search"
+                        onChange={(e) => {
+                          onSet(l.key, { code: e.target.value });
+                          onSearch(l.key, e.target.value);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") onCode(l.key, (e.target as HTMLInputElement).value);
                         }}
                       />
+                      {sugg.key === l.key && sugg.items.length > 0 && (
+                        <ul className="absolute z-20 left-0 top-full w-80 max-h-60 overflow-auto bg-white border border-slate-200 rounded shadow text-sm">
+                          {sugg.items.map((p) => (
+                            <li key={p.id}>
+                              <button
+                                onMouseDown={(e) => { e.preventDefault(); onPick(l.key, p); }}
+                                className="block w-full text-left px-2 py-1 hover:bg-slate-100"
+                              >
+                                <span className="text-slate-800">{p.name}</span>
+                                {p.sku && <span className="text-slate-400"> - {p.sku}</span>}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </td>
                     <td className={cell + (l.name === "not found" ? " text-red-600" : "")}>
                       {l.name || <span className="text-slate-300">-</span>}
