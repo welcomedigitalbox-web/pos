@@ -165,10 +165,25 @@ export default function ConversionPage() {
   async function exportCsv() {
     const { data } = await supabase
       .from("stock_conversion_lines")
-      .select("conversion_id,side,product_name,qty,unit_cost")
+      .select("conversion_id,side,product_id,product_name,qty,unit_cost")
       .in("conversion_id", history.map((h) => h.id));
-    const lines = (data as (ConvLine & { conversion_id: string })[]) || [];
-    const head = ["Ref", "Date", "Status", "Side", "Product", "Qty", "Unit cost", "By", "Note"];
+    const lines = (data as (ConvLine & { conversion_id: string; product_id: string })[]) || [];
+
+    // The article number is what the warehouse and the buyer both go by,
+    // so the file carries it beside the name.
+    const ids = Array.from(new Set(lines.map((l) => l.product_id)));
+    const sku: Record<string, string> = {};
+    if (ids.length) {
+      const { data: ps } = await supabase
+        .from("products")
+        .select("id,sku")
+        .in("id", ids);
+      for (const p of (ps as { id: string; sku: string | null }[]) || []) {
+        sku[p.id] = p.sku || "";
+      }
+    }
+
+    const head = ["Ref", "Date", "Status", "Side", "Code", "Product", "Qty", "Unit cost", "By", "Note"];
     const rows = history.flatMap((h) =>
       lines
         .filter((l) => l.conversion_id === h.id)
@@ -177,6 +192,7 @@ export default function ConversionPage() {
           new Date(h.created_at).toLocaleDateString("en-CA", { timeZone: "Asia/Yangon" }),
           h.status || "active",
           l.side,
+          sku[l.product_id] || "",
           l.product_name || "",
           String(l.qty),
           String(l.unit_cost),
