@@ -38,6 +38,7 @@ export type PageKey =
   | "purchase-invoices"
   | "stock-on-hand"
   | "settlements"
+  | "foc-report"
   | "my-pin"
   | "product-category"
   | "product-variant"
@@ -150,6 +151,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "receivables", href: "/receivables", labelKey: "nav_receivables", group: "reports" },
   { key: "invoice-fix", href: "/invoice-fix", labelKey: "nav_invoiceFix", group: "reports" },
   { key: "settlements", href: "/settlements", labelKey: "nav_settlements", group: "reports" },
+  { key: "foc-report", href: "/foc-report", labelKey: "nav_focReport", group: "reports" },
   { key: "my-pin", href: "/my-pin", labelKey: "nav_myPin", group: "profile" },
   { key: "ai-agent", href: "/ai-agent", labelKey: "nav_aiAgent", group: "ai-agent" },
   { key: "profile", href: "/profile", labelKey: "nav_profile", group: "profile" },
