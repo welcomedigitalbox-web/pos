@@ -54,6 +54,16 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [codeMsg, setCodeMsg] = useState("");
   const [codeDraft, setCodeDraft] = useState("");
+  // A product may answer to several of the supplier's codes - one per
+  // flavour, say - while we still sell it as one article.
+  const [codes, setCodes] = useState<Record<string, string[]>>({});
+  // Reading the code off a carton is the warehouse's job and correcting
+  // one afterwards is the office's. The database enforces this too; this
+  // only decides whether the controls are worth showing.
+  const canEditCodes =
+    /warehouse|financ|account/i.test(profile?.role || "") ||
+    ["owner", "admin", "md", "operation_director", "controller"].includes(profile?.role || "") ||
+    ["warehouse", "finance"].includes(((profile as unknown as { department?: string })?.department) || "");
   const [detail, setDetail] = useState<Row | null>(null);
   // The main location is the one being worked on; these are the others whose
   // quantities are added into the balance.
@@ -134,7 +144,7 @@ export default function InventoryPage() {
     // fetched alongside and filled in once they arrive.
     // A supplier code is a barcode of kind 'supplier' - one product may
     // answer to several - so it is read from there, not from the product row.
-    const byId: Record<string, string> = {};
+    const byId: Record<string, string[]> = {};
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
         .from("product_barcodes")
@@ -143,10 +153,11 @@ export default function InventoryPage() {
         .eq("is_active", true)
         .range(from, from + 999);
       const page = (data as { product_id: string; barcode: string }[]) || [];
-      for (const b of page) if (!byId[b.product_id]) byId[b.product_id] = b.barcode;
+      for (const b of page) (byId[b.product_id] ||= []).push(b.barcode);
       if (error || page.length < 1000) break;
     }
-    setRows((rs) => rs.map((r) => ({ ...r, supplierCode: byId[r.product_id] ?? null })));
+    setCodes(byId);
+    setRows((rs) => rs.map((r) => ({ ...r, supplierCode: byId[r.product_id]?.[0] ?? null })));
   }
 
   // Typed in the warehouse, saved through the one function that also teaches
@@ -160,9 +171,29 @@ export default function InventoryPage() {
       p_variant: row.variant_id,
     });
     if (error) { setCodeMsg(describeError(error)); return; }
+    setCodes((m) => {
+      const had = m[row.product_id] || [];
+      return had.includes(code) ? m : { ...m, [row.product_id]: [...had, code] };
+    });
     setRows((rs) => rs.map((r) =>
-      r.product_id === row.product_id ? { ...r, supplierCode: code } : r));
+      r.product_id === row.product_id ? { ...r, supplierCode: r.supplierCode || code } : r));
     setEditing(null);
+    setCodeDraft("");
+    setCodeMsg("");
+  }
+
+  // Taking one off: the database keeps the row and switches it off, so an
+  // old carton that turns up later is still explainable.
+  async function removeSupplierCode(row: Row, code: string) {
+    const { error } = await supabase.rpc("remove_supplier_code", {
+      p_product: row.product_id,
+      p_code: code,
+    });
+    if (error) { setCodeMsg(describeError(error)); return; }
+    const left = (codes[row.product_id] || []).filter((c) => c !== code);
+    setCodes((m) => ({ ...m, [row.product_id]: left }));
+    setRows((rs) => rs.map((r) =>
+      r.product_id === row.product_id ? { ...r, supplierCode: left[0] ?? null } : r));
     setCodeMsg("");
   }
 
@@ -393,35 +424,55 @@ export default function InventoryPage() {
                     </td>
                     <td className="px-3 py-2 text-slate-400 text-xs">{r.sku || "-"}</td>
                     <td className="px-3 py-2 text-xs">
-                      {editing === r.key ? (
-                        <span className="flex items-center gap-1">
-                          <input
-                            autoFocus
-                            defaultValue={r.supplierCode || ""}
-                            onChange={(e) => setCodeDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") saveSupplierCode(r, codeDraft);
-                              if (e.key === "Escape") setEditing(null);
-                            }}
-                            className="w-32 border border-slate-300 rounded px-2 py-1 text-xs"
-                          />
+                      <span className="flex flex-wrap items-center gap-1">
+                        {(codes[r.product_id] || []).map((c) => (
+                          <span key={c}
+                            className="inline-flex items-center gap-1 bg-slate-100 rounded px-1.5 py-0.5">
+                            <span className="text-slate-700">{c}</span>
+                            {canEditCodes && (
+                              <button
+                                title="Remove this code"
+                                onClick={() => removeSupplierCode(r, c)}
+                                className="text-slate-400 hover:text-red-600"
+                              >
+                                &times;
+                              </button>
+                            )}
+                          </span>
+                        ))}
+
+                        {editing === r.key ? (
+                          <span className="inline-flex items-center gap-1">
+                            <input
+                              autoFocus
+                              placeholder="Scan or type"
+                              onChange={(e) => setCodeDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveSupplierCode(r, codeDraft);
+                                if (e.key === "Escape") setEditing(null);
+                              }}
+                              className="w-32 border border-slate-300 rounded px-2 py-1 text-xs"
+                            />
+                            <button
+                              onClick={() => saveSupplierCode(r, codeDraft)}
+                              className="px-2 py-1 bg-slate-900 text-white rounded text-xs"
+                            >
+                              Save
+                            </button>
+                            <button onClick={() => setEditing(null)}
+                              className="px-1 text-slate-400 text-xs">&times;</button>
+                          </span>
+                        ) : canEditCodes ? (
                           <button
-                            onClick={() => saveSupplierCode(r, codeDraft)}
-                            className="px-2 py-1 bg-slate-900 text-white rounded text-xs"
+                            onClick={() => { setCodeMsg(""); setCodeDraft(""); setEditing(r.key); }}
+                            className="text-slate-300 hover:text-blue-600"
                           >
-                            Save
+                            + add
                           </button>
-                          <button onClick={() => setEditing(null)}
-                            className="px-1 text-slate-400 text-xs">✕</button>
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => { setCodeMsg(""); setCodeDraft(r.supplierCode || ""); setEditing(r.key); }}
-                          className={r.supplierCode ? "text-slate-600" : "text-slate-300 hover:text-blue-600"}
-                        >
-                          {r.supplierCode || "+ add"}
-                        </button>
-                      )}
+                        ) : (codes[r.product_id] || []).length === 0 ? (
+                          <span className="text-slate-300">-</span>
+                        ) : null}
+                      </span>
                     </td>
                     <td className={`px-3 py-2 font-medium ${r.stock_qty <= 0 ? "text-red-600" : r.stock_qty <= 5 ? "text-orange-600" : ""}`}>
                       {r.stock_qty.toLocaleString()}
