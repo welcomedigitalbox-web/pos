@@ -72,7 +72,7 @@ export default function ConversionPrintPage() {
   }
 
   return (
-    <main className="p-6 max-w-3xl mx-auto text-sm">
+    <main className="po-print p-6 max-w-3xl mx-auto text-sm">
       <div className="flex items-start justify-between mb-4">
         <div>
           <h1 className="text-lg font-semibold">Conversion</h1>
