@@ -62,6 +62,9 @@ type HeldOrder = {
 // Parked baskets live in this till's own browser: they are a few minutes of
 // counter work, not business records, and they must survive a stray refresh
 // without a round trip to the database.
+// The reasons a line is handed over free. Anything else is typed in.
+const FOC_REASONS = ["Gift", "Sample", "Damaged", "Staff", "Replacement"];
+
 const HELD_KEY = "edu.held.";
 
 function readHeld(storeId: string): HeldOrder[] {
@@ -1270,7 +1273,41 @@ export default function POSPage() {
                     {c.foc && (
                       <select
                         className="border border-slate-200 rounded px-1 py-0.5 text-[10px]"
-                        value={c.foc_reason || "Gift"}
+                        value={
+                          !c.foc_reason
+                            ? "Gift"
+                            : FOC_REASONS.includes(c.foc_reason)
+                            ? c.foc_reason
+                            : "Other"
+                        }
+                        onChange={(e) =>
+                          setCart((r) =>
+                            r.map((x) =>
+                              x.key === c.key
+                                ? {
+                                    ...x,
+                                    // Choosing "Other" clears the box so the
+                                    // cashier has to say what it was.
+                                    foc_reason: e.target.value === "Other" ? "" : e.target.value,
+                                  }
+                                : x
+                            )
+                          )
+                        }
+                      >
+                        {FOC_REASONS.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                        <option value="Other">Other</option>
+                      </select>
+                    )}
+                    {c.foc && !FOC_REASONS.includes(c.foc_reason || "Gift") && (
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Say why"
+                        className="w-28 border border-slate-200 rounded px-1 py-0.5 text-[10px]"
+                        value={c.foc_reason || ""}
                         onChange={(e) =>
                           setCart((r) =>
                             r.map((x) =>
@@ -1278,13 +1315,7 @@ export default function POSPage() {
                             )
                           )
                         }
-                      >
-                        <option value="Gift">Gift</option>
-                        <option value="Sample">Sample</option>
-                        <option value="Damaged">Damaged</option>
-                        <option value="Staff">Staff</option>
-                        <option value="Replacement">Replacement</option>
-                      </select>
+                      />
                     )}
                   </div>
                   {!c.foc && !noDiscount[c.product_id] && (
