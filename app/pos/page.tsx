@@ -12,7 +12,7 @@ import { tierDiscountPercent } from "../loyalty";
 import Receipt, { ReceiptData } from "../receipt";
 
 type CartItem = {
-  key: string; // productId:variantId â one cart line per sellable item
+  key: string; // productId:variantId - one cart line per sellable item
   product_id: string;
   variant_id: string | null;
   name: string;
@@ -183,7 +183,7 @@ export default function POSPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerSearch]);
 
-  // Any change to the discount invalidates a prior approval â must re-approve
+  // Any change to the discount invalidates a prior approval - must re-approve
   useEffect(() => {
     setDiscountApproved(false);
     setDiscountApprovedBy(null);
@@ -270,7 +270,7 @@ export default function POSPage() {
   }
 
   // The till does not need every customer in the business on screen before
-  // the first sale of the day â it needs the ones likely to walk in, and a
+  // the first sale of the day - it needs the ones likely to walk in, and a
   // way to find anybody else. Pulling the whole table made the page slower
   // every month, and past a thousand rows the ones beyond the cap could not
   // be found at all.
@@ -668,7 +668,7 @@ export default function POSPage() {
       .select()
       .single();
     if (error) {
-      showToast("â " + error.message);
+      showToast("Error: " + error.message);
       return;
     }
     setCustomers((prev) => [...prev, data]);
@@ -1047,7 +1047,7 @@ export default function POSPage() {
       void loadProducts();
 
       // @page can't be scoped by a CSS class, so the thermal-roll page size is
-      // injected only for this print and removed afterwards â otherwise every
+      // injected only for this print and removed afterwards - otherwise every
       // other document (like a purchase order) would print on 80mm paper too.
       setTimeout(() => {
         const style = document.createElement("style");
@@ -1064,7 +1064,7 @@ export default function POSPage() {
       const message =
         err instanceof Error ? err.message
         : e?.message || e?.details || e?.hint || JSON.stringify(err);
-      showToast("â " + message);
+      showToast("Error: " + message);
     } finally {
       setLoading(false);
     }
@@ -1134,7 +1134,7 @@ export default function POSPage() {
                   )}
                 </div>
                 <div className="text-blue-600 font-bold text-sm">
-                  {minPrice === maxPrice ? fmt(minPrice) : `${fmt(minPrice)} â ${fmt(maxPrice)}`}
+                  {minPrice === maxPrice ? fmt(minPrice) : `${fmt(minPrice)} - ${fmt(maxPrice)}`}
                 </div>
                 <div className={`text-xs mt-1 ${totalStock <= 5 ? "text-red-600" : "text-slate-500"}`}>
                   {t("pos_stock")}: {totalStock}
@@ -1152,11 +1152,11 @@ export default function POSPage() {
               <span className="inline-flex items-center gap-3">
                 <button type="button" onClick={() => setPage((n) => Math.max(0, n - 1))}
                   disabled={atPage === 0}
-                  className="px-2 py-1 border border-slate-200 rounded disabled:opacity-30">â¹</button>
+                  className="px-2 py-1 border border-slate-200 rounded disabled:opacity-30">&lsaquo;</button>
                 <span>{atPage + 1} / {pageCount}</span>
                 <button type="button" onClick={() => setPage((n) => Math.min(pageCount - 1, n + 1))}
                   disabled={atPage >= pageCount - 1}
-                  className="px-2 py-1 border border-slate-200 rounded disabled:opacity-30">âº</button>
+                  className="px-2 py-1 border border-slate-200 rounded disabled:opacity-30">&rsaquo;</button>
               </span>
             </div>
           )}
@@ -1214,7 +1214,7 @@ export default function POSPage() {
                     className="text-[11px] text-red-600 px-1"
                     title="Throw this basket away"
                   >
-                    â
+                    &times;
                   </button>
                 </div>
               ))}
@@ -1390,12 +1390,12 @@ export default function POSPage() {
               <label className="text-xs text-slate-500">{t("pos_discount")}</label>
               {discountLocked && (
                 <div className="text-xs text-red-600 mb-1">
-                  No discount â {Array.from(new Set(lockedNames)).join(", ")}
+                  No discount - {Array.from(new Set(lockedNames)).join(", ")}
                 </div>
               )}
               {promoTotal > 0 && (
                 <div className="text-xs text-green-700 mb-1">
-                  Promo â{promoTotal.toLocaleString()} Â·{" "}
+                  Promo -{promoTotal.toLocaleString()} &middot;{" "}
                   {promoNames.join(", ")}
                 </div>
               )}
@@ -1406,7 +1406,7 @@ export default function POSPage() {
               )}
               {tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id) > 0 && (
                 <p className="text-xs text-green-600 font-medium mt-0.5">
-                  ðï¸ {t("customers_loyaltyApplied")} ({tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id)}%)
+                   {t("customers_loyaltyApplied")} ({tierDiscountPercent(loyaltyTiers, selectedCustomer?.loyalty_tier_id)}%)
                 </p>
               )}
               <div className="flex gap-1 mt-1">
@@ -1430,13 +1430,13 @@ export default function POSPage() {
               </div>
 
               {isLoyaltyLocked && (
-                <p className="text-xs text-green-600 mt-1">ð {t("pos_loyaltyLocked")}</p>
+                <p className="text-xs text-green-600 mt-1"> {t("pos_loyaltyLocked")}</p>
               )}
 
               {requiresDiscountApproval && (
                 discountApproved ? (
                   <p className="text-xs text-green-600 font-medium mt-1">
-                    â {t("pos_discountApprovedBy")} {discountApprovedBy}
+                    &#10003; {t("pos_discountApprovedBy")} {discountApprovedBy}
                   </p>
                 ) : (
                   <button
@@ -1444,7 +1444,7 @@ export default function POSPage() {
                     onClick={() => setShowApprovalModal(true)}
                     className="mt-2 w-full py-1.5 bg-orange-500 text-white rounded-lg text-xs font-semibold"
                   >
-                    ð {t("pos_getApproval")}
+                     {t("pos_getApproval")}
                   </button>
                 )
               )}
@@ -1562,7 +1562,7 @@ export default function POSPage() {
                   setSplitting(true);
                   setSplitLines([{ method: paymentMethod, amount: String(grandTotal) }]);
                 }}>
-                {splitting ? "â One payment" : "+ Split payment"}
+                {splitting ? "\u2715 One payment" : "+ Split payment"}
               </button>
             </div>
 
@@ -1588,7 +1588,7 @@ export default function POSPage() {
                     {splitLines.length > 1 && (
                       <button className="text-slate-400 text-xs px-1"
                         onClick={() => setSplitLines((p) => p.filter((_, k) => k !== idx))}>
-                        â
+                        &times;
                       </button>
                     )}
                   </div>
@@ -1804,7 +1804,7 @@ export default function POSPage() {
                   value={approverPin}
                   onChange={(e) => setApproverPin(e.target.value.replace(/\D/g, ""))}
                   onKeyDown={(e) => e.key === "Enter" && submitDiscountApproval()}
-                  placeholder="â¢â¢â¢â¢"
+                  placeholder="PIN"
                 />
               </>
             ) : (
