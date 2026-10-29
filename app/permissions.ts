@@ -40,6 +40,7 @@ export type PageKey =
   | "settlements"
   | "foc-report"
   | "conversion"
+  | "po-confirm"
   | "my-pin"
   | "product-category"
   | "product-variant"
@@ -121,6 +122,7 @@ export const PAGE_OPTIONS: { key: PageKey; href: string; labelKey: string; group
   { key: "barcode", href: "/barcode", labelKey: "nav_barcode", group: "setup" },
   { key: "warehouse", href: "/warehouse", labelKey: "nav_warehouse", group: "warehouse" },
   { key: "goods-received", href: "/goods-received", labelKey: "nav_goodsReceived", group: "warehouse" },
+  { key: "po-confirm", href: "/po-confirm", labelKey: "nav_poConfirm", group: "warehouse" },
   // Printing the stickers belongs beside receiving the goods, because
   // that is when they are printed.
   { key: "labels", href: "/labels", labelKey: "nav_labels", group: "warehouse" },
