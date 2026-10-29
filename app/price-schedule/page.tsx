@@ -80,11 +80,12 @@ export default function PriceSchedulePage() {
     let live = true;
     // Matched here rather than by the database, so a name holding two spaces
     // or a bracket is still found, and the words may be typed in any order.
-    fetchSupplierCodeMap().then(setCodes);
-    fetchAllProducts<Product>("id, sku, name, price", true).then((rows) => {
-      if (!live) return;
-      setFound(rows.filter((r) => matchesSearch(q, r.name, r.sku, codes[r.id])).slice(0, 20));
-    });
+    Promise.all([fetchSupplierCodeMap(), fetchAllProducts<Product>("id, sku, name, price", true)])
+      .then(([map, rows]) => {
+        if (!live) return;
+        setCodes(map);
+        setFound(rows.filter((r) => matchesSearch(q, r.name, r.sku, map[r.id])).slice(0, 20));
+      });
     return () => { live = false; };
   }, [search]);
 
