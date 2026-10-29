@@ -25,6 +25,8 @@ type CartItem = {
   uom_name?: string;
   factor?: number;       // base units in one selling unit
   line_discount?: number; // money off this line, before any invoice discount
+  foc?: boolean;          // handed over free; the price of zero is set on the server
+  foc_reason?: string;    // why it was given away
 };
 
 type Uom = { id: string; product_id: string; code: string; name: string; factor: number; price: number | null; is_base: boolean };
@@ -799,7 +801,7 @@ export default function POSPage() {
   }
 
   // ---- Calculations ----
-  const grossTotal = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+  const grossTotal = cart.reduce((sum, c) => sum + (c.foc ? 0 : c.price * c.qty), 0);
   const lineDiscountTotal = cart.reduce((sum, c) => sum + (c.line_discount ?? 0), 0);
   const subtotal = Math.max(grossTotal - promoTotal - lineDiscountTotal, 0);
   const discountValueNum = Number(discountValue) || 0;
@@ -935,7 +937,9 @@ export default function POSPage() {
           uom_name: c.uom_name ?? null,
           uom_qty: c.qty,
           uom_factor: c.factor ?? 1,
-          line_discount: c.line_discount ?? 0,
+          line_discount: c.foc ? 0 : (c.line_discount ?? 0),
+          foc: c.foc ?? false,
+          foc_reason: c.foc ? (c.foc_reason || "Gift") : null,
           promo_discount: promoLines[c.key]?.amount ?? 0,
           promotion_id: promoLines[c.key]?.promotion_id ?? null,
           is_free_gift: promoLines[c.key]?.free ?? false,
@@ -997,10 +1001,10 @@ export default function POSPage() {
         createdAt: sale.created_at,
         items: cart.map((c) => ({
           unit: c.uom_name ?? null,
-          name: c.name,
+          name: c.foc ? `${c.name} (FOC)` : c.name,
           qty: c.qty,
-          price: c.price,
-          lineTotal: c.price * c.qty - (c.line_discount ?? 0),
+          price: c.foc ? 0 : c.price,
+          lineTotal: c.foc ? 0 : c.price * c.qty - (c.line_discount ?? 0),
         })),
         subtotal,
         promoDiscount: promoTotal,
@@ -1246,7 +1250,44 @@ export default function POSPage() {
                       ))}
                     </select>
                   )}
-                  {!noDiscount[c.product_id] && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <label className="flex items-center gap-1 text-[10px] text-slate-500">
+                      <input
+                        type="checkbox"
+                        checked={!!c.foc}
+                        onChange={(e) =>
+                          setCart((r) =>
+                            r.map((x) =>
+                              x.key === c.key
+                                ? { ...x, foc: e.target.checked, line_discount: 0 }
+                                : x
+                            )
+                          )
+                        }
+                      />
+                      FOC
+                    </label>
+                    {c.foc && (
+                      <select
+                        className="border border-slate-200 rounded px-1 py-0.5 text-[10px]"
+                        value={c.foc_reason || "Gift"}
+                        onChange={(e) =>
+                          setCart((r) =>
+                            r.map((x) =>
+                              x.key === c.key ? { ...x, foc_reason: e.target.value } : x
+                            )
+                          )
+                        }
+                      >
+                        <option value="Gift">Gift</option>
+                        <option value="Sample">Sample</option>
+                        <option value="Damaged">Damaged</option>
+                        <option value="Staff">Staff</option>
+                        <option value="Replacement">Replacement</option>
+                      </select>
+                    )}
+                  </div>
+                  {!c.foc && !noDiscount[c.product_id] && (
                     <div className="mt-1 flex items-center gap-1">
                       <span className="text-[10px] text-slate-400">-</span>
                       <input
