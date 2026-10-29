@@ -274,9 +274,9 @@ export default function OrderLookupPage() {
         saleRef: selected.sale_ref || selected.id.slice(0, 8).toUpperCase(),
         createdAt: selected.created_at,
         items: items.map((i) => ({
-          name: i.product_name,
+          name: (i as any).is_free_gift ? `${i.product_name} (FOC)` : i.product_name,
           qty: Number(i.qty),
-          price: Number(i.unit_price),
+          price: (i as any).is_free_gift ? 0 : Number(i.unit_price),
           lineTotal: Number(i.line_total),
         })),
         subtotal: Number(o.subtotal || 0),

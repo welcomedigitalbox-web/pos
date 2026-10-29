@@ -196,9 +196,9 @@ export default function HistoryPage() {
         saleRef: sale.sale_ref || sale.id.slice(0, 8).toUpperCase(),
         createdAt: sale.created_at,
         items: ((items as any[]) || []).map((i) => ({
-          name: i.product_name,
+          name: (i as any).is_free_gift ? `${i.product_name} (FOC)` : i.product_name,
           qty: Number(i.qty),
-          price: Number(i.unit_price),
+          price: (i as any).is_free_gift ? 0 : Number(i.unit_price),
           lineTotal: Number(i.line_total),
         })),
         subtotal: Number(full.subtotal || 0),
