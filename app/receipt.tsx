@@ -107,6 +107,11 @@ export default function Receipt({ data }: { data: ReceiptData | null }) {
 
       <div style={RULE} />
 
+      <div style={ROW}>
+        <span>Total Qty</span>
+        <span>{data.items.reduce((n, it) => n + Number(it.qty || 0), 0)}</span>
+      </div>
+
       {!!data.promoDiscount && data.promoDiscount > 0 && (
         <>
           <div style={ROW}>
