@@ -233,8 +233,37 @@ export default function ConversionPage() {
     const code = raw.trim();
     if (!code) return null;
     const { data } = await supabase.rpc("search_products", { p_term: code, p_limit: 1 });
-    const hit = ((data as Product[]) || [])[0];
-    return hit || null;
+    return ((data as Product[]) || [])[0] || null;
+  }
+
+  async function baseUnit(productId: string): Promise<string> {
+    const { data } = await supabase
+      .from("product_uoms")
+      .select("code")
+      .eq("product_id", productId)
+      .eq("is_base", true)
+      .limit(1);
+    return ((data as { code: string }[]) || [])[0]?.code || "PC";
+  }
+
+  async function fill(side: "in" | "out", key: string, p: Product) {
+    const set = side === "in" ? setInLines : setOutLines;
+    setSugg({ key: "", items: [] });
+    const unit = await baseUnit(p.id);
+    set((r) => {
+      const next = r.map((l) => (l.key === key
+        ? {
+            ...l,
+            code: p.sku || p.name,
+            product_id: p.id,
+            name: p.name,
+            unit,
+            salePrice: Number(p.price || 0),
+            purPrice: side === "out" ? String(Math.round(onHand[p.id]?.cost || 0)) : l.purPrice,
+          }
+        : l));
+      return next[next.length - 1].product_id ? [...next, blank()] : next;
+    });
   }
 
   async function resolve(side: "in" | "out", key: string, code: string) {
